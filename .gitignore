@@ -1,0 +1,40 @@
+# Gradle
+.gradle/
+**/build/
+
+# Local Android SDK configuration
+local.properties
+
+# Android Studio / IntelliJ
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# Native build outputs
+.externalNativeBuild/
+.cxx/
+
+# Test and tooling output
+/captures/
+/reports/
+
+# Generated APKs and app bundles
+*.apk
+*.aab
+*.apks
+*.aab.zip
+
+# Signing material and local credentials
+*.jks
+*.keystore
+*.p12
+keystore.properties
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.log
+*.tmp
