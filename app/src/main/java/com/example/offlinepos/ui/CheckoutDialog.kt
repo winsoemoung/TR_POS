@@ -551,7 +551,42 @@ fun CheckoutDialog(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(18.dp))
+                // Auto Print Receipt Option
+                val dialogContext = androidx.compose.ui.platform.LocalContext.current
+                var autoPrintReceipt by remember {
+                    mutableStateOf(com.example.offlinepos.hardware.ThermalPrinterManager.isAutoPrintEnabled(dialogContext))
+                }
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable {
+                            val newVal = !autoPrintReceipt
+                            autoPrintReceipt = newVal
+                            com.example.offlinepos.hardware.ThermalPrinterManager.setAutoPrintEnabled(dialogContext, newVal)
+                        }
+                        .padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Checkbox(
+                        checked = autoPrintReceipt,
+                        onCheckedChange = {
+                            autoPrintReceipt = it
+                            com.example.offlinepos.hardware.ThermalPrinterManager.setAutoPrintEnabled(dialogContext, it)
+                        },
+                        modifier = Modifier.testTag("checkout_auto_print_checkbox")
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "🖨️ အရောင်းပြီးပါက ဘေလ်တိုက်ရိုက်ပရင့်ထုတ်မည် (Auto Print)",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
 
                 // Confirm Button
                 Button(

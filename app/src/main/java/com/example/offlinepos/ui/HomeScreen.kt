@@ -30,8 +30,13 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Print
+import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material.icons.automirrored.filled.TrendingUp
+import com.example.offlinepos.hardware.ThermalPrinterManager
+import com.example.offlinepos.hardware.PrinterConnectionType
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Card
@@ -107,6 +112,7 @@ fun HomeScreen(
     var showCustomerLedger by remember { mutableStateOf(false) }
     var showShiftReport by remember { mutableStateOf(false) }
     var showServerDialog by remember { mutableStateOf(false) }
+    var showThermalPrinterDialog by remember { mutableStateOf(false) }
     val isServerRunning by viewModel.isServerRunning.collectAsState()
     val salesHistory by viewModel.salesHistory.collectAsState()
     val allProducts by viewModel.allProducts.collectAsState()
@@ -159,6 +165,47 @@ fun HomeScreen(
                         modifier = Modifier.testTag("top_bar_scanner_button")
                     ) {
                         Icon(Icons.Default.CameraAlt, contentDescription = "Camera Scanner", tint = MaterialTheme.colorScheme.primary)
+                    }
+
+                    // Thermal Printer (Bluetooth & USB)
+                    IconButton(
+                        onClick = { showThermalPrinterDialog = true },
+                        modifier = Modifier.testTag("top_bar_printer_button")
+                    ) {
+                        val hasPrinter = ThermalPrinterManager.getConnectionType(context) != PrinterConnectionType.NONE
+                        Icon(
+                            Icons.Default.Print,
+                            contentDescription = "Thermal Printer Setup",
+                            tint = if (hasPrinter) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    // Google Drive Auto-Sync Real-time Indicator
+                    val googleAccount by viewModel.googleAccount.collectAsState()
+                    val isDriveSyncing by viewModel.isDriveSyncing.collectAsState()
+                    val driveSyncStatus by viewModel.driveSyncStatus.collectAsState()
+                    if (googleAccount != null) {
+                        IconButton(
+                            onClick = {
+                                viewModel.setBanner(driveSyncStatus ?: "⚡ Google Drive Auto-sync စနစ် အသင့်ရှိပါသည် ($googleAccount)")
+                            },
+                            modifier = Modifier.testTag("top_bar_drive_sync_button")
+                        ) {
+                            if (isDriveSyncing) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(18.dp),
+                                    strokeWidth = 2.dp,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            } else {
+                                Icon(
+                                    Icons.Default.CloudDone,
+                                    contentDescription = "Google Drive Auto-Sync",
+                                    tint = androidx.compose.ui.graphics.Color(0xFF15803D),
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+                        }
                     }
 
                     // Held / Parked Orders
@@ -475,6 +522,13 @@ fun HomeScreen(
             onOpenStaffClient = {
                 viewModel.setStaffClientMode(true)
             }
+        )
+    }
+
+    if (showThermalPrinterDialog) {
+        ThermalPrinterDialog(
+            viewModel = viewModel,
+            onDismiss = { showThermalPrinterDialog = false }
         )
     }
 }

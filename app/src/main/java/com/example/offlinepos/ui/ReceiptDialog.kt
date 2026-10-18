@@ -56,8 +56,14 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import com.example.offlinepos.R
-import androidx.compose.ui.window.Dialog
+import androidx.compose.foundation.clickable
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.CircularProgressIndicator
 import com.example.offlinepos.hardware.BluetoothPrinterHelper
+import com.example.offlinepos.hardware.ThermalPrinterManager
+import com.example.offlinepos.hardware.PrinterConnectionType
+import com.example.offlinepos.hardware.UsbPrinterHelper
+import androidx.compose.ui.window.Dialog
 
 @Composable
 fun ReceiptDialog(
@@ -68,7 +74,7 @@ fun ReceiptDialog(
     val context = LocalContext.current
     val storeProfile by viewModel.storeProfile.collectAsState()
 
-    var showBluetoothPicker by remember { mutableStateOf(false) }
+    var showPrinterDialog by remember { mutableStateOf(false) }
     var printStatus by remember { mutableStateOf<String?>(null) }
     var isPrinting by remember { mutableStateOf(false) }
 
@@ -297,12 +303,40 @@ fun ReceiptDialog(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(14.dp))
+                Spacer(modifier = Modifier.height(10.dp))
 
-                // Actions: PDF Share, Bluetooth Print & Dismiss
+                // Active Printer summary banner & quick configuration
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                        .clickable { showPrinterDialog = true }
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = ThermalPrinterManager.getPrinterStatusSummary(context),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = "⚙️ ပြောင်းမည်",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Actions: PDF Share, Thermal Print, Settings & Dismiss
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
                     OutlinedButton(
                         onClick = { viewModel.sharePdfReceipt(receipt) },
@@ -310,16 +344,44 @@ fun ReceiptDialog(
                             .weight(1f)
                             .testTag("share_pdf_button"),
                     ) {
-                        Text("📄 PDF Share", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text("📄 PDF", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     }
 
                     Button(
-                        onClick = { showBluetoothPicker = true },
+                        onClick = {
+                            if (ThermalPrinterManager.getConnectionType(context) == PrinterConnectionType.NONE &&
+                                BluetoothPrinterHelper.getPairedDevices(context).isEmpty() &&
+                                UsbPrinterHelper.getConnectedUsbPrinters(context).isEmpty()
+                            ) {
+                                showPrinterDialog = true
+                            } else {
+                                isPrinting = true
+                                printStatus = "Printer သို့ ဒေတာ ပို့နေပါသည်..."
+                                viewModel.printReceiptUnified(receipt) { success, msg ->
+                                    isPrinting = false
+                                    printStatus = msg
+                                }
+                            }
+                        },
                         modifier = Modifier
-                            .weight(1.3f)
-                            .testTag("bluetooth_print_button"),
+                            .weight(1.4f)
+                            .testTag("thermal_print_button"),
+                        enabled = !isPrinting
                     ) {
-                        Text("🖨️ ပရင့်ထုတ်မည်", fontSize = 11.sp)
+                        if (isPrinting) {
+                            CircularProgressIndicator(color = Color.White, modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("ထုတ်နေသည်...", fontSize = 11.sp)
+                        } else {
+                            Text("🖨️ ပရင့်ထုတ်မည်", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    IconButton(
+                        onClick = { showPrinterDialog = true },
+                        modifier = Modifier.testTag("printer_settings_button")
+                    ) {
+                        Icon(Icons.Default.Settings, contentDescription = "Printer Settings", modifier = Modifier.size(20.dp))
                     }
 
                     OutlinedButton(
@@ -337,7 +399,7 @@ fun ReceiptDialog(
                     Text(
                         text = status,
                         style = MaterialTheme.typography.bodySmall,
-                        color = if (status.contains("မအောင်မြင်")) Color(0xFFDC2626) else Color(0xFF059669),
+                        color = if (status.contains("မအောင်မြင်") || status.contains("မတွေ့") || status.contains("လိုအပ်")) Color(0xFFDC2626) else Color(0xFF059669),
                         textAlign = TextAlign.Center,
                     )
                 }
@@ -345,88 +407,12 @@ fun ReceiptDialog(
         }
     }
 
-    // Bluetooth Paired Device Picker Dialog
-    if (showBluetoothPicker) {
-        val pairedDevices = remember { BluetoothPrinterHelper.getPairedDevices(context) }
-
-        Dialog(onDismissRequest = { showBluetoothPicker = false }) {
-            Surface(
-                shape = RoundedCornerShape(16.dp),
-                color = MaterialTheme.colorScheme.surface,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(12.dp)
-                    .testTag("bluetooth_devices_dialog"),
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            text = "80mm Thermal Printer ရွေးချယ်ရန်",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                        )
-                        IconButton(onClick = { showBluetoothPicker = false }) {
-                            Icon(Icons.Default.Close, contentDescription = "Close")
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    if (pairedDevices.isEmpty()) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 20.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                        ) {
-                            Text("⚠️ Bluetooth ချိတ်ဆက်ထားသော Printer မရှိသေးပါ")
-                            Spacer(modifier = Modifier.height(6.dp))
-                            Text(
-                                text = "ဖုန်း Settings > Bluetooth တွင် Thermal Printer နှင့် Pair ပြုလုပ်ထားပေးပါ",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                textAlign = TextAlign.Center,
-                            )
-                        }
-                    } else {
-                        LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            items(pairedDevices) { device ->
-                                Card(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    onClick = {
-                                        showBluetoothPicker = false
-                                        isPrinting = true
-                                        printStatus = "Printer သို့ ဒေတာ ပို့နေပါသည်..."
-                                        viewModel.printReceiptBluetooth(device, receipt) { success, msg ->
-                                            isPrinting = false
-                                            printStatus = msg
-                                        }
-                                    }
-                                ) {
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(12.dp),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically,
-                                    ) {
-                                        Column {
-                                            Text(device.name ?: "Unknown Printer", fontWeight = FontWeight.Bold)
-                                            Text(device.address, style = MaterialTheme.typography.labelSmall)
-                                        }
-                                        Text("Print →", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
+    // Thermal Printer Chooser & Config Dialog
+    if (showPrinterDialog) {
+        ThermalPrinterDialog(
+            viewModel = viewModel,
+            onDismiss = { showPrinterDialog = false }
+        )
     }
 }
 

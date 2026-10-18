@@ -17,6 +17,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.ui.graphics.asImageBitmap
 import com.example.offlinepos.hardware.QrCodeHelper
 import com.example.offlinepos.hardware.BluetoothPrinterHelper
+import com.example.offlinepos.hardware.ThermalPrinterManager
+import com.example.offlinepos.hardware.PrinterConnectionType
+import com.example.offlinepos.hardware.PaperWidth
+import com.example.offlinepos.hardware.UsbPrinterHelper
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -56,6 +60,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -117,6 +122,8 @@ fun SettingsScreen(
 
     val googleAccount by viewModel.googleAccount.collectAsState()
     val lastGoogleBackupTime by viewModel.lastGoogleBackupTime.collectAsState()
+    val isDriveSyncing by viewModel.isDriveSyncing.collectAsState()
+    val driveSyncStatus by viewModel.driveSyncStatus.collectAsState()
     var googleEmailInput by remember(googleAccount) { mutableStateOf(googleAccount ?: "WINSOEMOUNG@gmail.com") }
 
 
@@ -172,6 +179,9 @@ fun SettingsScreen(
 
     var pairedPrinters by remember { mutableStateOf<List<BluetoothDevice>>(emptyList()) }
     var selectedPrinterAddress by remember { mutableStateOf(BluetoothPrinterHelper.selectedPrinterAddress(context)) }
+    var showPrinterModal by remember { mutableStateOf(false) }
+    var printerTestStatusMsg by remember { mutableStateOf<String?>(null) }
+    var isPrinterTesting by remember { mutableStateOf(false) }
     val bluetoothPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { pairedPrinters = BluetoothPrinterHelper.getPairedDevices(context) }
@@ -245,39 +255,85 @@ fun SettingsScreen(
             }
 
             if (settingsSection == "ALL" || settingsSection == "SYNC") {
-            // Bluetooth thermal printer manager
+            // Comprehensive Thermal Printer Manager (Bluetooth & USB)
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(16.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.55f)),
             ) {
                 Column(modifier = Modifier.padding(14.dp)) {
-                    Text("🖨️ Bluetooth Printer Manager", fontWeight = FontWeight.Bold)
-                    Text("Pair လုပ်ထားသော ESC/POS printer ကိုရွေးပြီး connection retry ကို အသုံးပြုနိုင်ပါသည်", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text("Bluetooth: ${if (BluetoothAdapter.getDefaultAdapter()?.isEnabled == true) "ON" else "OFF"}", style = MaterialTheme.typography.labelMedium)
-                        OutlinedButton(onClick = { refreshBluetoothPrinters() }, modifier = Modifier.height(34.dp)) { Text("Refresh", fontSize = 11.sp) }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("🖨️ Thermal Printer Manager (Bluetooth / USB)", fontWeight = FontWeight.Bold)
+                            Text("80mm / 58mm ESC/POS ပြေစာပရင့်တာများ စီမံရန်", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Button(
+                            onClick = { showPrinterModal = true },
+                            modifier = Modifier.height(34.dp)
+                        ) {
+                            Text("Setup / ပြောင်းမည်", fontSize = 11.sp)
+                        }
                     }
-                    if (pairedPrinters.isEmpty()) {
-                        Text("Paired printer မတွေ့ပါ။ Android Bluetooth permission နှင့် pairing ကို ခွင့်ပြုပါ။", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
-                    } else {
-                        pairedPrinters.forEach { device ->
-                            val address = runCatching { device.address }.getOrDefault("")
-                            val name = runCatching { device.name ?: "Unnamed printer" }.getOrDefault("Unnamed printer")
-                            Row(modifier = Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(name, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
-                                    Text(address, style = MaterialTheme.typography.labelSmall)
-                                }
-                                TextButton(onClick = { BluetoothPrinterHelper.selectPrinter(context, device); selectedPrinterAddress = address }) {
-                                    Text(if (selectedPrinterAddress == address) "Selected" else "Use", fontSize = 11.sp)
-                                }
-                                TextButton(onClick = { BluetoothPrinterHelper.requestPairing(device); refreshBluetoothPrinters() }) { Text("Pair", fontSize = 11.sp) }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Current Status Pill
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(MaterialTheme.colorScheme.surface)
+                            .padding(horizontal = 10.dp, vertical = 8.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column {
+                                Text(
+                                    text = ThermalPrinterManager.getPrinterStatusSummary(context),
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Text(
+                                    text = "စက္ကူ: ${ThermalPrinterManager.getPaperWidth(context).label} | Auto-Print: ${if (ThermalPrinterManager.isAutoPrintEnabled(context)) "ဖွင့်ထားသည်" else "ပိတ်ထားသည်"}",
+                                    fontSize = 10.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+
+                            OutlinedButton(
+                                onClick = {
+                                    isPrinterTesting = true
+                                    printerTestStatusMsg = "စမ်းသပ်ပရင့် ထုတ်နေပါသည်..."
+                                    viewModel.printTestReceipt { success, msg ->
+                                        isPrinterTesting = false
+                                        printerTestStatusMsg = msg
+                                    }
+                                },
+                                modifier = Modifier.height(32.dp),
+                                enabled = !isPrinterTesting
+                            ) {
+                                Text(if (isPrinterTesting) "ထုတ်နေသည်..." else "Test Print", fontSize = 10.sp)
                             }
                         }
                     }
-                    if (selectedPrinterAddress != null) Text("Selected printer: $selectedPrinterAddress", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+
+                    printerTestStatusMsg?.let { msg ->
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = msg,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (msg.contains("မအောင်မြင်") || msg.contains("မတွေ့") || msg.contains("လိုအပ်")) MaterialTheme.colorScheme.error else Color(0xFF059669),
+                            fontSize = 11.sp
+                        )
+                    }
                 }
             }
 
@@ -615,8 +671,48 @@ fun SettingsScreen(
                             modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
                         ) {
                             Column(modifier = Modifier.padding(10.dp)) {
-                                Text("✅ ချိတ်ဆက်ထားသော Google Account:", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("✅ ချိတ်ဆက်ထားသော Google Account:", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Surface(
+                                        shape = RoundedCornerShape(4.dp),
+                                        color = Color(0xFFDCFCE7),
+                                    ) {
+                                        Text(
+                                            "⚡ Real-time Auto-sync Active",
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color(0xFF15803D),
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                }
                                 Text(googleAccount!!, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = MaterialTheme.colorScheme.primary)
+
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    "✨ ပစ္စည်းအသစ်သွင်းခြင်း၊ အရောင်းဘေလ်ဖွင့်ခြင်း၊ ငွေစာရင်းပြင်ဆင်တိုင်း Drive သို့ ချက်ချင်း Auto-sync လုပ်ပေးပါသည်။ အင်တာနက်မရှိပါက Queue တွင် စောင့်ဆိုင်းပြီး လိုင်းရသည်နှင့် အလိုအလျောက် ပို့ပေးပါသည် (Offline-first Resilience)။",
+                                    fontSize = 10.sp,
+                                    color = Color(0xFF475569),
+                                    lineHeight = 14.sp
+                                )
+
+                                Spacer(modifier = Modifier.height(4.dp))
+                                if (isDriveSyncing) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        CircularProgressIndicator(modifier = Modifier.size(12.dp), strokeWidth = 1.5.dp)
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(driveSyncStatus ?: "Google Drive သို့ Sync လုပ်နေပါသည်...", fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
+                                    }
+                                } else {
+                                    driveSyncStatus?.let { status ->
+                                        Text(status, fontSize = 11.sp, color = if (status.contains("မအောင်မြင်") || status.contains("ပြတ်တောက်") || status.contains("စောင့်ဆိုင်း") || status.contains("အော့ဖ်လိုင်း")) Color(0xFFD97706) else Color(0xFF15803D))
+                                    }
+                                }
+
                                 if (lastGoogleBackupTime > 0) {
                                     val formattedTime = SimpleDateFormat("dd/MM/yyyy hh:mm a", Locale.getDefault()).format(Date(lastGoogleBackupTime))
                                     Text("နောက်ဆုံး Backup လုပ်ခဲ့သည့်အချိန်: $formattedTime", fontSize = 11.sp, color = Color(0xFF15803D))
@@ -639,9 +735,16 @@ fun SettingsScreen(
                             Button(
                                 onClick = { viewModel.syncGoogleDriveNow { _, message -> backupStatusMessage = message } },
                                 modifier = Modifier.weight(1.3f).testTag("backup_to_drive_button"),
-                                shape = RoundedCornerShape(8.dp)
+                                shape = RoundedCornerShape(8.dp),
+                                enabled = !isDriveSyncing
                             ) {
-                                Text("☁️ Sync Now", fontSize = 11.sp)
+                                if (isDriveSyncing) {
+                                    CircularProgressIndicator(modifier = Modifier.size(14.dp), color = Color.White, strokeWidth = 2.dp)
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Syncing...", fontSize = 11.sp)
+                                } else {
+                                    Text("☁️ Sync Now", fontSize = 11.sp)
+                                }
                             }
                         }
                     } else {
@@ -1203,6 +1306,15 @@ fun SettingsScreen(
             onOpenStaffClient = {
                 showServerDialog = false
                 viewModel.setStaffClientMode(true)
+            }
+        )
+    }
+    if (showPrinterModal) {
+        ThermalPrinterDialog(
+            viewModel = viewModel,
+            onDismiss = {
+                showPrinterModal = false
+                refreshBluetoothPrinters()
             }
         )
     }

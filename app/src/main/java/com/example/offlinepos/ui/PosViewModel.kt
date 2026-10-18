@@ -20,6 +20,7 @@ import com.example.offlinepos.Sync.BackupManager
 import com.example.offlinepos.Sync.SyncWorker
 import com.example.offlinepos.Sync.GoogleDriveSyncManager
 import com.example.offlinepos.Sync.GoogleDriveSyncWorker
+import com.example.offlinepos.Sync.RealtimeDriveSyncCoordinator
 import com.example.offlinepos.Sync.RecordLevelSyncManager
 import com.example.offlinepos.ai.AiAction
 import com.example.offlinepos.ai.AiActionType
@@ -46,6 +47,8 @@ import com.example.offlinepos.domain.ProductDraft
 import com.example.offlinepos.domain.TotalsResult
 import com.example.offlinepos.domain.calculateTotals
 import com.example.offlinepos.hardware.BluetoothPrinterHelper
+import com.example.offlinepos.hardware.ThermalPrinterManager
+import com.example.offlinepos.hardware.UsbPrinterHelper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -810,6 +813,7 @@ class PosViewModel(private val context: Context) : ViewModel() {
                 )
 
                 setBanner("AI အမိန့် '${action.summary}' ကို အောင်မြင်စွာ လုပ်ဆောင်ပြီးပါပြီ")
+                triggerAutoDriveSync("AI Action (${action.summary})")
             } catch (e: Exception) {
                 setBanner("AI အမိန့် လုပ်ဆောင်ခြင်း မအောင်မြင်ပါ: ${e.message}")
             }
@@ -1166,6 +1170,11 @@ class PosViewModel(private val context: Context) : ViewModel() {
                     )
 
                     _receipt.value = receiptData
+                    if (ThermalPrinterManager.isAutoPrintEnabled(context)) {
+                        viewModelScope.launch {
+                            ThermalPrinterManager.printReceipt(context, receiptData, _storeProfile.value)
+                        }
+                    }
                     clearCart()
                     val successMsg = if (isCredit) {
                         "အကြွေးအရောင်း မှတ်တမ်းတင်ပြီးပါပြီ (ဝယ်သူ: ${selectedCustomer?.name})"
@@ -1234,14 +1243,19 @@ class PosViewModel(private val context: Context) : ViewModel() {
         }
     }
 
-    private fun enqueueGoogleDriveSync() {
-        WorkManager.getInstance(context).enqueueUniqueWork(
-            "google-drive-sync-now",
-            androidx.work.ExistingWorkPolicy.KEEP,
-            androidx.work.OneTimeWorkRequestBuilder<GoogleDriveSyncWorker>()
-                .setConstraints(GoogleDriveSyncWorker.constraints())
-                .build(),
-        )
+    val isDriveSyncing: StateFlow<Boolean> = RealtimeDriveSyncCoordinator.isSyncing
+    val driveSyncStatus: StateFlow<String?> = RealtimeDriveSyncCoordinator.syncStatus
+
+    /**
+     * Real-time Google Drive Auto-Sync trigger.
+     * Runs in a background coroutine if online, and queues with WorkManager for offline resilience.
+     */
+    fun triggerAutoDriveSync(reason: String = "Data Change") {
+        RealtimeDriveSyncCoordinator.triggerSync(context, reason)
+    }
+
+    private fun enqueueGoogleDriveSync(reason: String = "Auto Sync") {
+        RealtimeDriveSyncCoordinator.triggerSync(context, reason)
     }
 
     fun connectGoogleAccount(email: String) {
@@ -1250,6 +1264,7 @@ class PosViewModel(private val context: Context) : ViewModel() {
             storeConfig.setGoogleAccount(trimmed)
             _googleAccount.value = trimmed
             setBanner("Google အကောင့် ($trimmed) ဖြင့် ချိတ်ဆက်ပြီးပါပြီ")
+            triggerAutoDriveSync("Initial Connect")
         } else {
             setBanner("မှန်ကန်သော Google Email လိပ်စာ ရိုက်ထည့်ပါ")
         }
@@ -1258,6 +1273,7 @@ class PosViewModel(private val context: Context) : ViewModel() {
     fun disconnectGoogleAccount() {
         storeConfig.clearGoogleAccount()
         _googleAccount.value = null
+        WorkManager.getInstance(context).cancelUniqueWork("google-drive-sync-queue")
         WorkManager.getInstance(context).cancelUniqueWork("google-drive-sync-now")
         GoogleSignIn.getClient(context, googleSignInOptions()).signOut()
         setBanner("Google အကောင့် ချိတ်ဆက်မှု ဖြုတ်ပြီးပါပြီ")
@@ -1277,6 +1293,7 @@ class PosViewModel(private val context: Context) : ViewModel() {
                 withContext(Dispatchers.Main) {
                     if (rows > 0) {
                         setBanner("'${product.name}' ၏ အချက်အလက်များကို အောင်မြင်စွာ ပြင်ဆင်ပြီးပါပြီ")
+                        triggerAutoDriveSync("Update Product (${product.name})")
                         onComplete?.invoke(true, "အောင်မြင်စွာ ပြင်ဆင်ပြီးပါပြီ")
                     } else {
                         setBanner("ပြင်ဆင်မှု မအောင်မြင်ပါ")
@@ -1307,6 +1324,7 @@ class PosViewModel(private val context: Context) : ViewModel() {
                 )
                 db.customerDao().insertCustomer(customer)
                 withContext(Dispatchers.Main) {
+                    triggerAutoDriveSync("New Customer ($name)")
                     onResult(true, "ဝယ်သူ '$name' ကို စာရင်းသွင်းပြီးပါပြီ")
                 }
             } catch (e: Exception) {
@@ -1322,6 +1340,7 @@ class PosViewModel(private val context: Context) : ViewModel() {
             try {
                 db.customerDao().recordRepayment(customerId, amount, note, _actor.value.userId)
                 withContext(Dispatchers.Main) {
+                    triggerAutoDriveSync("Debt Repayment")
                     onResult(true, "အကြွေးဆပ်ငွေ %,d Ks လက်ခံပြီးပါပြီ".format(amount))
                 }
             } catch (e: Exception) {
@@ -1514,6 +1533,7 @@ class PosViewModel(private val context: Context) : ViewModel() {
                 db.productDao().adjustStock(productId, quantity, now)
 
                 withContext(Dispatchers.Main) {
+                    triggerAutoDriveSync("Purchase/Stock In ($productName)")
                     onResult(true, "'$productName' အဝင် (+$quantity) စာရင်းသွင်းပြီးပါပြီ")
                 }
             } catch (e: Exception) {
@@ -1557,6 +1577,7 @@ class PosViewModel(private val context: Context) : ViewModel() {
                 )
                 db.operationsDao().insertShift(shift)
                 withContext(Dispatchers.Main) {
+                    triggerAutoDriveSync("Shift Cash Report")
                     onResult(true, "နေ့ချုပ်စာရင်း (Z-Report) အောင်မြင်စွာ ပိတ်ပြီးပါပြီ")
                 }
             } catch (e: Exception) {
@@ -1664,6 +1685,7 @@ class PosViewModel(private val context: Context) : ViewModel() {
                     updatedAtEpochMs = now,
                 )
                 db.productDao().insert(newEntity)
+                triggerAutoDriveSync("Add Product (${draft.name})")
                 onResult(true, "ကုန်ပစ္စည်း အသစ်ကို အောင်မြင်စွာ ထည့်သွင်းပြီးပါပြီ")
             } catch (e: Exception) {
                 onResult(false, e.message ?: "ကုန်ပစ္စည်းထည့်သွင်းခြင်း မအောင်မြင်ပါ")
@@ -1684,6 +1706,7 @@ class PosViewModel(private val context: Context) : ViewModel() {
                         reason = "Manual inventory adjustment", createdAtEpochMs = now,
                     )
                 )
+                triggerAutoDriveSync("Stock Adjustment")
                 setBanner("လက်ကျန်စာရင်း ပြင်ဆင်ပြီးပါပြီ")
             }
         }
@@ -1694,6 +1717,9 @@ class PosViewModel(private val context: Context) : ViewModel() {
             try {
                 val success = db.checkoutDao().refundSale(saleId, System.currentTimeMillis(), _actor.value.userId)
                 withContext(Dispatchers.Main) {
+                    if (success) {
+                        triggerAutoDriveSync("Refund Sale")
+                    }
                     onComplete(success, if (success) "Sale #${saleId.take(8)} ကို Return/Refund ပြုလုပ်ပြီး stock ပြန်တိုးပေးပါပြီ" else "ဤ sale ကို Return မလုပ်နိုင်ပါ (ပြီးသားဖြစ်နိုင်ပါသည်)")
                 }
             } catch (e: Exception) {
@@ -1722,6 +1748,9 @@ class PosViewModel(private val context: Context) : ViewModel() {
                     reason = reason,
                 )
                 withContext(Dispatchers.Main) {
+                    if (success) {
+                        triggerAutoDriveSync("Refund Items")
+                    }
                     onComplete(
                         success,
                         if (success) "Sale #${saleId.take(8)} အတွင်း ရွေးချယ်ထားသော ပစ္စည်းများကို Return ပြုလုပ်ပြီး stock ပြန်တိုးပေးပါပြီ"
@@ -1738,6 +1767,7 @@ class PosViewModel(private val context: Context) : ViewModel() {
         viewModelScope.launch {
             val now = System.currentTimeMillis()
             db.productDao().archive(productId, now)
+            triggerAutoDriveSync("Archive Product")
             setBanner("ကုန်ပစ္စည်းကို ဖျက်သိမ်းပြီးပါပြီ")
         }
     }
@@ -1746,6 +1776,7 @@ class PosViewModel(private val context: Context) : ViewModel() {
         viewModelScope.launch {
             val now = System.currentTimeMillis()
             db.productDao().activate(productId, now)
+            triggerAutoDriveSync("Activate Product")
             setBanner("ကုန်ပစ္စည်းကို ပြန်လည်အသုံးပြုနိုင်ပါပြီ")
         }
     }
@@ -1755,7 +1786,54 @@ class PosViewModel(private val context: Context) : ViewModel() {
      */
     fun printReceiptBluetooth(device: BluetoothDevice, receipt: ReceiptData, onResult: (Boolean, String) -> Unit) {
         viewModelScope.launch {
-            val result = BluetoothPrinterHelper.printReceipt(device, receipt, _storeProfile.value)
+            val paperWidth = ThermalPrinterManager.getPaperWidth(context).dots
+            val kick = ThermalPrinterManager.isKickDrawerEnabled(context)
+            val result = BluetoothPrinterHelper.printReceipt(
+                device = device,
+                receipt = receipt,
+                profile = _storeProfile.value,
+                paperWidthDots = paperWidth,
+                kickDrawer = kick,
+            )
+            onResult(result.first, result.second)
+        }
+    }
+
+    /**
+     * Print receipt via USB Thermal Printer directly
+     */
+    fun printReceiptUsb(device: android.hardware.usb.UsbDevice, receipt: ReceiptData, onResult: (Boolean, String) -> Unit) {
+        viewModelScope.launch {
+            val paperWidth = ThermalPrinterManager.getPaperWidth(context).dots
+            val kick = ThermalPrinterManager.isKickDrawerEnabled(context)
+            val result = UsbPrinterHelper.printReceipt(
+                context = context,
+                device = device,
+                receipt = receipt,
+                profile = _storeProfile.value,
+                paperWidthDots = paperWidth,
+                kickDrawer = kick,
+            )
+            onResult(result.first, result.second)
+        }
+    }
+
+    /**
+     * Print receipt using the currently configured Thermal Printer (Bluetooth or USB)
+     */
+    fun printReceiptUnified(receipt: ReceiptData, onResult: (Boolean, String) -> Unit) {
+        viewModelScope.launch {
+            val result = ThermalPrinterManager.printReceipt(context, receipt, _storeProfile.value)
+            onResult(result.first, result.second)
+        }
+    }
+
+    /**
+     * Print a test receipt to verify connection, alignment, and paper cut
+     */
+    fun printTestReceipt(onResult: (Boolean, String) -> Unit) {
+        viewModelScope.launch {
+            val result = ThermalPrinterManager.printTestReceipt(context, _storeProfile.value)
             onResult(result.first, result.second)
         }
     }
@@ -2005,6 +2083,7 @@ class PosViewModel(private val context: Context) : ViewModel() {
                     _serverReceivedCount.value = _serverReceivedCount.value + 1
                     withContext(Dispatchers.Main) {
                         setBanner("📢 ဝန်ထမ်း (${dto.staffName}) မှ [${cleanName}] လက်ကျန် +${dto.stockQuantity} ကို ပေါင်းထည့်ပေးပို့လိုက်ပါပြီ")
+                        triggerAutoDriveSync("Remote Stock Update ($cleanName)")
                     }
                     return@withContext Pair(true, "[${cleanName}] လက်ကျန်ကို +${dto.stockQuantity} ခုဖြင့် အောင်မြင်စွာ တိုးမြှင့်ပေါင်းထည့်ပြီးပါပြီ")
                 }
@@ -2025,6 +2104,7 @@ class PosViewModel(private val context: Context) : ViewModel() {
                 _serverReceivedCount.value = _serverReceivedCount.value + 1
                 withContext(Dispatchers.Main) {
                     setBanner("📢 ဝန်ထမ်း (${dto.staffName}) မှ [${cleanName}] လက်ကျန် +${dto.stockQuantity} ကို ပေါင်းထည့်ပေးပို့လိုက်ပါပြီ")
+                    triggerAutoDriveSync("Remote Stock Update ($cleanName)")
                 }
                 return@withContext Pair(true, "[${cleanName}] လက်ကျန်ကို +${dto.stockQuantity} ခုဖြင့် အောင်မြင်စွာ တိုးမြှင့်ပေါင်းထည့်ပြီးပါပြီ")
             }
@@ -2052,6 +2132,7 @@ class PosViewModel(private val context: Context) : ViewModel() {
             _serverReceivedCount.value = _serverReceivedCount.value + 1
             withContext(Dispatchers.Main) {
                 setBanner("📢 ဝန်ထမ်း (${dto.staffName}) မှ ကုန်ပစ္စည်းအသစ် [${cleanName}] (${dto.stockQuantity} ခု) ကို ပေါင်းထည့်ပေးပို့လိုက်ပါပြီ")
+                triggerAutoDriveSync("Remote Add Product ($cleanName)")
             }
             Pair(true, "ကုန်ပစ္စည်း အသစ် [${cleanName}] ကို Database ထဲသို့ အောင်မြင်စွာ ပေါင်းထည့်ပြီးပါပြီ")
         } catch (e: Exception) {
