@@ -1,213 +1,124 @@
 package com.example.offlinepos.ui
-import android.app.Activity
-import android.Manifest
-import android.bluetooth.BluetoothAdapter
-import android.bluetooth.BluetoothDevice
-import android.content.pm.PackageManager
-import android.content.ClipData
-import android.content.ClipboardManager
-import android.content.Context
-import android.content.Intent
-import android.net.Uri
-import android.widget.Toast
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.PickVisualMediaRequest
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.ui.graphics.asImageBitmap
-import com.example.offlinepos.hardware.QrCodeHelper
-import com.example.offlinepos.hardware.BluetoothPrinterHelper
-import com.example.offlinepos.hardware.ThermalPrinterManager
-import com.example.offlinepos.hardware.PrinterConnectionType
-import com.example.offlinepos.hardware.PaperWidth
-import com.example.offlinepos.hardware.UsbPrinterHelper
+
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.background
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.relocation.BringIntoViewRequester
-import androidx.compose.foundation.relocation.bringIntoViewRequester
-import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.runtime.rememberCoroutineScope
-import kotlinx.coroutines.launch
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.border
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.res.painterResource
-import com.example.offlinepos.R
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Wifi
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.core.content.ContextCompat
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
-import androidx.core.content.FileProvider
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
+import com.example.offlinepos.hardware.PrinterConnectionType
+import com.example.offlinepos.hardware.ThermalPrinterManager
 
-@OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
+/**
+ * Settings Sub-page Categories for clean, decluttered navigation.
+ */
+enum class SettingsSubpage(val title: String, val icon: String) {
+    HUB("ဆက်တင် ပင်မစာမျက်နှာ", "⚙️"),
+    STORE("ဆိုင်အချက်အလက် & ပြေစာ", "🏪"),
+    HARDWARE("ပရင့်တာနှင့် စက်ကိရိယာများ", "🖨️"),
+    BACKUP("ဒေတာ အရန်သိမ်းခြင်း & Sync", "☁️"),
+    SERVER("ဝန်ထမ်းချိတ်ဆက် ဆာဗာ (Wi-Fi)", "🌐"),
+    BUSINESS("အရောင်းနှင့် လုပ်ငန်း သတ်မှတ်ချက်", "💼"),
+    SECURITY("အကောင့်နှင့် လုံခြုံရေး", "🔒"),
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
     viewModel: PosViewModel,
 ) {
     val context = LocalContext.current
+    var currentSubpage by remember { mutableStateOf(SettingsSubpage.HUB) }
+
+    // System Back Button returns to Settings Hub
+    BackHandler(enabled = currentSubpage != SettingsSubpage.HUB) {
+        currentSubpage = SettingsSubpage.HUB
+    }
+
     val storeProfile by viewModel.storeProfile.collectAsState()
-    val auditEvents by viewModel.auditEvents.collectAsState()
-
-    val scrollState = rememberScrollState()
-    val coroutineScope = rememberCoroutineScope()
-    val emailBringIntoViewRequester = remember { BringIntoViewRequester() }
-
-    var backupStatusMessage by remember { mutableStateOf<String?>(null) }
-    var pendingRestoreUri by remember { mutableStateOf<Uri?>(null) }
-    var showRestoreChoice by remember { mutableStateOf(false) }
-    var showCandlestickChart by remember {
-        mutableStateOf(context.getSharedPreferences("pos_settings", 0).getBoolean("show_sales_candlestick", true))
-    }
-
-    val googleAccount by viewModel.googleAccount.collectAsState()
-    val lastGoogleBackupTime by viewModel.lastGoogleBackupTime.collectAsState()
-    val isDriveSyncing by viewModel.isDriveSyncing.collectAsState()
-    val driveSyncStatus by viewModel.driveSyncStatus.collectAsState()
-    var googleEmailInput by remember(googleAccount) { mutableStateOf(googleAccount ?: "WINSOEMOUNG@gmail.com") }
-
-
-
-
     val isServerRunning by viewModel.isServerRunning.collectAsState()
-    val serverUrl by viewModel.serverUrl.collectAsState()
-    val serverIp by viewModel.serverIp.collectAsState()
-    val receivedCount by viewModel.serverReceivedCount.collectAsState()
-    var showServerDialog by remember { mutableStateOf(false) }
-    var settingsSection by remember { mutableStateOf("ALL") }
-
-    val serverQrBitmap = remember(serverUrl, isServerRunning) {
-        if (isServerRunning && serverUrl.isNotBlank()) {
-            QrCodeHelper.generateQrBitmap(serverUrl, 260)
-        } else null
-    }
-
-    // Store profile editing states
-    var storeName by remember(storeProfile) { mutableStateOf(storeProfile.storeName) }
-    var address by remember(storeProfile) { mutableStateOf(storeProfile.address) }
-    var phone by remember(storeProfile) { mutableStateOf(storeProfile.phone) }
-    var headerNote by remember(storeProfile) { mutableStateOf(storeProfile.headerNote) }
-    var footerMessage by remember(storeProfile) { mutableStateOf(storeProfile.footerMessage) }
-    var backupSchedule by remember(storeProfile) { mutableStateOf(storeProfile.autoBackupSchedule) }
-    var headerStyle by remember(storeProfile) { mutableStateOf(storeProfile.receiptHeaderStyle) }
-    var headerSize by remember(storeProfile) { mutableStateOf(storeProfile.receiptHeaderSize) }
-    var headerAlign by remember(storeProfile) { mutableStateOf(storeProfile.receiptHeaderAlign) }
-    var footerStyle by remember(storeProfile) { mutableStateOf(storeProfile.receiptFooterStyle) }
-    var footerSize by remember(storeProfile) { mutableStateOf(storeProfile.receiptFooterSize) }
-    var footerAlign by remember(storeProfile) { mutableStateOf(storeProfile.receiptFooterAlign) }
-
-    // Logo image picker
-    val logoPickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.PickVisualMedia()
-    ) { uri: Uri? ->
-        if (uri != null) {
-            viewModel.saveStoreLogo(uri) { success, msg ->
-                viewModel.setBanner(msg)
-            }
-        }
-    }
-
-    // Database file import picker
-    val importFileLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocument()
-    ) { uri: Uri? ->
-        if (uri != null) {
-            pendingRestoreUri = uri
-            showRestoreChoice = true
-        }
-    }
-
-    var pairedPrinters by remember { mutableStateOf<List<BluetoothDevice>>(emptyList()) }
-    var selectedPrinterAddress by remember { mutableStateOf(BluetoothPrinterHelper.selectedPrinterAddress(context)) }
-    var showPrinterModal by remember { mutableStateOf(false) }
-    var printerTestStatusMsg by remember { mutableStateOf<String?>(null) }
-    var isPrinterTesting by remember { mutableStateOf(false) }
-    val bluetoothPermissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
-    ) { pairedPrinters = BluetoothPrinterHelper.getPairedDevices(context) }
-    fun refreshBluetoothPrinters() {
-        val permissions = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
-            arrayOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT)
-        } else arrayOf(Manifest.permission.BLUETOOTH, Manifest.permission.ACCESS_FINE_LOCATION)
-        val missing = permissions.filter { ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED }
-        if (missing.isNotEmpty()) bluetoothPermissionLauncher.launch(missing.toTypedArray())
-        else pairedPrinters = BluetoothPrinterHelper.getPairedDevices(context)
-    }
-
-    val googleSignInLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        if (result.resultCode == Activity.RESULT_OK && viewModel.handleGoogleSignInResult(result.data)) {
-            backupStatusMessage = "Google Account ချိတ်ဆက်ပြီးပါပြီ။ Background Sync စတင်ပါမည်။"
-        } else {
-            backupStatusMessage = "Google Sign-In မအောင်မြင်ပါ သို့မဟုတ် ပယ်ဖျက်ခဲ့ပါသည်"
-        }
-    }
+    val googleAccount by viewModel.googleAccount.collectAsState()
+    val isDriveSyncing by viewModel.isDriveSyncing.collectAsState()
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("စနစ် သတ်မှတ်ချက်များ (Settings)", fontWeight = FontWeight.Bold) },
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (currentSubpage != SettingsSubpage.HUB) {
+                            Text(currentSubpage.icon)
+                            Spacer(modifier = Modifier.width(8.dp))
+                        }
+                        Text(
+                            text = if (currentSubpage == SettingsSubpage.HUB) "စနစ် သတ်မှတ်ချက်များ (Settings)" else currentSubpage.title,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 17.sp,
+                        )
+                    }
+                },
+                navigationIcon = {
+                    if (currentSubpage != SettingsSubpage.HUB) {
+                        IconButton(
+                            onClick = { currentSubpage = SettingsSubpage.HUB },
+                            modifier = Modifier.testTag("settings_back_to_hub")
+                        ) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back to Settings Hub")
+                        }
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    titleContentColor = MaterialTheme.colorScheme.onSurface,
+                )
             )
         },
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
@@ -217,1127 +128,301 @@ fun SettingsScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
                 .imePadding()
-                .padding(horizontal = 16.dp, vertical = 8.dp)
-                .verticalScroll(scrollState),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            Text("Settings categories", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp), contentPadding = PaddingValues(vertical = 2.dp)) {
-                items(listOf("ALL" to "အားလုံး", "STORE" to "ဆိုင်/ပြေစာ", "SYNC" to "Sync", "BUSINESS" to "လုပ်ငန်း", "SYSTEM" to "System")) { (key, label) ->
-                    FilterChip(selected = settingsSection == key, onClick = { settingsSection = key }, label = { Text(label, fontSize = 11.sp) })
-                }
-            }
-            if (settingsSection != "ALL") Text("ရွေးထားသော section ကိုသာ ပြသထားပါသည်", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(14.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)),
+            // Quick Horizontal Sub-page Chips for fast hopping
+            LazyRow(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                contentPadding = PaddingValues(vertical = 2.dp)
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(16.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("📈 နေ့စဉ်/လစဉ် အရောင်း Candlestick", fontWeight = FontWeight.Bold)
-                        Text("အရောင်းမှတ်တမ်းတွင် အရောင်ပါသော Daily / Monthly chart ပြမည်", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    Switch(
-                        checked = showCandlestickChart,
-                        onCheckedChange = {
-                            showCandlestickChart = it
-                            context.getSharedPreferences("pos_settings", 0).edit().putBoolean("show_sales_candlestick", it).apply()
-                        },
-                        modifier = Modifier.testTag("settings_candlestick_switch"),
-                    )
-                }
-            }
-
-            if (settingsSection == "ALL" || settingsSection == "SYNC") {
-            // Comprehensive Thermal Printer Manager (Bluetooth & USB)
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.55f)),
-            ) {
-                Column(modifier = Modifier.padding(14.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("🖨️ Thermal Printer Manager (Bluetooth / USB)", fontWeight = FontWeight.Bold)
-                            Text("80mm / 58mm ESC/POS ပြေစာပရင့်တာများ စီမံရန်", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        Button(
-                            onClick = { showPrinterModal = true },
-                            modifier = Modifier.height(34.dp)
-                        ) {
-                            Text("Setup / ပြောင်းမည်", fontSize = 11.sp)
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    // Current Status Pill
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(MaterialTheme.colorScheme.surface)
-                            .padding(horizontal = 10.dp, vertical = 8.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column {
-                                Text(
-                                    text = ThermalPrinterManager.getPrinterStatusSummary(context),
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 12.sp,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                                Text(
-                                    text = "စက္ကူ: ${ThermalPrinterManager.getPaperWidth(context).label} | Auto-Print: ${if (ThermalPrinterManager.isAutoPrintEnabled(context)) "ဖွင့်ထားသည်" else "ပိတ်ထားသည်"}",
-                                    fontSize = 10.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-
-                            OutlinedButton(
-                                onClick = {
-                                    isPrinterTesting = true
-                                    printerTestStatusMsg = "စမ်းသပ်ပရင့် ထုတ်နေပါသည်..."
-                                    viewModel.printTestReceipt { success, msg ->
-                                        isPrinterTesting = false
-                                        printerTestStatusMsg = msg
-                                    }
-                                },
-                                modifier = Modifier.height(32.dp),
-                                enabled = !isPrinterTesting
-                            ) {
-                                Text(if (isPrinterTesting) "ထုတ်နေသည်..." else "Test Print", fontSize = 10.sp)
-                            }
-                        }
-                    }
-
-                    printerTestStatusMsg?.let { msg ->
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text(
-                            text = msg,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = if (msg.contains("မအောင်မြင်") || msg.contains("မတွေ့") || msg.contains("လိုအပ်")) MaterialTheme.colorScheme.error else Color(0xFF059669),
-                            fontSize = 11.sp
-                        )
-                    }
-                }
-            }
-
-            }
-            if (settingsSection == "ALL" || settingsSection == "STORE") {
-            // Store Owner Header Profile Card
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f)
-                ),
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Box(contentAlignment = Alignment.BottomEnd) {
-                        StoreLogoAvatar(
-                            customLogoPath = storeProfile.customLogoPath,
-                            contentDescription = "Lady Store Owner",
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier
-                                .size(74.dp)
-                                .clip(CircleShape)
-                                .border(2.5.dp, MaterialTheme.colorScheme.primary, CircleShape),
-                            onClick = {
-                                try {
-                                    logoPickerLauncher.launch(
-                                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                                    )
-                                } catch (e: Exception) {
-                                    viewModel.setBanner("ပုံရွေးချယ်မှု မအောင်မြင်ပါ: ${e.localizedMessage}")
-                                }
-                            }
-                        )
-                        Surface(
-                            shape = CircleShape,
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(24.dp),
-                            shadowElevation = 2.dp,
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Text("📷", fontSize = 11.sp)
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.width(14.dp))
-
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = storeProfile.storeName,
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.ExtraBold,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
-                        )
-                        Text(
-                            text = "ဆိုင်ရှင် / မန်နေဂျာ (Store Manager)",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.primary,
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                        Text(
-                            text = "ဖုန်း: ${storeProfile.phone}",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
-                        )
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            OutlinedButton(
-                                onClick = {
-                                    try {
-                                        logoPickerLauncher.launch(
-                                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                                        )
-                                    } catch (e: Exception) {
-                                        viewModel.setBanner("ပုံရွေးချယ်မှု မအောင်မြင်ပါ: ${e.localizedMessage}")
-                                    }
-                                },
-                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                                modifier = Modifier.height(34.dp).testTag("change_store_logo_button"),
-                            ) {
-                                Text("🖼️ ပုံပြောင်းမည်", fontSize = 11.5.sp)
-                            }
-
-                            if (!storeProfile.customLogoPath.isNullOrBlank()) {
-                                TextButton(
-                                    onClick = { viewModel.resetStoreLogo() },
-                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                                    modifier = Modifier.height(34.dp).testTag("reset_store_logo_button"),
-                                ) {
-                                    Text("မူလပုံ ပြန်ထားမည်", fontSize = 11.sp, color = MaterialTheme.colorScheme.error)
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            }
-            if (settingsSection == "ALL" || settingsSection == "STORE") {
-            // Store & Receipt Customization Card
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                border = CardDefaults.outlinedCardBorder(),
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text(
-                        text = "ဆိုင်အချက်အလက်နှင့် ပြေစာ (Receipt) ပြင်ဆင်ရန်",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "ဤအချက်အလက်များသည် 80mm Bluetooth Thermal ပြေစာနှင့် အက်ပ်တွင် အလိုအလျောက် ပေါ်မည်ဖြစ်ပါသည်",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    OutlinedTextField(
-                        value = storeName,
-                        onValueChange = { storeName = it },
-                        label = { Text("ဆိုင်အမည် (Store Name)") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth().testTag("store_name_input"),
-                    )
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    OutlinedTextField(
-                        value = headerNote,
-                        onValueChange = { headerNote = it },
-                        label = { Text("ခေါင်းစီးစာသား (Header Note / Slogan)") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth().testTag("store_header_input"),
-                    )
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    OutlinedTextField(
-                        value = address,
-                        onValueChange = { address = it },
-                        label = { Text("ဆိုင်လိပ်စာ (Address)") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth().testTag("store_address_input"),
-                    )
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    OutlinedTextField(
-                        value = phone,
-                        onValueChange = { phone = it },
-                        label = { Text("ဆက်သွယ်ရန် ဖုန်းနံပါတ် (Phone)") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth().testTag("store_phone_input"),
-                    )
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    OutlinedTextField(
-                        value = footerMessage,
-                        onValueChange = { footerMessage = it },
-                        label = { Text("အောက်ခြေ နှုတ်ခွန်းဆက်စာသား (Footer Message)") },
-                        minLines = 2,
-                        modifier = Modifier.fillMaxWidth().testTag("store_footer_input"),
-                    )
-
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Text("ပြေစာ Header ဒီဇိုင်း", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                    ReceiptStyleSelector("စာလုံးပုံစံ", headerStyle, listOf("NORMAL" to "ပုံမှန်", "BOLD" to "ထူ", "ITALIC" to "စောင်း", "BOLD_ITALIC" to "ထူ/စောင်း")) { headerStyle = it }
-                    ReceiptStyleSelector("စာလုံးအရွယ်", headerSize, listOf("SMALL" to "သေး", "MEDIUM" to "အလယ်", "LARGE" to "ကြီး")) { headerSize = it }
-                    ReceiptStyleSelector("နေရာချထားမှု", headerAlign, listOf("LEFT" to "ဘယ်", "CENTER" to "အလယ်", "RIGHT" to "ညာ")) { headerAlign = it }
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text("ပြေစာ Footer ဒီဇိုင်း", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                    ReceiptStyleSelector("စာလုံးပုံစံ", footerStyle, listOf("NORMAL" to "ပုံမှန်", "BOLD" to "ထူ", "ITALIC" to "စောင်း", "BOLD_ITALIC" to "ထူ/စောင်း")) { footerStyle = it }
-                    ReceiptStyleSelector("စာလုံးအရွယ်", footerSize, listOf("SMALL" to "သေး", "MEDIUM" to "အလယ်", "LARGE" to "ကြီး")) { footerSize = it }
-                    ReceiptStyleSelector("နေရာချထားမှု", footerAlign, listOf("LEFT" to "ဘယ်", "CENTER" to "အလယ်", "RIGHT" to "ညာ")) { footerAlign = it }
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    Button(
-                        onClick = {
-                            viewModel.updateStoreProfile(
-                                storeProfile.copy(
-                                    storeName = storeName.trim(),
-                                    address = address.trim(),
-                                    phone = phone.trim(),
-                                    headerNote = headerNote.trim(),
-                                    footerMessage = footerMessage.trim(),
-                                    autoBackupSchedule = backupSchedule,
-                                    receiptHeaderStyle = headerStyle,
-                                    receiptHeaderSize = headerSize,
-                                    receiptHeaderAlign = headerAlign,
-                                    receiptFooterStyle = footerStyle,
-                                    receiptFooterSize = footerSize,
-                                    receiptFooterAlign = footerAlign,
-                                )
-                            )
-                        },
-                        modifier = Modifier.fillMaxWidth().testTag("save_store_profile_button"),
-                    ) {
-                        Text("ဆိုင်အချက်အလက်များ သိမ်းဆည်းမည်")
-                    }
-                }
-            }
-
-            }
-            if (settingsSection == "ALL" || settingsSection == "SYNC") {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(14.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.55f)),
-            ) {
-                Column(modifier = Modifier.padding(14.dp)) {
-                    Text("🔄 Two-device Record Sync", fontWeight = FontWeight.Bold)
-                    Text("Owner phone နှင့် cashier phone အတွက် SKU-based product identity သုံးပါသည်။ Conflict ဖြစ်လျှင် နောက်ဆုံးပြင်ဆင်ထားသော record ကို ဦးစားပေးပါသည်။", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Spacer(modifier = Modifier.height(6.dp))
-                    val recordSyncPrefs = context.getSharedPreferences("pos_sync_status", 0)
-                    val recordSyncTime = recordSyncPrefs.getLong("last_record_sync_ms", 0L)
-                    Text(if (recordSyncTime > 0L) "Last record merge: ${SimpleDateFormat("dd/MM/yyyy hh:mm a", Locale.getDefault()).format(Date(recordSyncTime))}" else "Record merge sync မလုပ်ရသေးပါ", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-                    Text("Delete များကို tombstone ဖြင့် sync ပြုလုပ်ပါသည်။ Internet မရှိလျှင် နောက်တစ်ကြိမ် ပြန်ကြိုးစားပါမည်။", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
-            // Tax is intentionally disabled for this store. All checkout totals remain tax-free (0%).
-            // Database Backup, Export & Import, Google Drive
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                border = CardDefaults.outlinedCardBorder(),
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text(
-                        text = "ဒေတာဘေ့စ် Backup၊ Export / Import နှင့် Google Drive",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "အရောင်းမှတ်တမ်းများ၊ ပစ္စည်းစာရင်းများကို သိမ်းဆည်းရန် သို့မဟုတ် Google Drive သို့ တင်ရန်",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    Text("အလိုအလျောက် Backup အချိန်ဇယား:", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        listOf("DAILY" to "နေ့စဉ် (Daily)", "WEEKLY" to "အပတ်စဉ် (Weekly)", "MONTHLY" to "လစဉ် (Monthly)").forEach { (key, label) ->
-                            FilterChip(
-                                selected = backupSchedule == key,
-                                onClick = {
-                                    backupSchedule = key
-                                    viewModel.updateStoreProfile(storeProfile.copy(autoBackupSchedule = key))
-                                },
-                                label = { Text(label, fontSize = 11.sp) },
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        // Export & Share to Google Drive
-                        Button(
-                            onClick = {
-                                try {
-                                    val exported = viewModel.exportDatabaseFile()
-                                    if (exported != null) {
-                                        val uri: Uri = try {
-                                            FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", exported)
-                                        } catch (e: Exception) {
-                                            Uri.fromFile(exported)
-                                        }
-                                        val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                            type = "application/octet-stream"
-                                            putExtra(Intent.EXTRA_STREAM, uri)
-                                            putExtra(Intent.EXTRA_SUBJECT, "san thit POS ဒေတာ Backup")
-                                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                        }
-                                        context.startActivity(Intent.createChooser(shareIntent, "Google Drive သို့ Upload ရန် သို့မဟုတ် ဖိုင်သိမ်းရန်"))
-                                        backupStatusMessage = "Backup ဖိုင် (${exported.name}) ကို အောင်မြင်စွာ ထုတ်ယူပြီးပါပြီ"
-                                    } else {
-                                        backupStatusMessage = "Backup ထုတ်ယူခြင်း မအောင်မြင်ပါ"
-                                    }
-                                } catch (e: Exception) {
-                                    backupStatusMessage = "Backup လုပ်ဆောင်ရာတွင် ချို့ယွင်းချက်ဖြစ်ပေါ်ပါသည်: ${e.localizedMessage}"
-                                }
-                            },
-                            modifier = Modifier.weight(1f).testTag("export_backup_button"),
-                        ) {
-                            Text("☁️ Google Drive သို့ တင်ရန် / Export", fontSize = 12.sp)
-                        }
-
-                        // Import & Restore
-                        OutlinedButton(
-                            onClick = {
-                                try {
-                                    importFileLauncher.launch(arrayOf("*/*"))
-                                } catch (e: Exception) {
-                                    backupStatusMessage = "ဖိုင်ရွေးချယ်မှုကို ဖွင့်မရပါ: ${e.localizedMessage}"
-                                }
-                            },
-                            modifier = Modifier.weight(0.7f).testTag("import_backup_button"),
-                        ) {
-                            Text("📥 Restore ပြန်တင်မည်", fontSize = 12.sp)
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(12.dp))
-                    HorizontalDivider()
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    Text("👤 Google Account ဖြင့် အရန်သိမ်းဆည်းရန် Log In / Sync:", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-                    Spacer(modifier = Modifier.height(6.dp))
-
-                    if (googleAccount != null) {
-                        Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f),
-                            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
-                        ) {
-                            Column(modifier = Modifier.padding(10.dp)) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text("✅ ချိတ်ဆက်ထားသော Google Account:", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    Surface(
-                                        shape = RoundedCornerShape(4.dp),
-                                        color = Color(0xFFDCFCE7),
-                                    ) {
-                                        Text(
-                                            "⚡ Real-time Auto-sync Active",
-                                            fontSize = 9.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = Color(0xFF15803D),
-                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                        )
-                                    }
-                                }
-                                Text(googleAccount!!, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = MaterialTheme.colorScheme.primary)
-
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text(
-                                    "✨ ပစ္စည်းအသစ်သွင်းခြင်း၊ အရောင်းဘေလ်ဖွင့်ခြင်း၊ ငွေစာရင်းပြင်ဆင်တိုင်း Drive သို့ ချက်ချင်း Auto-sync လုပ်ပေးပါသည်။ အင်တာနက်မရှိပါက Queue တွင် စောင့်ဆိုင်းပြီး လိုင်းရသည်နှင့် အလိုအလျောက် ပို့ပေးပါသည် (Offline-first Resilience)။",
-                                    fontSize = 10.sp,
-                                    color = Color(0xFF475569),
-                                    lineHeight = 14.sp
-                                )
-
-                                Spacer(modifier = Modifier.height(4.dp))
-                                if (isDriveSyncing) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        CircularProgressIndicator(modifier = Modifier.size(12.dp), strokeWidth = 1.5.dp)
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Text(driveSyncStatus ?: "Google Drive သို့ Sync လုပ်နေပါသည်...", fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
-                                    }
-                                } else {
-                                    driveSyncStatus?.let { status ->
-                                        Text(status, fontSize = 11.sp, color = if (status.contains("မအောင်မြင်") || status.contains("ပြတ်တောက်") || status.contains("စောင့်ဆိုင်း") || status.contains("အော့ဖ်လိုင်း")) Color(0xFFD97706) else Color(0xFF15803D))
-                                    }
-                                }
-
-                                if (lastGoogleBackupTime > 0) {
-                                    val formattedTime = SimpleDateFormat("dd/MM/yyyy hh:mm a", Locale.getDefault()).format(Date(lastGoogleBackupTime))
-                                    Text("နောက်ဆုံး Backup လုပ်ခဲ့သည့်အချိန်: $formattedTime", fontSize = 11.sp, color = Color(0xFF15803D))
-                                } else {
-                                    Text("Google Drive သို့ Backup မပြုလုပ်ရသေးပါ", fontSize = 11.sp, color = Color.Gray)
-                                }
-                            }
-                        }
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            OutlinedButton(
-                                onClick = { viewModel.disconnectGoogleAccount() },
-                                modifier = Modifier.weight(1f).testTag("disconnect_google_button"),
-                                shape = RoundedCornerShape(8.dp)
-                            ) {
-                                Text("အကောင့်ဖြုတ်မည်", fontSize = 11.sp, color = MaterialTheme.colorScheme.error)
-                            }
-                            Button(
-                                onClick = { viewModel.syncGoogleDriveNow { _, message -> backupStatusMessage = message } },
-                                modifier = Modifier.weight(1.3f).testTag("backup_to_drive_button"),
-                                shape = RoundedCornerShape(8.dp),
-                                enabled = !isDriveSyncing
-                            ) {
-                                if (isDriveSyncing) {
-                                    CircularProgressIndicator(modifier = Modifier.size(14.dp), color = Color.White, strokeWidth = 2.dp)
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text("Syncing...", fontSize = 11.sp)
-                                } else {
-                                    Text("☁️ Sync Now", fontSize = 11.sp)
-                                }
-                            }
-                        }
-                    } else {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .bringIntoViewRequester(emailBringIntoViewRequester)
-                        ) {
-                            OutlinedTextField(
-                                value = googleEmailInput,
-                                onValueChange = {
-                                    googleEmailInput = it
-                                    coroutineScope.launch {
-                                        emailBringIntoViewRequester.bringIntoView()
-                                    }
-                                },
-                                label = { Text("Google အကောင့် (Gmail)") },
-                                placeholder = { Text("WINSOEMOUNG@gmail.com") },
-                                singleLine = true,
-                                keyboardOptions = KeyboardOptions(
-                                    keyboardType = KeyboardType.Email,
-                                    imeAction = ImeAction.Done,
-                                ),
-                                keyboardActions = KeyboardActions(
-                                    onDone = {
-                                        if (googleEmailInput.isNotBlank() && googleEmailInput.contains("@")) {
-                                            viewModel.connectGoogleAccount(googleEmailInput.trim())
-                                            backupStatusMessage = "Google Account ($googleEmailInput) ချိတ်ဆက်ပြီးပါပြီ။"
-                                        } else {
-                                            viewModel.setBanner("မှန်ကန်သော Email လိပ်စာ ရိုက်ထည့်ပါ")
-                                        }
-                                    }
-                                ),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .onFocusChanged { focusState ->
-                                        if (focusState.isFocused) {
-                                            coroutineScope.launch {
-                                                emailBringIntoViewRequester.bringIntoView()
-                                            }
-                                        }
-                                    }
-                                    .testTag("google_account_input"),
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                Button(
-                                    onClick = {
-                                        if (googleEmailInput.isNotBlank() && googleEmailInput.contains("@")) {
-                                            viewModel.connectGoogleAccount(googleEmailInput.trim())
-                                            backupStatusMessage = "Google Account ($googleEmailInput) ချိတ်ဆက်ပြီးပါပြီ။"
-                                        } else {
-                                            viewModel.setBanner("မှန်ကန်သော Email လိပ်စာ ရိုက်ထည့်ပါ")
-                                        }
-                                    },
-                                    modifier = Modifier.weight(1f).testTag("save_email_account_button"),
-                                    shape = RoundedCornerShape(8.dp)
-                                ) {
-                                    Text("✉️ ချိတ်ဆက်မည်", fontSize = 12.sp)
-                                }
-                                Button(
-                                    onClick = { googleSignInLauncher.launch(viewModel.googleSignInIntent()) },
-                                    modifier = Modifier.weight(1.3f).testTag("connect_google_account_button"),
-                                    shape = RoundedCornerShape(8.dp)
-                                ) {
-                                    Text("🔐 Google Sign-In", fontSize = 12.sp)
-                                }
-                            }
-                        }
-                    }
-
-                    backupStatusMessage?.let {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
-                    }
-                }
-            }
-
-            }
-            if (settingsSection == "ALL" || settingsSection == "BUSINESS") {
-            // Quick Business Management Hub
-            var showCustomerDialog by remember { mutableStateOf(false) }
-            var showStockInDialog by remember { mutableStateOf(false) }
-            var showShiftReportDialog by remember { mutableStateOf(false) }
-
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)),
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text("🏢 ဆိုင်စီမံခန့်ခွဲမှု အမြန်လမ်းကြောင်း (Quick Hub)", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        OutlinedButton(
-                            onClick = { showCustomerDialog = true },
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(10.dp)
-                        ) {
-                            Text("👥 ဝယ်သူ & အကြွေး", fontSize = 11.sp)
-                        }
-                        OutlinedButton(
-                            onClick = { showStockInDialog = true },
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(10.dp)
-                        ) {
-                            Text("📦 ပစ္စည်းအဝင်", fontSize = 11.sp)
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    Button(
-                        onClick = { showShiftReportDialog = true },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(10.dp)
-                    ) {
-                        Text("📑 နေ့ချုပ်ပိတ်သိမ်းခြင်း (Z-Report စစ်ဆေးမည်)")
-                    }
-                }
-            }
-
-            if (showCustomerDialog) {
-                CustomerManagementDialog(viewModel = viewModel, onDismiss = { showCustomerDialog = false })
-            }
-            if (showStockInDialog) {
-                StockInDialog(viewModel = viewModel, onDismiss = { showStockInDialog = false })
-            }
-            if (showShiftReportDialog) {
-                ShiftReportDialog(viewModel = viewModel, onDismiss = { showShiftReportDialog = false })
-            }
-
-            }
-            if (settingsSection == "ALL" || settingsSection == "BUSINESS") {
-            // AI Superuser Privileges & Promo Code Card
-            var aiSuperuserEnabled by remember { mutableStateOf(viewModel.isAiSuperuserGranted()) }
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                border = CardDefaults.outlinedCardBorder(),
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "🛡️ AI Superuser အခွင့်အရေးနှင့် Promo Code များ",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text(
-                        text = "AI ထံ အမိန့်ပေးလိုက်သောအခါ 787 စနစ်ထဲမှ Code အသစ်ထည့်ခြင်း၊ Code အစားထိုးခြင်း၊ ဈေးနှုန်းနှင့် အခွန်နှုန်း ပြုပြင်ခြင်း အခွင့်အရေး အပြည့်အဝ ပေးထားပါသည်။",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "AI Code Privileges",
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.SemiBold,
-                            )
-                            Text(
-                                text = if (aiSuperuserEnabled) "အခွင့်အရေး ရရှိထားသည် (Authorized)" else "ပိတ်ထားသည်",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = if (aiSuperuserEnabled) Color(0xFF15803D) else MaterialTheme.colorScheme.error,
-                                fontWeight = FontWeight.Bold,
-                            )
-                        }
-                        Switch(
-                            checked = aiSuperuserEnabled,
-                            onCheckedChange = {
-                                aiSuperuserEnabled = it
-                                viewModel.setAiSuperuserGranted(it)
-                                viewModel.setBanner(if (it) "AI Superuser အခွင့်အရေး ဖွင့်လှစ်ပြီးပါပြီ" else "AI အခွင့်အရေး ပိတ်ထားပါသည်")
-                            },
-                            modifier = Modifier.testTag("settings_ai_superuser_switch")
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(10.dp))
-                    HorizontalDivider()
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    Text("🎟️ လက်ရှိ အသုံးပြုနိုင်သော Promo Code များ:", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-                    Spacer(modifier = Modifier.height(4.dp))
-                    val promos = viewModel.getPromoCodes()
-                    promos.forEach { p ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 3.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text("• ${p.code}: ${p.description}", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                            Surface(
-                                shape = RoundedCornerShape(6.dp),
-                                color = MaterialTheme.colorScheme.primaryContainer,
-                            ) {
-                                val discLabel = if (p.discountPercent > 0) "${p.discountPercent}% Off" else "${"%,d".format(p.discountFlatMinor)} Ks Off"
-                                Text(
-                                    text = discLabel,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-
-            }
-            if (settingsSection == "ALL" || settingsSection == "SYSTEM") {
-            // 15C Main POS Server & Direct HTML5 Web Portal
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                border = CardDefaults.outlinedCardBorder()
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Surface(
-                                shape = RoundedCornerShape(8.dp),
-                                color = MaterialTheme.colorScheme.primaryContainer,
-                                modifier = Modifier.size(38.dp)
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Icon(
-                                        Icons.Default.Wifi,
-                                        contentDescription = "Main POS Server Logo",
-                                        tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(22.dp)
-                                    )
-                                }
-                            }
-                            Spacer(modifier = Modifier.width(10.dp))
-                            Column {
-                                Text("🌐 Main POS Server (15C)", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                                Text("Direct HTML5 Web Portal စနစ်", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
-                            }
-                        }
-
-                        Surface(
-                            shape = RoundedCornerShape(12.dp),
-                            color = if (isServerRunning) Color(0xFFDCFCE7) else Color(0xFFFEE2E2),
-                        ) {
-                            Text(
-                                text = if (isServerRunning) "📡 Server ON" else "📡 Server OFF",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = if (isServerRunning) Color(0xFF15803D) else Color(0xFFB91C1C),
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text("ဖုန်းထဲတွင် App မသွင်းလိုသော ဝန်ထမ်းများအတွက် Chrome/Browser မှတစ်ဆင့် Server IP သို့ ဝင်ရောက်၍ ကုန်ပစ္စည်းလှမ်းထည့်သည့် စနစ်", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    Surface(
-                        shape = RoundedCornerShape(10.dp),
-                        color = if (isServerRunning) Color(0xFFDCFCE7) else Color(0xFFFEE2E2),
-                        modifier = Modifier.fillMaxWidth(),
-                        onClick = {
-                            if (isServerRunning) viewModel.stopLocalServer() else viewModel.startLocalServer()
-                        }
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = if (isServerRunning) "🟢 Server Online (လည်ပတ်နေပါသည်)" else "🔴 Server ရပ်တန့်ထားပါသည် (နှိပ်၍ ပြန်ဖွင့်နိုင်သည်)",
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 13.sp,
-                                    color = if (isServerRunning) Color(0xFF15803D) else Color(0xFFB91C1C)
-                                )
-                                if (isServerRunning) {
-                                    Text(
-                                        text = "Web Portal: $serverUrl",
-                                        fontSize = 11.5.sp,
-                                        color = Color(0xFF166534),
-                                        fontWeight = FontWeight.Bold,
-                                        fontFamily = FontFamily.Monospace
-                                    )
-                                    Text(
-                                        text = "ဝန်ထမ်းများထံမှ လက်ခံရရှိမှု: $receivedCount ခု",
-                                        fontSize = 11.sp,
-                                        color = Color(0xFF166534)
-                                    )
-                                }
-                            }
-
-                            Switch(
-                                checked = isServerRunning,
-                                onCheckedChange = { start ->
-                                    if (start) viewModel.startLocalServer() else viewModel.stopLocalServer()
-                                },
-                                modifier = Modifier.testTag("server_toggle_switch")
-                            )
-                        }
-                    }
-
-                    if (!isServerRunning) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Button(
-                            onClick = { viewModel.startLocalServer() },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF16A34A)),
-                            shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier.fillMaxWidth().testTag("start_server_button")
-                        ) {
-                            Text("▶️ Server စတင်ဖွင့်မည် (Turn Server ON)", fontWeight = FontWeight.Bold, color = Color.White)
-                        }
-                    }
-
-                    if (isServerRunning) {
-                        Spacer(modifier = Modifier.height(10.dp))
-
-                        // URL Buttons
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            OutlinedButton(
-                                onClick = {
-                                    val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                    cm.setPrimaryClip(ClipData.newPlainText("Server Web Portal URL", serverUrl))
-                                    Toast.makeText(context, "Web Portal လိပ်စာ ကူးယူပြီးပါပြီ:\n$serverUrl", Toast.LENGTH_SHORT).show()
-                                },
-                                modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(8.dp),
-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
-                            ) {
-                                Text("📋 Link ကူးယူမည်", fontSize = 11.5.sp)
-                            }
-
-                            Button(
-                                onClick = {
-                                    try {
-                                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(serverUrl)).apply {
-                                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                        }
-                                        context.startActivity(intent)
-                                    } catch (e: Exception) {
-                                        Toast.makeText(context, "Browser ဖွင့်မရပါ: ${e.message}", Toast.LENGTH_SHORT).show()
-                                    }
-                                },
-                                modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(8.dp),
-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
-                            ) {
-                                Text("🌐 Web Portal ဖွင့်မည်", fontSize = 11.5.sp)
-                            }
-                        }
-
-                        // Direct QR Code display inside Settings
-                        serverQrBitmap?.let { qr ->
-                            Spacer(modifier = Modifier.height(10.dp))
-                            Card(
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(10.dp),
-                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
-                            ) {
-                                Column(
-                                    modifier = Modifier.padding(12.dp),
-                                    horizontalAlignment = Alignment.CenterHorizontally
-                                ) {
-                                    Text("📱 ဖုန်း Camera ဖြင့် Scan ဖတ်၍ Portal တိုက်ရိုက်ဖွင့်ရန် QR", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                    Image(
-                                        bitmap = qr.asImageBitmap(),
-                                        contentDescription = "Server QR Code",
-                                        modifier = Modifier
-                                            .size(160.dp)
-                                            .clip(RoundedCornerShape(8.dp))
-                                            .background(Color.White)
-                                            .padding(6.dp)
-                                    )
-                                    Spacer(modifier = Modifier.height(6.dp))
-                                    Text(
-                                        text = "Wi-Fi ကွန်ရက်တစ်ခုတည်းတွင် ဝန်ထမ်းဖုန်းဖြင့် Scan ဖတ်ပါက Chrome/Browser ဖြင့် Direct Web Portal သို့ စက္ကန့်ပိုင်းအတွင်း တိုက်ရိုက်ရောက်ရှိပါမည်",
-                                        fontSize = 10.5.sp,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        lineHeight = 15.sp,
-                                        modifier = Modifier.fillMaxWidth()
-                                    )
-                                }
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(10.dp))
-
-                        // Features summary
-                        Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Column(modifier = Modifier.padding(10.dp)) {
-                                Text("✨ Remote Product Addition အင်္ဂါရပ်များ:", fontWeight = FontWeight.Bold, fontSize = 11.5.sp)
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text("• ဝန်ထမ်းအမည် (Staff Name) ထည့်သွင်းခြင်း", fontSize = 10.5.sp)
-                                Text("• ကုန်ပစ္စည်းအမည်၊ အမျိုးအစား (Categories) ရွေးချယ်ခြင်း၊ ယူနစ်", fontSize = 10.5.sp)
-                                Text("• ကင်မရာဖြင့် Barcode Scan ဖတ်ခြင်း သို့မဟုတ် SKU ထည့်သွင်းခြင်း", fontSize = 10.5.sp)
-                                Text("• ရောင်းဈေး၊ ဝယ်ရင်းဈေး၊ လက်ကျန်အရေအတွက် နှင့် သတိပေးလက်ကျန် သတ်မှတ်ခြင်း", fontSize = 10.5.sp)
-                                Text("• ပေါင်းထည့်လိုက်သော ပစ္စည်းများ Database ထဲသို့ တိုက်ရိုက်ရောက်ရှိခြင်း", fontSize = 10.5.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF15803D))
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        OutlinedButton(
-                            onClick = { showServerDialog = true },
-                            modifier = Modifier.weight(1f).testTag("open_server_status_btn"),
-                            shape = RoundedCornerShape(8.dp),
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
-                        ) {
-                            Text("📡 Fullscreen QR & Status", fontSize = 11.sp)
-                        }
-
-                        Button(
-                            onClick = { viewModel.setStaffClientMode(true) },
-                            modifier = Modifier.weight(1f).testTag("switch_to_client_mode_btn"),
-                            shape = RoundedCornerShape(8.dp),
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
-                        ) {
-                            Text("📱 ဝန်ထမ်း Client App သို့", fontSize = 11.sp)
-                        }
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            }
-            // Terminal Information
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text("စနစ် အချက်အလက်များ", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text("• ဆိုင်: ${storeProfile.storeName}", style = MaterialTheme.typography.bodySmall)
-                    Text("• ဗားရှင်း: TR_POS.apk", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                    Text("• Direct HTML5 Web Portal: Chrome/Browser မှတစ်ဆင့် ကုန်ပစ္စည်းထည့်သွင်းစနစ် ပါဝင်ပြီး", style = MaterialTheme.typography.bodySmall)
-                    Text("• ဆာဗာ အဆင့်: Local Embedded HTTP REST & WebSocket (Port 8787)", style = MaterialTheme.typography.bodySmall)
-                    Text("• ဆိုင်ဝန်ထမ်း Client စနစ်: client.apk နှင့် HTML5 Web App အပြည့်အစုံ", style = MaterialTheme.typography.bodySmall)
-                    Text("• AI အဆင့်: Gemini 3.5 Flash Online + Superuser Local NLP Engine", style = MaterialTheme.typography.bodySmall)
-                    Text("• Bluetooth Printer ပုံစံ: 80x80mm ESC/POS Thermal (576 dots)", style = MaterialTheme.typography.bodySmall)
-                    Text("• မြန်မာစာ ပရင့်စနစ်: Native High-Resolution Canvas Rendering", style = MaterialTheme.typography.bodySmall)
-                    Text("• သိမ်းဆည်းမှု စနစ်: SQLite Room Database (အော့ဖ်လိုင်းအသုံးပြုနိုင်)", style = MaterialTheme.typography.bodySmall)
-                }
-            }
-            Spacer(modifier = Modifier.height(96.dp))
-        }
-    }
-
-    if (showRestoreChoice && pendingRestoreUri != null) {
-        Dialog(onDismissRequest = {
-            showRestoreChoice = false
-            pendingRestoreUri = null
-        }) {
-            Surface(
-                shape = RoundedCornerShape(16.dp),
-                color = MaterialTheme.colorScheme.surface,
-                modifier = Modifier.padding(16.dp),
-            ) {
-                Column(modifier = Modifier.padding(20.dp)) {
-                    Text("Choose Database Import Mode", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        "Replace mode သည် လက်ရှိ database တစ်ခုလုံးကို backup file ဖြင့် အစားထိုးမည်။ Merge mode သည် Product များကိုသာ ပေါင်းထည့်ပြီး ရှိပြီးသား data များကို မဖျက်ပါ။",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Button(
-                        onClick = {
-                            val uri = pendingRestoreUri
-                            showRestoreChoice = false
-                            pendingRestoreUri = null
-                            if (uri != null) viewModel.importDatabaseFile(uri) { success, msg ->
-                                backupStatusMessage = msg
-                                viewModel.setBanner(msg)
-                                if (success) (context as? Activity)?.recreate()
+                items(SettingsSubpage.values()) { page ->
+                    val isSelected = currentSubpage == page
+                    FilterChip(
+                        selected = isSelected,
+                        onClick = { currentSubpage = page },
+                        label = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(page.icon, fontSize = 12.sp)
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(if (page == SettingsSubpage.HUB) "အားလုံး (Hub)" else page.title.take(12), fontSize = 11.sp)
                             }
                         },
-                        modifier = Modifier.fillMaxWidth(),
-                    ) { Text("Replace Current Database") }
-                    Spacer(modifier = Modifier.height(8.dp))
-                    OutlinedButton(
-                        onClick = {
-                            val uri = pendingRestoreUri
-                            showRestoreChoice = false
-                            pendingRestoreUri = null
-                            if (uri != null) viewModel.mergeProductsFromDatabase(uri) { success, msg ->
-                                backupStatusMessage = msg
-                                viewModel.setBanner(msg)
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                    ) { Text("Merge Products Only") }
-                    Spacer(modifier = Modifier.height(4.dp))
-                    TextButton(
-                        onClick = {
-                            showRestoreChoice = false
-                            pendingRestoreUri = null
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                    ) { Text("Cancel") }
+                        modifier = Modifier.testTag("settings_tab_${page.name.lowercase()}")
+                    )
+                }
+            }
+
+            // Render selected Sub-page
+            when (currentSubpage) {
+                SettingsSubpage.HUB -> {
+                    SettingsMainHub(
+                        viewModel = viewModel,
+                        onNavigate = { currentSubpage = it }
+                    )
+                }
+                SettingsSubpage.STORE -> {
+                    SettingsStoreSubpage(viewModel = viewModel)
+                }
+                SettingsSubpage.HARDWARE -> {
+                    SettingsHardwareSubpage(viewModel = viewModel)
+                }
+                SettingsSubpage.BACKUP -> {
+                    SettingsBackupSubpage(viewModel = viewModel)
+                }
+                SettingsSubpage.SERVER -> {
+                    SettingsServerSubpage(viewModel = viewModel)
+                }
+                SettingsSubpage.BUSINESS -> {
+                    SettingsBusinessSubpage(viewModel = viewModel)
+                }
+                SettingsSubpage.SECURITY -> {
+                    SettingsSecuritySubpage(viewModel = viewModel)
                 }
             }
         }
-    }
-    if (showServerDialog) {
-        ServerStatusDialog(
-            viewModel = viewModel,
-            onDismiss = { showServerDialog = false },
-            onOpenStaffClient = {
-                showServerDialog = false
-                viewModel.setStaffClientMode(true)
-            }
-        )
-    }
-    if (showPrinterModal) {
-        ThermalPrinterDialog(
-            viewModel = viewModel,
-            onDismiss = {
-                showPrinterModal = false
-                refreshBluetoothPrinters()
-            }
-        )
     }
 }
 
-
+/**
+ * Clean, organized Settings Main Hub Menu.
+ */
 @Composable
-private fun ReceiptStyleSelector(
-    label: String,
-    selected: String,
-    options: List<Pair<String, String>>,
-    onSelected: (String) -> Unit,
+private fun SettingsMainHub(
+    viewModel: PosViewModel,
+    onNavigate: (SettingsSubpage) -> Unit,
 ) {
-    Column(modifier = Modifier.fillMaxWidth().padding(top = 6.dp)) {
-        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp), contentPadding = PaddingValues(vertical = 4.dp)) {
-            items(options) { (value, title) ->
-                FilterChip(
-                    selected = selected == value,
-                    onClick = { onSelected(value) },
-                    label = { Text(title, fontSize = 11.sp) },
+    val context = LocalContext.current
+    val scrollState = rememberScrollState()
+    val storeProfile by viewModel.storeProfile.collectAsState()
+    val isServerRunning by viewModel.isServerRunning.collectAsState()
+    val googleAccount by viewModel.googleAccount.collectAsState()
+    val isDriveSyncing by viewModel.isDriveSyncing.collectAsState()
+
+    val printerConnected = ThermalPrinterManager.getConnectionType(context) != PrinterConnectionType.NONE
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(scrollState)
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        // Store Manager Overview Header
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+            ),
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                StoreLogoAvatar(
+                    customLogoPath = storeProfile.customLogoPath,
+                    contentDescription = "Store Logo",
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .size(56.dp)
+                        .clip(CircleShape)
+                        .border(2.dp, MaterialTheme.colorScheme.primary, CircleShape),
+                    onClick = { onNavigate(SettingsSubpage.STORE) }
+                )
+
+                Spacer(modifier = Modifier.width(14.dp))
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = storeProfile.storeName,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    )
+                    Text(
+                        text = "ဆိုင်အချက်အလက်၊ ပရင့်တာ၊ Cloud နှင့် လုံခြုံရေး သတ်မှတ်ချက်များ",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+            }
+        }
+
+        Text(
+            text = "ဆက်တင် ကဏ္ဍများ (Settings Categories)",
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.padding(top = 4.dp)
+        )
+
+        // 1. Store Profile & Receipts Subpage Tile
+        SettingsCategoryTile(
+            icon = "🏪",
+            title = "ဆိုင်အချက်အလက်နှင့် ပြေစာဒီဇိုင်း",
+            subtitle = "ဆိုင်အမည်၊ လိပ်စာ၊ ဖုန်း၊ Logo တံဆိပ်၊ ပြေစာ Header/Footer နှင့် စာလုံးစတိုင်များ",
+            badgeText = null,
+            badgeColor = null,
+            onClick = { onNavigate(SettingsSubpage.STORE) },
+            testTag = "tile_settings_store"
+        )
+
+        // 2. Hardware & Thermal Printers Subpage Tile
+        SettingsCategoryTile(
+            icon = "🖨️",
+            title = "ပရင့်တာနှင့် စက်ကိရိယာများ",
+            subtitle = "Thermal Printer (Bluetooth & USB)၊ Auto-Print ဘေလ်ထုတ်စနစ်၊ 80mm/58mm စက္ကူနှင့် စမ်းသပ်ပရင့်",
+            badgeText = if (printerConnected) "✓ Connected" else "Setup",
+            badgeColor = if (printerConnected) Color(0xFF15803D) else Color(0xFFD97706),
+            onClick = { onNavigate(SettingsSubpage.HARDWARE) },
+            testTag = "tile_settings_hardware"
+        )
+
+        // 3. Backup & Real-time Cloud Sync Subpage Tile
+        SettingsCategoryTile(
+            icon = "☁️",
+            title = "ဒေတာ အရန်သိမ်းခြင်းနှင့် Cloud Sync",
+            subtitle = "Real-time Google Drive Auto-sync၊ Two-way Auto-merge စနစ်၊ Database Backup & Restore",
+            badgeText = when {
+                isDriveSyncing -> "⚡ Syncing"
+                googleAccount != null -> "✓ Real-time Sync"
+                else -> "အကောင့်ချိတ်ရန်"
+            },
+            badgeColor = when {
+                isDriveSyncing -> Color(0xFF2563EB)
+                googleAccount != null -> Color(0xFF15803D)
+                else -> Color(0xFFD97706)
+            },
+            onClick = { onNavigate(SettingsSubpage.BACKUP) },
+            testTag = "tile_settings_backup"
+        )
+
+        // 4. Local POS Wi-Fi Staff Server Subpage Tile
+        SettingsCategoryTile(
+            icon = "🌐",
+            title = "ဝန်ထမ်းချိတ်ဆက် ဆာဗာ (Wi-Fi Server)",
+            subtitle = "Direct HTML5 Web Portal၊ QR Code ဖြင့် ဖုန်းမှ ကုန်ပစ္စည်းလှမ်းထည့်ခြင်းနှင့် Staff Sync",
+            badgeText = if (isServerRunning) "🟢 Server ON" else "🔴 OFF",
+            badgeColor = if (isServerRunning) Color(0xFF15803D) else Color(0xFFB91C1C),
+            onClick = { onNavigate(SettingsSubpage.SERVER) },
+            testTag = "tile_settings_server"
+        )
+
+        // 5. Business & Promo Codes Subpage Tile
+        SettingsCategoryTile(
+            icon = "💼",
+            title = "အရောင်းနှင့် လုပ်ငန်း သတ်မှတ်ချက်များ",
+            subtitle = "Candlestick အရောင်းဇယား၊ VIP Promo Codes (787VIP)၊ ဝယ်သူ & အကြွေး၊ နေ့ချုပ် Z-Report",
+            badgeText = null,
+            badgeColor = null,
+            onClick = { onNavigate(SettingsSubpage.BUSINESS) },
+            testTag = "tile_settings_business"
+        )
+
+        // 6. Security & Audit Log Subpage Tile
+        SettingsCategoryTile(
+            icon = "🔒",
+            title = "အကောင့်၊ လုံခြုံရေးနှင့် စနစ်အချက်အလက်",
+            subtitle = "AI Superuser အခွင့်အရေး၊ Audit Log စနစ်မှတ်တမ်းများ၊ Terminal နည်းပညာ သတ်မှတ်ချက်",
+            badgeText = if (viewModel.isAiSuperuserGranted()) "AI Superuser" else null,
+            badgeColor = Color(0xFF15803D),
+            onClick = { onNavigate(SettingsSubpage.SECURITY) },
+            testTag = "tile_settings_security"
+        )
+
+        Spacer(modifier = Modifier.height(64.dp))
+    }
+}
+
+/**
+ * Visual Navigation Card Tile for each Sub-page.
+ */
+@Composable
+private fun SettingsCategoryTile(
+    icon: String,
+    title: String,
+    subtitle: String,
+    badgeText: String?,
+    badgeColor: Color?,
+    onClick: () -> Unit,
+    testTag: String,
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(testTag)
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = CardDefaults.outlinedCardBorder(),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Surface(
+                shape = RoundedCornerShape(10.dp),
+                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f),
+                modifier = Modifier.size(44.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Text(icon, fontSize = 22.sp)
+                }
+            }
+
+            Spacer(modifier = Modifier.width(14.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = title,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    badgeText?.let {
+                        Surface(
+                            shape = RoundedCornerShape(4.dp),
+                            color = (badgeColor ?: MaterialTheme.colorScheme.primary).copy(alpha = 0.15f),
+                            modifier = Modifier.padding(start = 6.dp)
+                        ) {
+                            Text(
+                                text = it,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = badgeColor ?: MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(3.dp))
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    lineHeight = 14.sp,
+                    maxLines = 2,
                 )
             }
+
+            Spacer(modifier = Modifier.width(8.dp))
+            Icon(
+                Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = "Open $title",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                modifier = Modifier.size(20.dp)
+            )
         }
     }
 }

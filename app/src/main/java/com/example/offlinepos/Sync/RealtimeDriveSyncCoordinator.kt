@@ -107,14 +107,22 @@ object RealtimeDriveSyncCoordinator {
                     val recordManager = RecordLevelSyncManager(appContext)
 
                     try {
-                        val snapshotResult = driveManager.uploadLatestBackup(account)
+                        // 1. Two-Way Conflict Resolution Auto-Merge (pulls remote changes, resolves conflicts, updates SQLite, pushes merged state)
                         val recordResult = recordManager.sync(account)
+                        // 2. Upload SQLite snapshot containing the fully merged dataset
+                        val snapshotResult = driveManager.uploadLatestBackup(account)
 
-                        if (snapshotResult.isSuccess && recordResult.isSuccess) {
+                        if (recordResult.isSuccess && snapshotResult.isSuccess) {
                             val now = System.currentTimeMillis()
                             StoreConfig(appContext).setLastGoogleBackupTime(now)
                             val timeStr = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(now))
-                            _syncStatus.value = "✓ Google Drive Auto-sync အောင်မြင်ပါသည် ($timeStr)"
+                            val prefs = appContext.getSharedPreferences("pos_sync_status", Context.MODE_PRIVATE)
+                            val resolved = prefs.getInt("last_conflicts_resolved", 0)
+                            if (resolved > 0) {
+                                _syncStatus.value = "✓ Two-way Auto-Merge & Sync အောင်မြင်ပါသည် (Conflict $resolved ခု ညှိနှိုင်းပြီး - $timeStr)"
+                            } else {
+                                _syncStatus.value = "✓ Google Drive Auto-sync အောင်မြင်ပါသည် ($timeStr)"
+                            }
                         } else {
                             _syncStatus.value = "⏳ အင်တာနက် ပြတ်တောက်နေပါသည် (Queue တွင် သိမ်းဆည်းထားပါသည်)"
                         }

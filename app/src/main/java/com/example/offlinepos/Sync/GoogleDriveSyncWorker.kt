@@ -13,10 +13,11 @@ class GoogleDriveSyncWorker(
 ) : CoroutineWorker(appContext, params) {
     override suspend fun doWork(): Result {
         val account = StoreConfig(applicationContext).getGoogleAccount()?.trim().orEmpty()
-        if (account.isBlank()) return Result.success()
-        val snapshotResult = GoogleDriveSyncManager(applicationContext).uploadLatestBackup(account)
+        // 1. Two-way Conflict Resolution Auto-merge
         val recordResult = RecordLevelSyncManager(applicationContext).sync(account)
-        return if (snapshotResult.isSuccess && recordResult.isSuccess) {
+        // 2. Snapshot database backup with merged dataset
+        val snapshotResult = GoogleDriveSyncManager(applicationContext).uploadLatestBackup(account)
+        return if (recordResult.isSuccess && snapshotResult.isSuccess) {
             StoreConfig(applicationContext).setLastGoogleBackupTime(System.currentTimeMillis())
             Result.success()
         } else {
