@@ -66,6 +66,7 @@ enum class SettingsSubpage(val title: String, val icon: String) {
     STORE("ဆိုင်အချက်အလက် & ပြေစာ", "🏪"),
     HARDWARE("ပရင့်တာနှင့် စက်ကိရိယာများ", "🖨️"),
     BACKUP("ဒေတာ အရန်သိမ်းခြင်း & Sync", "☁️"),
+    NOTIFICATIONS("Telegram & Viber သတင်းပို့", "🤖"),
     SERVER("ဝန်ထမ်းချိတ်ဆက် ဆာဗာ (Wi-Fi)", "🌐"),
     BUSINESS("အရောင်းနှင့် လုပ်ငန်း သတ်မှတ်ချက်", "💼"),
     SECURITY("အကောင့်နှင့် လုံခြုံရေး", "🔒"),
@@ -170,6 +171,9 @@ fun SettingsScreen(
                 }
                 SettingsSubpage.BACKUP -> {
                     SettingsBackupSubpage(viewModel = viewModel)
+                }
+                SettingsSubpage.NOTIFICATIONS -> {
+                    SettingsNotificationSubpage(viewModel = viewModel)
                 }
                 SettingsSubpage.SERVER -> {
                     SettingsServerSubpage(viewModel = viewModel)
@@ -301,7 +305,20 @@ private fun SettingsMainHub(
             testTag = "tile_settings_backup"
         )
 
-        // 4. Local POS Wi-Fi Staff Server Subpage Tile
+        // 4. Automated Telegram & Viber Bot Notification Subpage Tile
+        val storeConfig = remember { StoreConfig(context) }
+        val botActive = storeConfig.isTelegramEnabled() || storeConfig.isViberEnabled()
+        SettingsCategoryTile(
+            icon = "🤖",
+            title = "အလိုအလျောက် သတင်းပို့စနစ် (Telegram & Viber)",
+            subtitle = "နေ့စဉ် ဆိုင်ပိတ်ချိန်/နေ့ချုပ်တွင် ရောင်းအား၊ အမြတ်ငွေနှင့် ကုန်ပစ္စည်းလက်ကျန်နည်းစာရင်းကို Bot သို့ အလိုအလျောက် ပို့ပေးခြင်း",
+            badgeText = if (botActive) "✓ Bot Active" else "Setup",
+            badgeColor = if (botActive) Color(0xFF15803D) else Color(0xFFD97706),
+            onClick = { onNavigate(SettingsSubpage.NOTIFICATIONS) },
+            testTag = "tile_settings_notifications"
+        )
+
+        // 5. Local POS Wi-Fi Staff Server Subpage Tile
         SettingsCategoryTile(
             icon = "🌐",
             title = "ဝန်ထမ်းချိတ်ဆက် ဆာဗာ (Wi-Fi Server)",

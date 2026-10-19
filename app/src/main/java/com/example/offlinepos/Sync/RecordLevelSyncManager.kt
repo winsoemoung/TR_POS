@@ -50,9 +50,14 @@ class RecordLevelSyncManager(private val context: Context) {
 
     suspend fun sync(accountEmail: String): Result<Int> = withContext(Dispatchers.IO) {
         runCatching {
-            val token = com.google.android.gms.auth.GoogleAuthUtil.getToken(
-                context, android.accounts.Account(accountEmail, "com.google"), SCOPE,
-            )
+            val token = try {
+                com.google.android.gms.auth.GoogleAuthUtil.getToken(
+                    context, android.accounts.Account(accountEmail, "com.google"), SCOPE,
+                ).also { RealtimeDriveSyncCoordinator.clearAuthRecoveryIntent() }
+            } catch (authEx: com.google.android.gms.auth.UserRecoverableAuthException) {
+                RealtimeDriveSyncCoordinator.setAuthRecoveryIntent(authEx.intent)
+                throw authEx
+            }
             val db = AppDatabase.get(context)
             
             // 1. Read local state
@@ -360,19 +365,52 @@ class RecordLevelSyncManager(private val context: Context) {
     }
 
     private fun rowKey(table: String, row: JSONObject): String {
-        if (table == "products") {
-            val sku = row.optString("sku").trim().lowercase()
-            if (sku.isNotBlank()) return "sku:$sku"
-            val barcode = row.optString("barcode").trim()
-            if (barcode.isNotBlank()) return "barcode:$barcode"
+        return when (table) {
+            "products" -> {
+                val sku = row.optString("sku").trim().lowercase()
+                if (sku.isNotBlank()) "sku:$sku"
+                else {
+                    val barcode = row.optString("barcode").trim()
+                    if (barcode.isNotBlank()) "barcode:$barcode"
+                    else "prod_id:${row.opt("productId")}"
+                }
+            }
+            "sale_items" -> {
+                val saleId = row.optString("saleId")
+                val lineId = row.opt("lineId")?.toString().orEmpty()
+                val prod = row.optString("productNameSnapshot")
+                val qty = row.optLong("quantity", 0L)
+                "item:${saleId}_${lineId}_${prod}_$qty"
+            }
+            "sales" -> "sale:${row.optString("saleId")}"
+            "payments" -> {
+                val paymentId = row.optString("paymentId")
+                val saleId = row.optString("saleId")
+                "payment:${paymentId}_$saleId"
+            }
+            "customers" -> {
+                val phone = row.optString("phone").trim()
+                if (phone.isNotBlank()) "phone:$phone"
+                else "customer:${row.opt("customerId")}"
+            }
+            "debt_transactions" -> "tx:${row.opt("txId")}"
+            "purchases" -> "purchase:${row.opt("purchaseId")}"
+            "shifts" -> "shift:${row.opt("shiftId")}"
+            "parked_orders" -> "park:${row.opt("parkId")}"
+            "stock_movements" -> "movement:${row.opt("movementId")}"
+            "return_transactions" -> "return:${row.opt("returnId")}"
+            "audit_events" -> "event:${row.opt("eventId")}"
+            "sync_outbox" -> "outbox:${row.opt("operationId")}"
+            "sync_tombstones" -> "tombstone:${row.opt("tombstoneId")}"
+            else -> {
+                val candidates = listOf(
+                    "tombstoneId", "lineId", "paymentId", "txId", "movementId", "returnId", "eventId",
+                    "operationId", "saleId", "purchaseId", "shiftId", "parkId", "customerId", "productId"
+                )
+                val key = candidates.firstOrNull { row.has(it) } ?: "_row"
+                "$key:${row.opt(key)}"
+            }
         }
-        val candidates = listOf(
-            "tombstoneId", "saleId", "lineId", "paymentId", "customerId", "txId",
-            "purchaseId", "shiftId", "parkId", "movementId", "returnId", "eventId",
-            "operationId", "productId"
-        )
-        val key = candidates.firstOrNull { row.has(it) } ?: "_row"
-        return "$key:${row.opt(key).toString()}"
     }
 
     private fun applyBundle(db: AppDatabase, bundle: JSONObject, mergeResult: MergeResult) {
@@ -405,6 +443,34 @@ class RecordLevelSyncManager(private val context: Context) {
                 val columns = tableColumns(sqlite, table)
                 for (i in 0 until rows.length()) {
                     val row = rows.optJSONObject(i) ?: continue
+
+                    if (table == "sale_items") {
+                        val names = columns.filter { it != "lineId" && row.has(it) }
+                        if (names.isEmpty()) continue
+                        val saleId = row.optString("saleId")
+                        val prodName = row.optString("productNameSnapshot")
+                        val qty = row.optLong("quantity", 0L)
+                        var exists = false
+                        sqlite.query(
+                            SimpleSQLiteQuery(
+                                "SELECT 1 FROM sale_items WHERE saleId = ? AND productNameSnapshot = ? AND quantity = ? LIMIT 1",
+                                arrayOf(saleId, prodName, qty)
+                            )
+                        ).use { c ->
+                            if (c.moveToFirst()) exists = true
+                        }
+                        if (!exists) {
+                            val args = names.map { valueForSql(row.opt(it)) }.toTypedArray()
+                            try {
+                                sqlite.execSQL(
+                                    "INSERT INTO sale_items (${names.joinToString(",")}) VALUES (${names.joinToString(",") { "?" }})",
+                                    args
+                                )
+                            } catch (_: Exception) { }
+                        }
+                        continue
+                    }
+
                     val names = columns.filter { row.has(it) }
                     if (names.isEmpty()) continue
                     val args = names.map { valueForSql(row.opt(it)) }.toTypedArray()

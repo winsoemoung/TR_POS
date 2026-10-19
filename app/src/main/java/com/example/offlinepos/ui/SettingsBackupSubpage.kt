@@ -82,6 +82,50 @@ fun SettingsBackupSubpage(
 
     val storeProfile by viewModel.storeProfile.collectAsState()
     var backupSchedule by remember(storeProfile) { mutableStateOf(storeProfile.autoBackupSchedule) }
+    val authRecoveryIntent by viewModel.authRecoveryIntent.collectAsState()
+
+    // Google Sign-In Activity Result Launcher
+    val googleSignInLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            val success = viewModel.handleGoogleSignInResult(result.data)
+            if (success) {
+                backupStatusMessage = "Google Account ဖြင့် အောင်မြင်စွာ ချိတ်ဆက်ပြီးပါပြီ"
+                viewModel.setBanner("Google Account ဖြင့် အောင်မြင်စွာ ချိတ်ဆက်ပြီးပါပြီ")
+            } else {
+                backupStatusMessage = "Google Sign-In စစ်ဆေးမရပါ"
+            }
+        }
+    }
+
+    // Google Account Picker Launcher
+    val accountPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            val email = result.data?.getStringExtra(android.accounts.AccountManager.KEY_ACCOUNT_NAME)
+            if (!email.isNullOrBlank()) {
+                viewModel.connectGoogleAccount(email)
+                viewModel.triggerAutoDriveSync("Account Picker Selected")
+                backupStatusMessage = "$email ဖြင့် ချိတ်ဆက်ပြီးပါပြီ"
+                viewModel.setBanner("$email ဖြင့် ချိတ်ဆက်ပြီးပါပြီ")
+            }
+        }
+    }
+
+    // Google Drive Auth Permission Recovery Launcher
+    val authRecoveryLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        viewModel.clearAuthRecoveryIntent()
+        if (result.resultCode == Activity.RESULT_OK) {
+            viewModel.syncGoogleDriveNow { ok, msg ->
+                backupStatusMessage = msg
+                viewModel.setBanner(msg)
+            }
+        }
+    }
 
     // File pickers
     val backupLauncher = rememberLauncherForActivityResult(
@@ -115,6 +159,31 @@ fun SettingsBackupSubpage(
         if (uri != null) {
             pendingRestoreUri = uri
             showRestoreChoice = true
+        }
+    }
+
+    val receiptCsvBackupLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("text/csv"),
+    ) { uri ->
+        if (uri != null) {
+            coroutineScope.launch(Dispatchers.IO) {
+                val csvFile = viewModel.exportReceiptsCsvFile()
+                withContext(Dispatchers.Main) {
+                    if (csvFile != null) {
+                        try {
+                            context.contentResolver.openOutputStream(uri)?.use { output ->
+                                csvFile.inputStream().use { it.copyTo(output) }
+                            }
+                            backupStatusMessage = "ဘောင်ချာမှတ်တမ်းများ (Receipt History CSV) အောင်မြင်စွာ သိမ်းဆည်းပြီးပါပြီ"
+                            viewModel.setBanner("ဘောင်ချာမှတ်တမ်းများ (Receipt History CSV) အောင်မြင်စွာ သိမ်းဆည်းပြီးပါပြီ")
+                        } catch (e: Exception) {
+                            backupStatusMessage = "CSV သိမ်းဆည်းမရပါ: ${e.message}"
+                        }
+                    } else {
+                        backupStatusMessage = "ဘောင်ချာမှတ်တမ်း CSV ထုတ်ယူမရပါ"
+                    }
+                }
+            }
         }
     }
 
@@ -199,6 +268,31 @@ fun SettingsBackupSubpage(
 
                 Spacer(modifier = Modifier.height(12.dp))
 
+                if (authRecoveryIntent != null) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                        shape = RoundedCornerShape(10.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFFFEF3C7)),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFF59E0B))
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Text("⚠️ Google Drive App Data ခွင့်ပြုချက် အတည်ပြုရန် လိုအပ်ပါသည်", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color(0xFFB45309))
+                            Text("Google Drive သို့ အလိုအလျောက် sync လုပ်နိုင်ရန် Drive ခွင့်ပြုချက် (Authorization) ကို အတည်ပြုပေးရန် နှိပ်ပါ။", fontSize = 11.sp, color = Color(0xFF92400E))
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Button(
+                                onClick = {
+                                    authRecoveryIntent?.let { authRecoveryLauncher.launch(it) }
+                                },
+                                shape = RoundedCornerShape(8.dp),
+                                colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = Color(0xFFD97706)),
+                                modifier = Modifier.fillMaxWidth().testTag("grant_drive_permission_button")
+                            ) {
+                                Text("ခွင့်ပြုချက် အတည်ပြုမည် (Grant Permission)", fontSize = 12.sp, color = Color.White)
+                            }
+                        }
+                    }
+                }
+
                 if (googleAccount != null) {
                     Surface(
                         shape = RoundedCornerShape(10.dp),
@@ -258,16 +352,9 @@ fun SettingsBackupSubpage(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        OutlinedButton(
-                            onClick = { viewModel.disconnectGoogleAccount() },
-                            modifier = Modifier.weight(1f).testTag("disconnect_google_button"),
-                            shape = RoundedCornerShape(8.dp)
-                        ) {
-                            Text("အကောင့်ဖြုတ်မည်", fontSize = 11.sp, color = MaterialTheme.colorScheme.error)
-                        }
                         Button(
                             onClick = { viewModel.syncGoogleDriveNow { _, message -> backupStatusMessage = message } },
-                            modifier = Modifier.weight(1.3f).testTag("backup_to_drive_button"),
+                            modifier = Modifier.weight(1.2f).testTag("backup_to_drive_button"),
                             shape = RoundedCornerShape(8.dp),
                             enabled = !isDriveSyncing
                         ) {
@@ -276,9 +363,32 @@ fun SettingsBackupSubpage(
                                 Spacer(modifier = Modifier.width(4.dp))
                                 Text("Syncing...", fontSize = 11.sp)
                             } else {
-                                Text("☁️ အခုချက်ချင်း Sync မည်", fontSize = 11.sp)
+                                Text("☁️ Drive Sync / Backup မည်", fontSize = 11.sp)
                             }
                         }
+
+                        OutlinedButton(
+                            onClick = {
+                                viewModel.restoreFromGoogleDrive { ok, message ->
+                                    backupStatusMessage = message
+                                    viewModel.setBanner(message)
+                                }
+                            },
+                            modifier = Modifier.weight(1.2f).testTag("restore_from_drive_button"),
+                            shape = RoundedCornerShape(8.dp),
+                            enabled = !isDriveSyncing
+                        ) {
+                            Text("📥 Drive မှ Restore မည်", fontSize = 11.sp)
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+                    OutlinedButton(
+                        onClick = { viewModel.disconnectGoogleAccount() },
+                        modifier = Modifier.fillMaxWidth().testTag("disconnect_google_button"),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Text("Google Account အကောင့်ဖြုတ်မည်", fontSize = 11.sp, color = MaterialTheme.colorScheme.error)
                     }
                 } else {
                     Column(
@@ -286,24 +396,88 @@ fun SettingsBackupSubpage(
                             .fillMaxWidth()
                             .bringIntoViewRequester(emailBringIntoViewRequester)
                     ) {
-                        OutlinedTextField(
-                            value = googleEmailInput,
-                            onValueChange = {
-                                googleEmailInput = it
-                                coroutineScope.launch { emailBringIntoViewRequester.bringIntoView() }
-                            },
-                            label = { Text("Google အကောင့် (Gmail)") },
-                            placeholder = { Text("WINSOEMOUNG@gmail.com") },
-                            modifier = Modifier.fillMaxWidth().testTag("google_email_input"),
-                            singleLine = true,
+                        Text(
+                            "Google Account ဖြင့် ချိတ်ဆက်၍ အလိုအလျောက် Cloud Auto-sync ပြုလုပ်ပါ:",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface
                         )
-                        Spacer(modifier = Modifier.height(8.dp))
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        // 1. One-tap Google Sign-In
                         Button(
-                            onClick = { viewModel.connectGoogleAccount(googleEmailInput) },
-                            modifier = Modifier.fillMaxWidth().testTag("connect_google_button"),
-                            shape = RoundedCornerShape(8.dp)
+                            onClick = {
+                                try {
+                                    googleSignInLauncher.launch(viewModel.googleSignInIntent())
+                                } catch (e: Exception) {
+                                    backupStatusMessage = "Google Sign-In ဖွင့်မရပါ: ${e.message}"
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth().testTag("google_sign_in_button"),
+                            shape = RoundedCornerShape(10.dp),
+                            colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.primary
+                            )
                         ) {
-                            Text("🔗 Google Account ဖြင့် ချိတ်ဆက်မည်", fontSize = 12.sp)
+                            Text("🔑 Google Account ဖြင့် Sign-In ဝင်မည်", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // 2. Google Account Picker from device
+                        OutlinedButton(
+                            onClick = {
+                                try {
+                                    accountPickerLauncher.launch(viewModel.googleAccountPickerIntent())
+                                } catch (e: Exception) {
+                                    backupStatusMessage = "Account Picker ဖွင့်မရပါ: ${e.message}"
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth().testTag("google_account_picker_button"),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Text("📱 ဖုန်းထဲရှိ Google Account ရွေးချယ်မည်", fontSize = 12.sp)
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+                        HorizontalDivider()
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        Text("သို့မဟုတ် Gmail လိပ်စာ တိုက်ရိုက်ရိုက်ထည့်ရန်:", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            OutlinedTextField(
+                                value = googleEmailInput,
+                                onValueChange = {
+                                    googleEmailInput = it
+                                    coroutineScope.launch { emailBringIntoViewRequester.bringIntoView() }
+                                },
+                                placeholder = { Text("WINSOEMOUNG@gmail.com") },
+                                modifier = Modifier.weight(1f).testTag("google_email_input"),
+                                singleLine = true,
+                            )
+                            Button(
+                                onClick = { viewModel.connectGoogleAccount(googleEmailInput) },
+                                modifier = Modifier.align(Alignment.CenterVertically).testTag("connect_google_button"),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Text("ချိတ်မည်", fontSize = 12.sp)
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("အကြံပြု အကောင့်:", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Spacer(modifier = Modifier.width(6.dp))
+                            FilterChip(
+                                selected = googleEmailInput == "WINSOEMOUNG@gmail.com",
+                                onClick = {
+                                    googleEmailInput = "WINSOEMOUNG@gmail.com"
+                                    viewModel.connectGoogleAccount("WINSOEMOUNG@gmail.com")
+                                },
+                                label = { Text("WINSOEMOUNG@gmail.com", fontSize = 10.sp) }
+                            )
                         }
                     }
                 }
@@ -319,11 +493,23 @@ fun SettingsBackupSubpage(
         ) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("💾 ဒေသတွင်း ဒေတာ အရန်သိမ်း/ပြန်တင်ခြင်း (Local DB Backup)", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                Text(
-                    "SQLite Database ဖိုင်တစ်ခုလုံးကို သိမ်းဆည်းရန် သို့မဟုတ် အခြားစက်သို့ ပြောင်းရွှေ့ရန် သုံးပါ:",
-                    fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = Color(0xFFDCFCE7),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(modifier = Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("🧾", fontSize = 16.sp)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            "ဤ Backup တွင် ဖွင့်ခဲ့ပြီးသမျှသော ဘောင်ချာမှတ်တမ်းများ (Receipt History)၊ အရောင်းပြေစာများ၊ ကုန်ပစ္စည်းများနှင့် ဝယ်သူစာရင်း အားလုံး ပြည့်စုံစွာ ပါဝင်ပါသည်။",
+                            fontSize = 11.sp,
+                            color = Color(0xFF15803D),
+                            fontWeight = FontWeight.SemiBold,
+                            lineHeight = 15.sp
+                        )
+                    }
+                }
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -331,17 +517,17 @@ fun SettingsBackupSubpage(
                 ) {
                     Button(
                         onClick = {
-                            val fileName = "offlinepos_backup_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())}.db"
+                            val fileName = "tr_pos_full_backup_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())}.db"
                             try {
                                 backupLauncher.launch(fileName)
                             } catch (e: Exception) {
                                 backupStatusMessage = "ဖိုင်သိမ်းဆည်းမှုကို ဖွင့်မရပါ: ${e.localizedMessage}"
                             }
                         },
-                        modifier = Modifier.weight(1f).testTag("export_backup_button"),
+                        modifier = Modifier.weight(1.2f).testTag("export_backup_button"),
                         shape = RoundedCornerShape(8.dp)
                     ) {
-                        Text("📤 Backup ထုတ်မည်", fontSize = 11.sp)
+                        Text("📤 Full Backup ထုတ်မည် (ဘောင်ချာပါဝင်)", fontSize = 11.sp)
                     }
 
                     OutlinedButton(
@@ -352,11 +538,27 @@ fun SettingsBackupSubpage(
                                 backupStatusMessage = "ဖိုင်ရွေးချယ်မှုကို ဖွင့်မရပါ: ${e.localizedMessage}"
                             }
                         },
-                        modifier = Modifier.weight(1f).testTag("import_backup_button"),
+                        modifier = Modifier.weight(0.9f).testTag("import_backup_button"),
                         shape = RoundedCornerShape(8.dp)
                     ) {
                         Text("📥 Restore ပြန်တင်မည်", fontSize = 11.sp)
                     }
+                }
+
+                // Dedicated Receipts CSV Export Button
+                OutlinedButton(
+                    onClick = {
+                        val csvFileName = "tr_pos_receipts_history_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())}.csv"
+                        try {
+                            receiptCsvBackupLauncher.launch(csvFileName)
+                        } catch (e: Exception) {
+                            backupStatusMessage = "CSV သိမ်းဆည်းမှုကို ဖွင့်မရပါ: ${e.localizedMessage}"
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth().testTag("export_receipts_csv_button"),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Text("📑 ဘောင်ချာမှတ်တမ်းများ (Receipts History CSV) သီးသန့် ထုတ်ယူမည်", fontSize = 11.sp)
                 }
 
                 // Share DB directly via intent
@@ -430,15 +632,29 @@ fun SettingsBackupSubpage(
                 modifier = Modifier.padding(16.dp),
             ) {
                 Column(modifier = Modifier.padding(20.dp)) {
-                    Text("Choose Database Import Mode", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text("Database Import & Restore ရွေးချယ်မှု", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        "Replace mode သည် လက်ရှိ database တစ်ခုလုံးကို backup file ဖြင့် အစားထိုးမည်။ Merge mode သည် Product များကိုသာ ပေါင်းထည့်ပြီး ရှိပြီးသား data များကို မဖျက်ပါ။",
+                        "• 'Merge All Data' သည် ဘောင်ချာမှတ်တမ်း (Receipt History)၊ အရောင်းပြေစာများနှင့် ကုန်ပစ္စည်းစာရင်းများကို လက်ရှိ data မပျက်ဘဲ ပေါင်းစပ်ထည့်သွင်းမည်။\n• 'Replace Database' သည် လက်ရှိ database တစ်ခုလုံးကို backup file ဖြင့် အစားထိုးမည်။",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        lineHeight = 16.sp
                     )
                     Spacer(modifier = Modifier.height(16.dp))
                     Button(
+                        onClick = {
+                            val uri = pendingRestoreUri
+                            showRestoreChoice = false
+                            pendingRestoreUri = null
+                            if (uri != null) viewModel.mergeDatabaseWithReceiptsAndProducts(uri) { success, msg ->
+                                backupStatusMessage = msg
+                                viewModel.setBanner(msg)
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth().testTag("merge_all_data_button"),
+                    ) { Text("✨ ဘောင်ချာ & ပစ္စည်းများ အားလုံး ပေါင်းစပ်မည် (Merge All)") }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedButton(
                         onClick = {
                             val uri = pendingRestoreUri
                             showRestoreChoice = false
@@ -449,21 +665,8 @@ fun SettingsBackupSubpage(
                                 if (success) (context as? Activity)?.recreate()
                             }
                         },
-                        modifier = Modifier.fillMaxWidth(),
-                    ) { Text("Replace Current Database") }
-                    Spacer(modifier = Modifier.height(8.dp))
-                    OutlinedButton(
-                        onClick = {
-                            val uri = pendingRestoreUri
-                            showRestoreChoice = false
-                            pendingRestoreUri = null
-                            if (uri != null) viewModel.mergeProductsFromDatabase(uri) { success, msg ->
-                                backupStatusMessage = msg
-                                viewModel.setBanner(msg)
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                    ) { Text("Merge Products Only") }
+                        modifier = Modifier.fillMaxWidth().testTag("replace_database_button"),
+                    ) { Text("🔄 Database တစ်ခုလုံး အစားထိုးမည် (Full Replace)") }
                     Spacer(modifier = Modifier.height(4.dp))
                     TextButton(
                         onClick = {

@@ -96,6 +96,48 @@ class StoreConfig(context: Context) {
         prefs.edit().putLong("last_google_backup_time", timeMs).apply()
     }
 
+    // Telegram Bot Notifications
+    fun isTelegramEnabled(): Boolean = prefs.getBoolean("telegram_bot_enabled", false)
+    fun setTelegramEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean("telegram_bot_enabled", enabled).apply()
+    }
+    fun getTelegramBotToken(): String? = prefs.getString("telegram_bot_token", "")
+    fun setTelegramBotToken(token: String) {
+        prefs.edit().putString("telegram_bot_token", token.trim()).apply()
+    }
+    fun getTelegramChatId(): String? = prefs.getString("telegram_chat_id", "")
+    fun setTelegramChatId(chatId: String) {
+        prefs.edit().putString("telegram_chat_id", chatId.trim()).apply()
+    }
+
+    // Viber Bot Notifications
+    fun isViberEnabled(): Boolean = prefs.getBoolean("viber_bot_enabled", false)
+    fun setViberEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean("viber_bot_enabled", enabled).apply()
+    }
+    fun getViberBotToken(): String? = prefs.getString("viber_bot_token", "")
+    fun setViberBotToken(token: String) {
+        prefs.edit().putString("viber_bot_token", token.trim()).apply()
+    }
+    fun getViberReceiverId(): String? = prefs.getString("viber_receiver_id", "")
+    fun setViberReceiverId(receiverId: String) {
+        prefs.edit().putString("viber_receiver_id", receiverId.trim()).apply()
+    }
+
+    // Auto-send on Daily Close
+    fun isAutoSendReportsEnabled(): Boolean = prefs.getBoolean("bot_auto_send_daily_close", true)
+    fun setAutoSendReportsEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean("bot_auto_send_daily_close", enabled).apply()
+    }
+    fun getLastBotReportTime(): Long = prefs.getLong("last_bot_report_time", 0L)
+    fun setLastBotReportTime(timeMs: Long) {
+        prefs.edit().putLong("last_bot_report_time", timeMs).apply()
+    }
+    fun getLastBotStatus(): String? = prefs.getString("last_bot_status", null)
+    fun setLastBotStatus(status: String) {
+        prefs.edit().putString("last_bot_status", status).apply()
+    }
+
     fun getPromoCodes(): List<PromoCode> {
         val raw = prefs.getString("promo_codes_json", null)
         if (raw.isNullOrBlank()) {

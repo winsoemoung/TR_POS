@@ -104,11 +104,9 @@ fun HomeScreen(
     val actor by viewModel.actor.collectAsState()
     val storeProfile by viewModel.storeProfile.collectAsState()
     val categories by viewModel.categories.collectAsState()
-    val parkedOrders by viewModel.parkedOrders.collectAsState()
     val currentRole by viewModel.currentRole.collectAsState()
 
     var showScanner by remember { mutableStateOf(false) }
-    var showHoldOrders by remember { mutableStateOf(false) }
     var showCustomerLedger by remember { mutableStateOf(false) }
     var showShiftReport by remember { mutableStateOf(false) }
     var showServerDialog by remember { mutableStateOf(false) }
@@ -208,22 +206,6 @@ fun HomeScreen(
                         }
                     }
 
-                    // Held / Parked Orders
-                    IconButton(
-                        onClick = { showHoldOrders = true },
-                        modifier = Modifier.testTag("top_bar_hold_orders_button")
-                    ) {
-                        BadgedBox(
-                            badge = {
-                                if (parkedOrders.isNotEmpty()) {
-                                    Badge { Text("${parkedOrders.size}") }
-                                }
-                            }
-                        ) {
-                            Icon(Icons.Default.PauseCircleOutline, contentDescription = "Hold Orders")
-                        }
-                    }
-
                     // Customer CRM & Debt Ledger
                     IconButton(
                         onClick = { showCustomerLedger = true },
@@ -268,7 +250,6 @@ fun HomeScreen(
             QuickActionsRow(
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
                 onScan = { showScanner = true },
-                onHeldOrders = { showHoldOrders = true },
                 onCustomers = { showCustomerLedger = true },
                 onShiftReport = { showShiftReport = true },
             )
@@ -494,13 +475,6 @@ fun HomeScreen(
         )
     }
 
-    if (showHoldOrders) {
-        HoldOrdersDialog(
-            viewModel = viewModel,
-            onDismiss = { showHoldOrders = false }
-        )
-    }
-
     if (showCustomerLedger) {
         CustomerManagementDialog(
             viewModel = viewModel,
@@ -617,7 +591,6 @@ private fun DashboardMetricCard(
 private fun QuickActionsRow(
     modifier: Modifier = Modifier,
     onScan: () -> Unit,
-    onHeldOrders: () -> Unit,
     onCustomers: () -> Unit,
     onShiftReport: () -> Unit,
 ) {
@@ -631,7 +604,6 @@ private fun QuickActionsRow(
         )
         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             item { QuickActionTile("Barcode", "Scan", Icons.Default.QrCodeScanner, Color(0xFF2563EB), onScan) }
-            item { QuickActionTile("Held", "Orders", Icons.Default.PauseCircleOutline, Color(0xFF7C3AED), onHeldOrders) }
             item { QuickActionTile("Customer", "Ledger", Icons.Default.People, Color(0xFF059669), onCustomers) }
             item { QuickActionTile("Shift", "Report", Icons.Default.Assessment, Color(0xFFB45309), onShiftReport) }
         }

@@ -73,7 +73,12 @@ import java.util.Locale
 import java.util.UUID
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
+import com.google.android.gms.common.AccountPicker
 import com.google.android.gms.common.api.Scope
+import com.google.android.gms.common.api.ApiException
+import com.google.android.gms.auth.UserRecoverableAuthException
+import com.example.offlinepos.notifications.DailyReportBotNotifier
+import com.example.offlinepos.notifications.DailyReportData
 
 class PosViewModel(private val context: Context) : ViewModel() {
     private var db = AppDatabase.get(context)
@@ -1209,18 +1214,35 @@ class PosViewModel(private val context: Context) : ViewModel() {
         return GoogleSignIn.getClient(context, options).signInIntent
     }
 
+    fun googleAccountPickerIntent(): Intent {
+        return AccountPicker.newChooseAccountIntent(
+            AccountPicker.AccountChooserOptions.Builder()
+                .setAllowableAccountsTypes(listOf("com.google"))
+                .build()
+        )
+    }
+
     fun handleGoogleSignInResult(data: Intent?): Boolean {
         return try {
-            val account = GoogleSignIn.getSignedInAccountFromIntent(data).getResult(Exception::class.java)
+            val task = GoogleSignIn.getSignedInAccountFromIntent(data)
+            val account = task.getResult(ApiException::class.java)
             val email = account.email.orEmpty()
-            if (email.isBlank()) false else {
+            if (email.isNotBlank()) {
                 connectGoogleAccount(email)
-                enqueueGoogleDriveSync()
+                triggerAutoDriveSync("Google Sign-In Connect")
                 true
+            } else {
+                false
             }
         } catch (_: Exception) {
             false
         }
+    }
+
+    val authRecoveryIntent: StateFlow<Intent?> = RealtimeDriveSyncCoordinator.authRecoveryIntent
+
+    fun clearAuthRecoveryIntent() {
+        RealtimeDriveSyncCoordinator.clearAuthRecoveryIntent()
     }
 
     fun syncGoogleDriveNow(onComplete: (Boolean, String) -> Unit) {
@@ -1230,14 +1252,67 @@ class PosViewModel(private val context: Context) : ViewModel() {
             return
         }
         viewModelScope.launch(Dispatchers.IO) {
-            val result = driveSyncManager.uploadLatestBackup(email)
-            val mergeResult = RecordLevelSyncManager(context.applicationContext).sync(email)
+            val recordResult = RecordLevelSyncManager(context.applicationContext).sync(email)
+            val snapshotResult = driveSyncManager.uploadLatestBackup(email)
             withContext(Dispatchers.Main) {
-                if (result.isSuccess && mergeResult.isSuccess) {
+                if (recordResult.isSuccess && snapshotResult.isSuccess) {
                     recordGoogleBackupSuccess()
-                    onComplete(true, "Google Drive သို့ အောင်မြင်စွာ Sync လုပ်ပြီးပါပြီ")
+                    val count = recordResult.getOrNull() ?: 0
+                    onComplete(true, "Google Drive သို့ အောင်မြင်စွာ Two-way Sync & Backup ပြုလုပ်ပြီးပါပြီ ($count records)")
                 } else {
-                    onComplete(false, "Google Drive Sync မအောင်မြင်ပါ: ${result.exceptionOrNull()?.localizedMessage ?: "စစ်ဆေးရန်လိုပါသည်"}")
+                    val ex = recordResult.exceptionOrNull() ?: snapshotResult.exceptionOrNull()
+                    val msg = when (ex) {
+                        is UserRecoverableAuthException -> "Google Drive အသုံးပြုခွင့် ခွင့်ပြုချက် (Permission) အတည်ပြုရန် လိုအပ်ပါသည်"
+                        else -> "Google Drive Sync မအောင်မြင်ပါ: ${ex?.localizedMessage ?: "စစ်ဆေးရန်လိုပါသည်"}"
+                    }
+                    onComplete(false, msg)
+                }
+            }
+        }
+    }
+
+    fun restoreFromGoogleDrive(onComplete: (Boolean, String) -> Unit) {
+        val email = _googleAccount.value
+        if (email.isNullOrBlank()) {
+            onComplete(false, "Google Account ကို အရင်ချိတ်ဆက်ပါ")
+            return
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                // 1. Two-way record merge sync first to sync latest records
+                val recordResult = RecordLevelSyncManager(context.applicationContext).sync(email)
+
+                // 2. Also download latest backup database snapshot if available
+                val targetFile = File(context.cacheDir, "drive_restore_snapshot.db")
+                val downloadResult = driveSyncManager.downloadLatestBackup(email, targetFile)
+
+                val mergedCount = recordResult.getOrNull() ?: 0
+                if (downloadResult.isSuccess && targetFile.exists() && targetFile.length() > 0) {
+                    // Re-merge from snapshot to ensure 100% receipt history
+                    val uri = Uri.fromFile(targetFile)
+                    mergeDatabaseWithReceiptsAndProducts(uri) { ok, msg ->
+                        targetFile.delete()
+                        recordGoogleBackupSuccess()
+                        onComplete(true, "Google Drive မှ ဘောင်ချာမှတ်တမ်းများနှင့် အချက်အလက်များကို အောင်မြင်စွာ ရယူပေါင်းစပ်ပြီးပါပြီ")
+                    }
+                } else if (recordResult.isSuccess) {
+                    recordGoogleBackupSuccess()
+                    withContext(Dispatchers.Main) {
+                        onComplete(true, "Google Drive မှ အချက်အလက် $mergedCount ခုကို အောင်မြင်စွာ Two-way Sync ပြုလုပ်ပြီးပါပြီ")
+                    }
+                } else {
+                    val ex = recordResult.exceptionOrNull() ?: downloadResult.exceptionOrNull()
+                    val msg = when (ex) {
+                        is UserRecoverableAuthException -> "Google Drive ခွင့်ပြုချက် (Permission) အတည်ပြုရန် လိုအပ်ပါသည်"
+                        else -> "Google Drive မှ ဒေတာရယူခြင်း မအောင်မြင်ပါ: ${ex?.localizedMessage ?: "စစ်ဆေးပါ"}"
+                    }
+                    withContext(Dispatchers.Main) {
+                        onComplete(false, msg)
+                    }
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    onComplete(false, "Google Drive Restore မအောင်မြင်ပါ: ${e.message}")
                 }
             }
         }
@@ -1245,6 +1320,95 @@ class PosViewModel(private val context: Context) : ViewModel() {
 
     val isDriveSyncing: StateFlow<Boolean> = RealtimeDriveSyncCoordinator.isSyncing
     val driveSyncStatus: StateFlow<String?> = RealtimeDriveSyncCoordinator.syncStatus
+
+    // Automated Telegram & Viber Bot Reporting Methods
+    suspend fun buildDailyReportData(
+        cashSales: Long? = null,
+        digitalSales: Long? = null,
+        creditSales: Long? = null,
+        expense: Long? = null,
+        expectedCash: Long? = null,
+        actualCash: Long? = null,
+        diff: Long? = null
+    ): DailyReportData = withContext(Dispatchers.IO) {
+        val startOfToday = getStartOfToday()
+        val allSales = salesHistory.value.filter { it.createdAtEpochMs >= startOfToday && it.status != com.example.offlinepos.data.local.SaleStatus.VOIDED }
+        val billsCount = allSales.size
+        val totalSalesMinor = allSales.sumOf { it.totalMinor }
+        val cashMinor = cashSales ?: allSales.filter { it.paymentMethod == "CASH" }.sumOf { it.totalMinor }
+        val digitalMinor = digitalSales ?: allSales.filter { it.paymentMethod == "DIGITAL" }.sumOf { it.totalMinor }
+        val creditMinor = creditSales ?: allSales.filter { it.paymentMethod == "CREDIT" }.sumOf { it.totalMinor }
+        val expenseMinor = expense ?: 0L
+
+        // Calculate Cost of Goods Sold for profit
+        var totalCostMinor = 0L
+        val activeProds = allProducts.value.associateBy { it.productId }
+        for (sale in allSales) {
+            val items = db.checkoutDao().getItemsForSale(sale.saleId)
+            for (item in items) {
+                val prod = activeProds[item.productId]
+                val unitCost = prod?.costPriceMinor ?: 0L
+                totalCostMinor += unitCost * item.quantity
+            }
+        }
+        val totalProfitMinor = (totalSalesMinor - totalCostMinor - expenseMinor).coerceAtLeast(0L)
+
+        // Low stock products
+        val lowStock = allProducts.value
+            .filter { it.isActive && it.stockQuantity <= it.lowStockThreshold }
+            .sortedBy { it.stockQuantity }
+            .map { it.name to it.stockQuantity }
+
+        DailyReportData(
+            storeName = _storeProfile.value.storeName,
+            cashierName = _actor.value.userId,
+            totalSalesMinor = totalSalesMinor,
+            totalProfitMinor = totalProfitMinor,
+            totalBillsCount = billsCount,
+            cashSalesMinor = cashMinor,
+            digitalSalesMinor = digitalMinor,
+            creditSalesMinor = creditMinor,
+            expensesMinor = expenseMinor,
+            expectedCashMinor = expectedCash ?: cashMinor,
+            actualCashMinor = actualCash ?: cashMinor,
+            differenceMinor = diff ?: 0L,
+            lowStockItems = lowStock
+        )
+    }
+
+    fun dispatchDailyReportNow(onResult: (Boolean, String) -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val report = buildDailyReportData()
+                val summary = DailyReportBotNotifier.dispatchDailyClosingReport(context, report)
+                withContext(Dispatchers.Main) {
+                    onResult(true, "သတင်းပို့မှု အခြေအနေ: $summary")
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    onResult(false, "သတင်းပို့မရပါ: ${e.message}")
+                }
+            }
+        }
+    }
+
+    fun testTelegramBot(token: String, chatId: String, onResult: (Boolean, String) -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val storeName = _storeProfile.value.storeName
+            val text = "🔔 <b>[$storeName] Telegram Bot ချိတ်ဆက်မှု အောင်မြင်ပါသည်!</b>\nနေ့စဉ် ဆိုင်ပိတ်ချိန်တိုင်း အရောင်း၊ အမြတ်ငွေနှင့် လက်ကျန်နည်းပစ္စည်း အစီရင်ခံစာကို ဤနေရာသို့ အလိုအလျောက် ပေးပို့ပေးပါမည်။"
+            val res = DailyReportBotNotifier.sendTelegramMessage(token, chatId, text)
+            withContext(Dispatchers.Main) { onResult(res.first, res.second) }
+        }
+    }
+
+    fun testViberBot(token: String, receiverId: String, onResult: (Boolean, String) -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val storeName = _storeProfile.value.storeName
+            val text = "🔔 [$storeName] Viber Bot ချိတ်ဆက်မှု အောင်မြင်ပါသည်!\nနေ့စဉ် ဆိုင်ပိတ်ချိန်တိုင်း အရောင်း၊ အမြတ်ငွေနှင့် လက်ကျန်နည်းပစ္စည်း အစီရင်ခံစာကို အလိုအလျောက် ပေးပို့ပေးပါမည်။"
+            val res = DailyReportBotNotifier.sendViberMessage(token, receiverId, text)
+            withContext(Dispatchers.Main) { onResult(res.first, res.second) }
+        }
+    }
 
     /**
      * Real-time Google Drive Auto-Sync trigger.
@@ -1576,9 +1740,33 @@ class PosViewModel(private val context: Context) : ViewModel() {
                     note = note
                 )
                 db.operationsDao().insertShift(shift)
+
+                var botSummary = ""
+                if (storeConfig.isAutoSendReportsEnabled()) {
+                    try {
+                        val report = buildDailyReportData(
+                            cashSales = cashSales,
+                            digitalSales = digitalSales,
+                            creditSales = creditSales,
+                            expense = expense,
+                            expectedCash = expectedCash,
+                            actualCash = actualCash,
+                            diff = diff
+                        )
+                        botSummary = DailyReportBotNotifier.dispatchDailyClosingReport(context, report)
+                    } catch (e: Exception) {
+                        botSummary = "Bot သတင်းပို့ အသိပေးချက်: ${e.message}"
+                    }
+                }
+
                 withContext(Dispatchers.Main) {
                     triggerAutoDriveSync("Shift Cash Report")
-                    onResult(true, "နေ့ချုပ်စာရင်း (Z-Report) အောင်မြင်စွာ ပိတ်ပြီးပါပြီ")
+                    val msg = if (botSummary.isNotBlank()) {
+                        "နေ့ချုပ်စာရင်း (Z-Report) အောင်မြင်စွာ ပိတ်ပြီးပါပြီ\n($botSummary)"
+                    } else {
+                        "နေ့ချုပ်စာရင်း (Z-Report) အောင်မြင်စွာ ပိတ်ပြီးပါပြီ"
+                    }
+                    onResult(true, msg)
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
@@ -1840,32 +2028,48 @@ class PosViewModel(private val context: Context) : ViewModel() {
 
     /**
      * SQLite Database Export & Share (Google Drive / Files)
+     * Backs up full SQLite database including vouchers/receipts history, sales, sale_items,
+     * payments, debt transactions, customers, and products.
      */
     fun exportDatabaseFile(): File? {
         return try {
             val dbFile = context.getDatabasePath("offline_pos.db")
             if (!dbFile.exists()) return null
-            // Flush WAL first; copying only the main file can silently omit recent products.
+            // Flush WAL first so all committed sales receipts and items are checkpointed
             db.openHelper.writableDatabase
                 .query(SimpleSQLiteQuery("PRAGMA wal_checkpoint(TRUNCATE)"))
                 .use { it.moveToFirst() }
             val exportDir = File(context.cacheDir, "exports").apply { mkdirs() }
             val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
-            val targetFile = File(exportDir, "santhit_pos_backup_$timeStamp.db")
+            val targetFile = File(exportDir, "tr_pos_full_backup_$timeStamp.db")
 
-            FileInputStream(dbFile).use { input ->
-                FileOutputStream(targetFile).use { output ->
-                    input.copyTo(output)
+            var vacuumSuccess = false
+            try {
+                targetFile.delete()
+                db.openHelper.writableDatabase
+                    .query(SimpleSQLiteQuery("VACUUM INTO ?", arrayOf(targetFile.absolutePath)))
+                    .use { it.moveToFirst() }
+                vacuumSuccess = targetFile.exists() && targetFile.length() > 0
+            } catch (_: Throwable) {
+                vacuumSuccess = false
+            }
+
+            if (!vacuumSuccess) {
+                FileInputStream(dbFile).use { input ->
+                    FileOutputStream(targetFile).use { output ->
+                        input.copyTo(output)
+                    }
                 }
             }
+
             SQLiteDatabase.openDatabase(targetFile.absolutePath, null, SQLiteDatabase.OPEN_READONLY).use { checkDb ->
                 checkDb.rawQuery("PRAGMA integrity_check", null).use { cursor ->
                     require(cursor.moveToFirst() && cursor.getString(0) == "ok") { "Backup integrity check မအောင်မြင်ပါ" }
                 }
             }
-            exportDir.listFiles { file -> file.name.startsWith("santhit_pos_backup_") && file.extension == "db" }
+            exportDir.listFiles { file -> (file.name.startsWith("tr_pos_full_backup_") || file.name.startsWith("santhit_pos_backup_")) && file.extension == "db" }
                 ?.sortedByDescending { it.lastModified() }
-                ?.drop(3)
+                ?.drop(5)
                 ?.forEach { it.delete() }
             targetFile
         } catch (e: Exception) {
@@ -1874,7 +2078,52 @@ class PosViewModel(private val context: Context) : ViewModel() {
     }
 
     /**
-     * SQLite Database Import & Restore
+     * Export all Receipt & Sales History into an Excel-ready UTF-8 CSV file.
+     */
+    suspend fun exportReceiptsCsvFile(): File? = withContext(Dispatchers.IO) {
+        try {
+            val exportDir = File(context.cacheDir, "exports").apply { mkdirs() }
+            val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+            val targetFile = File(exportDir, "tr_pos_receipts_history_$timeStamp.csv")
+
+            val salesList = salesHistory.value.sortedByDescending { it.createdAtEpochMs }
+            val sdf = SimpleDateFormat("dd/MM/yyyy hh:mm a", Locale.getDefault())
+
+            val sb = StringBuilder()
+            // UTF-8 BOM for Excel Burmese text support
+            sb.append("\uFEFF")
+            sb.append("ဘောင်ချာအမှတ် (Voucher No),ရက်စွဲ (Date),ဝယ်သူ (Customer),ငွေပေးချေမှု (Payment),စုစုပေါင်း (Total Ks),လျှော့ဈေး (Discount Ks),ကောင်တာ (Cashier),အခြေအနေ (Status),ဝယ်ယူပစ္စည်းများ (Items)\n")
+
+            for (sale in salesList) {
+                val items = db.checkoutDao().getItemsForSale(sale.saleId)
+                val itemsSummary = items.joinToString(" | ") { item ->
+                    "${item.productNameSnapshot} (${item.quantity} ခု @ ${"%,d".format(item.unitPriceMinor)} Ks)"
+                }.replace("\"", "\"\"")
+
+                val dateStr = sdf.format(Date(sale.createdAtEpochMs))
+                val customer = (sale.customerName ?: "အထွေထွေ ဝယ်သူ").replace("\"", "\"\"")
+                val cashier = sale.cashierId.replace("\"", "\"\"")
+
+                sb.append("\"${sale.saleId}\",")
+                sb.append("\"$dateStr\",")
+                sb.append("\"$customer\",")
+                sb.append("\"${sale.paymentMethod}\",")
+                sb.append("${sale.totalMinor},")
+                sb.append("${sale.discountMinor},")
+                sb.append("\"$cashier\",")
+                sb.append("\"${sale.status}\",")
+                sb.append("\"$itemsSummary\"\n")
+            }
+
+            targetFile.writeText(sb.toString(), Charsets.UTF_8)
+            targetFile
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    /**
+     * SQLite Database Import & Restore (Full Replacement)
      */
     fun importDatabaseFile(sourceUri: Uri, onComplete: (Boolean, String) -> Unit) {
         viewModelScope.launch(Dispatchers.IO) {
@@ -1917,7 +2166,7 @@ class PosViewModel(private val context: Context) : ViewModel() {
                 // Reopen DB instance; the Activity will recreate so all Room Flows bind to the new file.
                 db = AppDatabase.get(context)
                 withContext(Dispatchers.Main) {
-                    onComplete(true, "ဒေတာဘေ့စ်ကို အောင်မြင်စွာ Restore ပြုလုပ်ပြီးပါပြီ။ Products အားလုံးကို သိမ်းထားပြီး Active/Inactive filter ဖြင့် ကြည့်နိုင်ပါသည်။")
+                    onComplete(true, "ဒေတာဘေ့စ် (ဘောင်ချာမှတ်တမ်းနှင့် ပစ္စည်းများ) ကို အောင်မြင်စွာ Restore ပြုလုပ်ပြီးပါပြီ။")
                 }
             } catch (e: Exception) {
                 tempFile?.takeIf { it.exists() }?.delete()
@@ -1929,75 +2178,251 @@ class PosViewModel(private val context: Context) : ViewModel() {
     }
 
     /**
-     * Import only products from a backup database and merge them into the current database.
-     * Existing products are matched by SKU first and barcode second; matching rows are skipped.
-     * This keeps current sales, customers, stock movements and settings untouched.
+     * Merge both Products AND Receipt / Sales History from a backup file into current database.
      */
-    fun mergeProductsFromDatabase(sourceUri: Uri, onComplete: (Boolean, String) -> Unit) {
+    fun mergeDatabaseWithReceiptsAndProducts(sourceUri: Uri, onComplete: (Boolean, String) -> Unit) {
         viewModelScope.launch(Dispatchers.IO) {
             var staged: File? = null
             try {
                 val parent = context.cacheDir
                 val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
-                staged = File(parent, "product_merge_$timestamp.db")
+                staged = File(parent, "db_merge_$timestamp.db")
                 context.contentResolver.openInputStream(sourceUri)?.use { input ->
                     FileOutputStream(staged).use { output -> input.copyTo(output) }
                 } ?: error("ရွေးထားသော backup ဖိုင်ကို ဖတ်မရပါ")
 
-                var imported = 0
-                var skipped = 0
+                var productsImported = 0
+                var salesImported = 0
+                var customersImported = 0
+
                 SQLiteDatabase.openDatabase(staged.absolutePath, null, SQLiteDatabase.OPEN_READONLY).use { sourceDb ->
                     sourceDb.rawQuery("PRAGMA integrity_check", null).use { cursor ->
                         require(cursor.moveToFirst() && cursor.getString(0) == "ok") { "Backup integrity check မအောင်မြင်ပါ" }
                     }
-                    sourceDb.rawQuery("SELECT * FROM products", null).use { cursor ->
-                        val nameIndex = cursor.getColumnIndexOrThrow("name")
-                        val skuIndex = cursor.getColumnIndexOrThrow("sku")
-                        val barcodeIndex = cursor.getColumnIndexOrThrow("barcode")
-                        val costIndex = cursor.getColumnIndexOrThrow("costPriceMinor")
-                        val sellIndex = cursor.getColumnIndexOrThrow("sellPriceMinor")
-                        val stockIndex = cursor.getColumnIndexOrThrow("stockQuantity")
-                        val activeIndex = cursor.getColumnIndexOrThrow("isActive")
-                        val updatedIndex = cursor.getColumnIndexOrThrow("updatedAtEpochMs")
-                        val categoryIndex = cursor.getColumnIndexOrThrow("category")
-                        val roofIndex = cursor.getColumnIndexOrThrow("isRoofingSheet")
-                        val lowIndex = cursor.getColumnIndexOrThrow("lowStockThreshold")
-                        val imageIndex = cursor.getColumnIndexOrThrow("imageUri")
-                        val wholesaleIndex = cursor.getColumnIndexOrThrow("wholesalePriceMinor")
-                        val wholesaleMinIndex = cursor.getColumnIndexOrThrow("wholesaleMinQty")
-                        val unitIndex = cursor.getColumnIndexOrThrow("unitName")
-                        while (cursor.moveToNext()) {
-                            val sku = cursor.getString(skuIndex).trim()
-                            val barcode = cursor.getString(barcodeIndex)?.trim()?.ifBlank { null }
-                            if (sku.isBlank() || db.productDao().findBySku(sku) != null ||
-                                (barcode != null && db.productDao().findByBarcode(barcode) != null)) {
-                                skipped++
-                                continue
-                            }
-                            db.productDao().insert(
-                                ProductEntity(
-                                    name = cursor.getString(nameIndex), sku = sku, barcode = barcode,
-                                    costPriceMinor = cursor.getLong(costIndex), sellPriceMinor = cursor.getLong(sellIndex),
-                                    stockQuantity = cursor.getLong(stockIndex), isActive = cursor.getInt(activeIndex) != 0,
-                                    updatedAtEpochMs = cursor.getLong(updatedIndex), category = cursor.getString(categoryIndex),
-                                    isRoofingSheet = cursor.getInt(roofIndex) != 0, lowStockThreshold = cursor.getLong(lowIndex),
-                                    imageUri = cursor.getString(imageIndex), wholesalePriceMinor = cursor.getLong(wholesaleIndex),
-                                    wholesaleMinQty = cursor.getLong(wholesaleMinIndex), unitName = cursor.getString(unitIndex),
+
+                    // 1. Merge Products
+                    try {
+                        sourceDb.rawQuery("SELECT * FROM products", null).use { cursor ->
+                            val nameIdx = cursor.getColumnIndex("name")
+                            val skuIdx = cursor.getColumnIndex("sku")
+                            val barcodeIdx = cursor.getColumnIndex("barcode")
+                            val costIdx = cursor.getColumnIndex("costPriceMinor")
+                            val sellIdx = cursor.getColumnIndex("sellPriceMinor")
+                            val stockIdx = cursor.getColumnIndex("stockQuantity")
+                            val activeIdx = cursor.getColumnIndex("isActive")
+                            val updatedIdx = cursor.getColumnIndex("updatedAtEpochMs")
+                            val categoryIdx = cursor.getColumnIndex("category")
+                            val roofIdx = cursor.getColumnIndex("isRoofingSheet")
+                            val lowIdx = cursor.getColumnIndex("lowStockThreshold")
+                            val imageIdx = cursor.getColumnIndex("imageUri")
+                            val wholesaleIdx = cursor.getColumnIndex("wholesalePriceMinor")
+                            val wholesaleMinIdx = cursor.getColumnIndex("wholesaleMinQty")
+                            val unitIdx = cursor.getColumnIndex("unitName")
+
+                            while (cursor.moveToNext()) {
+                                val sku = if (skuIdx >= 0) cursor.getString(skuIdx)?.trim().orEmpty() else ""
+                                val barcode = if (barcodeIdx >= 0) cursor.getString(barcodeIdx)?.trim()?.ifBlank { null } else null
+                                if (sku.isBlank()) continue
+                                if (db.productDao().findBySku(sku) != null) continue
+
+                                db.productDao().insert(
+                                    ProductEntity(
+                                        name = if (nameIdx >= 0) cursor.getString(nameIdx) else "Unnamed",
+                                        sku = sku,
+                                        barcode = barcode,
+                                        costPriceMinor = if (costIdx >= 0) cursor.getLong(costIdx) else 0L,
+                                        sellPriceMinor = if (sellIdx >= 0) cursor.getLong(sellIdx) else 0L,
+                                        stockQuantity = if (stockIdx >= 0) cursor.getLong(stockIdx) else 0L,
+                                        isActive = if (activeIdx >= 0) cursor.getInt(activeIdx) != 0 else true,
+                                        updatedAtEpochMs = if (updatedIdx >= 0) cursor.getLong(updatedIdx) else System.currentTimeMillis(),
+                                        category = if (categoryIdx >= 0) cursor.getString(categoryIdx) else "General",
+                                        isRoofingSheet = if (roofIdx >= 0) cursor.getInt(roofIdx) != 0 else false,
+                                        lowStockThreshold = if (lowIdx >= 0) cursor.getLong(lowIdx) else 5L,
+                                        imageUri = if (imageIdx >= 0) cursor.getString(imageIdx) else null,
+                                        wholesalePriceMinor = if (wholesaleIdx >= 0) cursor.getLong(wholesaleIdx) else 0L,
+                                        wholesaleMinQty = if (wholesaleMinIdx >= 0) cursor.getLong(wholesaleMinIdx) else 0L,
+                                        unitName = if (unitIdx >= 0) cursor.getString(unitIdx) ?: "ခု" else "ခု",
+                                    )
                                 )
-                            )
-                            imported++
+                                productsImported++
+                            }
                         }
+                    } catch (_: Exception) {}
+
+                    val sqlite = db.openHelper.writableDatabase
+                    sqlite.beginTransaction()
+                    try {
+                        // 2. Merge Sales (ဘောင်ချာမှတ်တမ်း)
+                        try {
+                            sourceDb.rawQuery("SELECT * FROM sales", null).use { cursor ->
+                                val columns = cursor.columnNames
+                                while (cursor.moveToNext()) {
+                                    val saleIdIdx = cursor.getColumnIndex("saleId")
+                                    if (saleIdIdx < 0) continue
+                                    val saleId = cursor.getString(saleIdIdx)
+                                    if (saleId.isBlank()) continue
+
+                                    var exists = false
+                                    sqlite.query(SimpleSQLiteQuery("SELECT 1 FROM sales WHERE saleId = ? LIMIT 1", arrayOf(saleId))).use { c ->
+                                        if (c.moveToFirst()) exists = true
+                                    }
+                                    if (!exists) {
+                                        val names = columns.toList()
+                                        val args = names.map { col ->
+                                            val idx = cursor.getColumnIndex(col)
+                                            when (cursor.getType(idx)) {
+                                                android.database.Cursor.FIELD_TYPE_NULL -> null
+                                                android.database.Cursor.FIELD_TYPE_INTEGER -> cursor.getLong(idx)
+                                                android.database.Cursor.FIELD_TYPE_FLOAT -> cursor.getDouble(idx)
+                                                android.database.Cursor.FIELD_TYPE_STRING -> cursor.getString(idx)
+                                                android.database.Cursor.FIELD_TYPE_BLOB -> cursor.getBlob(idx)
+                                                else -> cursor.getString(idx)
+                                            }
+                                        }.toTypedArray()
+
+                                        sqlite.execSQL(
+                                            "INSERT OR IGNORE INTO sales (${names.joinToString(",")}) VALUES (${names.joinToString(",") { "?" }})",
+                                            args
+                                        )
+                                        salesImported++
+                                    }
+                                }
+                            }
+                        } catch (_: Exception) {}
+
+                        // 3. Merge Sale Items
+                        try {
+                            sourceDb.rawQuery("SELECT * FROM sale_items", null).use { cursor ->
+                                val columns = cursor.columnNames
+                                while (cursor.moveToNext()) {
+                                    val lineIdIdx = cursor.getColumnIndex("lineId")
+                                    val lineId = if (lineIdIdx >= 0) cursor.getLong(lineIdIdx) else 0L
+
+                                    var exists = false
+                                    if (lineId > 0) {
+                                        sqlite.query(SimpleSQLiteQuery("SELECT 1 FROM sale_items WHERE lineId = ? LIMIT 1", arrayOf(lineId))).use { c ->
+                                            if (c.moveToFirst()) exists = true
+                                        }
+                                    }
+                                    if (!exists) {
+                                        val names = columns.filter { it != "lineId" }
+                                        val args = names.map { col ->
+                                            val idx = cursor.getColumnIndex(col)
+                                            when (cursor.getType(idx)) {
+                                                android.database.Cursor.FIELD_TYPE_NULL -> null
+                                                android.database.Cursor.FIELD_TYPE_INTEGER -> cursor.getLong(idx)
+                                                android.database.Cursor.FIELD_TYPE_FLOAT -> cursor.getDouble(idx)
+                                                android.database.Cursor.FIELD_TYPE_STRING -> cursor.getString(idx)
+                                                android.database.Cursor.FIELD_TYPE_BLOB -> cursor.getBlob(idx)
+                                                else -> cursor.getString(idx)
+                                            }
+                                        }.toTypedArray()
+
+                                        sqlite.execSQL(
+                                            "INSERT INTO sale_items (${names.joinToString(",")}) VALUES (${names.joinToString(",") { "?" }})",
+                                            args
+                                        )
+                                    }
+                                }
+                            }
+                        } catch (_: Exception) {}
+
+                        // 4. Merge Payments
+                        try {
+                            sourceDb.rawQuery("SELECT * FROM payments", null).use { cursor ->
+                                val columns = cursor.columnNames
+                                while (cursor.moveToNext()) {
+                                    val saleIdIdx = cursor.getColumnIndex("saleId")
+                                    val saleId = if (saleIdIdx >= 0) cursor.getString(saleIdIdx) else ""
+
+                                    var exists = false
+                                    if (saleId.isNotBlank()) {
+                                        sqlite.query(SimpleSQLiteQuery("SELECT 1 FROM payments WHERE saleId = ? LIMIT 1", arrayOf(saleId))).use { c ->
+                                            if (c.moveToFirst()) exists = true
+                                        }
+                                    }
+                                    if (!exists) {
+                                        val names = columns.filter { it != "paymentId" }
+                                        val args = names.map { col ->
+                                            val idx = cursor.getColumnIndex(col)
+                                            when (cursor.getType(idx)) {
+                                                android.database.Cursor.FIELD_TYPE_NULL -> null
+                                                android.database.Cursor.FIELD_TYPE_INTEGER -> cursor.getLong(idx)
+                                                android.database.Cursor.FIELD_TYPE_FLOAT -> cursor.getDouble(idx)
+                                                android.database.Cursor.FIELD_TYPE_STRING -> cursor.getString(idx)
+                                                android.database.Cursor.FIELD_TYPE_BLOB -> cursor.getBlob(idx)
+                                                else -> cursor.getString(idx)
+                                            }
+                                        }.toTypedArray()
+
+                                        sqlite.execSQL(
+                                            "INSERT INTO payments (${names.joinToString(",")}) VALUES (${names.joinToString(",") { "?" }})",
+                                            args
+                                        )
+                                    }
+                                }
+                            }
+                        } catch (_: Exception) {}
+
+                        // 5. Merge Customers
+                        try {
+                            sourceDb.rawQuery("SELECT * FROM customers", null).use { cursor ->
+                                val columns = cursor.columnNames
+                                while (cursor.moveToNext()) {
+                                    val phoneIdx = cursor.getColumnIndex("phone")
+                                    val phone = if (phoneIdx >= 0) cursor.getString(phoneIdx)?.trim().orEmpty() else ""
+                                    if (phone.isNotBlank()) {
+                                        var exists = false
+                                        sqlite.query(SimpleSQLiteQuery("SELECT 1 FROM customers WHERE phone = ? LIMIT 1", arrayOf(phone))).use { c ->
+                                            if (c.moveToFirst()) exists = true
+                                        }
+                                        if (exists) continue
+                                    }
+
+                                    val names = columns.filter { it != "customerId" }
+                                    val args = names.map { col ->
+                                        val idx = cursor.getColumnIndex(col)
+                                        when (cursor.getType(idx)) {
+                                            android.database.Cursor.FIELD_TYPE_NULL -> null
+                                            android.database.Cursor.FIELD_TYPE_INTEGER -> cursor.getLong(idx)
+                                            android.database.Cursor.FIELD_TYPE_FLOAT -> cursor.getDouble(idx)
+                                            android.database.Cursor.FIELD_TYPE_STRING -> cursor.getString(idx)
+                                            android.database.Cursor.FIELD_TYPE_BLOB -> cursor.getBlob(idx)
+                                            else -> cursor.getString(idx)
+                                        }
+                                    }.toTypedArray()
+
+                                    sqlite.execSQL(
+                                        "INSERT INTO customers (${names.joinToString(",")}) VALUES (${names.joinToString(",") { "?" }})",
+                                        args
+                                    )
+                                    customersImported++
+                                }
+                            }
+                        } catch (_: Exception) {}
+
+                        sqlite.setTransactionSuccessful()
+                    } finally {
+                        sqlite.endTransaction()
                     }
                 }
+
                 staged.delete()
                 withContext(Dispatchers.Main) {
-                    onComplete(true, "Product merge အောင်မြင်ပါသည်။ အသစ်ထည့်: $imported ခု၊ ရှိပြီးသား/ကျော်ခဲ့: $skipped ခု")
+                    val summary = "ဒေတာ ပေါင်းစပ်မှု အောင်မြင်ပါသည်: ဘောင်ချာမှတ်တမ်း $salesImported စောင်၊ ကုန်ပစ္စည်း $productsImported ခု၊ ဝယ်သူ $customersImported ဦး ပေါင်းထည့်ပြီးပါပြီ"
+                    onComplete(true, summary)
                 }
             } catch (e: Exception) {
                 staged?.delete()
-                withContext(Dispatchers.Main) { onComplete(false, "Product merge မအောင်မြင်ပါ: ${e.message}") }
+                withContext(Dispatchers.Main) {
+                    onComplete(false, "Merge မအောင်မြင်ပါ: ${e.message}")
+                }
             }
         }
+    }
+
+    fun mergeProductsFromDatabase(sourceUri: Uri, onComplete: (Boolean, String) -> Unit) {
+        mergeDatabaseWithReceiptsAndProducts(sourceUri, onComplete)
     }
 
     fun setDateFilter(startMs: Long, endMs: Long) {

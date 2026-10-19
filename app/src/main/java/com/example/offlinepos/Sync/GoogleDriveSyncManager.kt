@@ -23,6 +23,7 @@ class GoogleDriveSyncManager(private val context: Context) {
         repeat(3) { attempt ->
             try {
                 val token = GoogleAuthUtil.getToken(context, Account(accountEmail, "com.google"), DRIVE_SCOPE)
+                RealtimeDriveSyncCoordinator.clearAuthRecoveryIntent()
                 val db = AppDatabase.get(context)
                 val backupManager = BackupManager(db) { System.currentTimeMillis() }
                 val file = File(context.cacheDir, BACKUP_NAME)
@@ -32,12 +33,54 @@ class GoogleDriveSyncManager(private val context: Context) {
                 val responseCode = if (existingId == null) createBackup(token, file) else updateBackup(token, existingId, file)
                 if (responseCode !in 200..299) error("Google Drive upload failed: HTTP $responseCode")
                 return@withContext Result.success(file.length())
+            } catch (authEx: com.google.android.gms.auth.UserRecoverableAuthException) {
+                RealtimeDriveSyncCoordinator.setAuthRecoveryIntent(authEx.intent)
+                return@withContext Result.failure(authEx)
             } catch (t: Throwable) {
                 lastError = t
                 if (attempt < 2) delay(1000L * (attempt + 1))
             }
         }
         Result.failure(lastError ?: IllegalStateException("Google Drive upload failed"))
+    }
+
+    suspend fun downloadLatestBackup(accountEmail: String, targetFile: File): Result<Boolean> = withContext(Dispatchers.IO) {
+        try {
+            val token = GoogleAuthUtil.getToken(context, Account(accountEmail, "com.google"), DRIVE_SCOPE)
+            RealtimeDriveSyncCoordinator.clearAuthRecoveryIntent()
+            val fileId = findBackupId(token) ?: return@withContext Result.failure(java.io.FileNotFoundException("Google Drive ပေါ်တွင် Backup ဖိုင် မတွေ့ရှိပါ"))
+            val url = URL("https://www.googleapis.com/drive/v3/files/$fileId?alt=media")
+            val connection = open(url, token, "GET")
+            try {
+                if (connection.responseCode !in 200..299) {
+                    return@withContext Result.failure(IllegalStateException("Google Drive မှ ဒေါင်းလုဒ်မရပါ: HTTP ${connection.responseCode}"))
+                }
+                targetFile.parentFile?.mkdirs()
+                val temp = File(targetFile.parentFile, ".drive_download_${System.currentTimeMillis()}.tmp")
+                connection.inputStream.use { input ->
+                    java.io.FileOutputStream(temp).use { output ->
+                        input.copyTo(output)
+                    }
+                }
+                if (temp.length() < 16) {
+                    temp.delete()
+                    return@withContext Result.failure(IllegalStateException("ဒေါင်းလုဒ်ရရှိသော ဖိုင်အရွယ်အစား မမှန်ကန်ပါ"))
+                }
+                if (targetFile.exists()) targetFile.delete()
+                if (!temp.renameTo(targetFile)) {
+                    temp.copyTo(targetFile, overwrite = true)
+                    temp.delete()
+                }
+                Result.success(true)
+            } finally {
+                connection.disconnect()
+            }
+        } catch (authEx: com.google.android.gms.auth.UserRecoverableAuthException) {
+            RealtimeDriveSyncCoordinator.setAuthRecoveryIntent(authEx.intent)
+            Result.failure(authEx)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
     }
 
     private fun findBackupId(token: String): String? {

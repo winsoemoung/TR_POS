@@ -45,6 +45,18 @@ object RealtimeDriveSyncCoordinator {
     private val _syncStatus = MutableStateFlow<String?>(null)
     val syncStatus: StateFlow<String?> = _syncStatus.asStateFlow()
 
+    private val _authRecoveryIntent = MutableStateFlow<android.content.Intent?>(null)
+    val authRecoveryIntent: StateFlow<android.content.Intent?> = _authRecoveryIntent.asStateFlow()
+
+    fun setAuthRecoveryIntent(intent: android.content.Intent?) {
+        _authRecoveryIntent.value = intent
+        _syncStatus.value = "⚠️ Google Drive ခွင့်ပြုချက် အတည်ပြုပေးရန် လိုအပ်ပါသည်"
+    }
+
+    fun clearAuthRecoveryIntent() {
+        _authRecoveryIntent.value = null
+    }
+
     fun isNetworkAvailable(context: Context): Boolean {
         return try {
             val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return false

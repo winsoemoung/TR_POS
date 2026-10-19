@@ -238,7 +238,31 @@ fun ShiftReportDialog(
                     fontSize = 13.sp
                 )
 
-                Spacer(modifier = Modifier.height(16.dp))
+                val storeConfig = remember { StoreConfig(context) }
+                if (storeConfig.isTelegramEnabled() || storeConfig.isViberEnabled()) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = Color(0xFFDCFCE7),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("🤖", fontSize = 14.sp)
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                "ဆိုင်ပိတ်သည်နှင့် Telegram / Viber Bot သို့ နေ့ချုပ်စာရင်း အလိုအလျောက် ပေးပို့ပါမည်",
+                                fontSize = 10.5.sp,
+                                color = Color(0xFF15803D),
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
 
                 // Action buttons: Share & Save
                 Row(
