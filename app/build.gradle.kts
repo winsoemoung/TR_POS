@@ -27,19 +27,29 @@ android {
     }
 
     signingConfigs {
-        create("debugConfig") {
-            storeFile = file("${rootDir}/debug.keystore")
-            storePassword = "android"
-            keyAlias = "androiddebugkey"
-            keyPassword = "android"
+        create("key555Config") {
+            val keystoreFile = file("$rootDir/KEY555.jks")
+            if (keystoreFile.exists()) {
+                storeFile = keystoreFile
+                storePassword = "1234qwerR"
+                keyAlias = "key555"
+                keyPassword = "1234qwerR"
+            } else {
+                val fallbackFile = file("$rootDir/debug.keystore")
+                storeFile = if (fallbackFile.exists()) fallbackFile else file("${System.getProperty("user.home")}/.android/debug.keystore")
+                storePassword = "android"
+                keyAlias = "androiddebugkey"
+                keyPassword = "android"
+            }
         }
     }
 
     buildTypes {
         debug {
-            signingConfig = signingConfigs.getByName("debugConfig")
+            signingConfig = signingConfigs.getByName("key555Config")
         }
         release {
+            signingConfig = signingConfigs.getByName("key555Config")
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),

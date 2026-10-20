@@ -83,7 +83,7 @@ class StoreConfig(context: Context) {
     }
 
     // Google Drive Backup Account
-    fun getGoogleAccount(): String? = prefs.getString("google_backup_account", null)
+    fun getGoogleAccount(): String? = prefs.getString("google_backup_account", "nyeinmyolatt420@gmail.com")
     fun setGoogleAccount(email: String) {
         prefs.edit().putString("google_backup_account", email).apply()
     }

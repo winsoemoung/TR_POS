@@ -59,13 +59,12 @@ object RealtimeDriveSyncCoordinator {
 
     fun isNetworkAvailable(context: Context): Boolean {
         return try {
-            val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return false
-            val activeNetwork = cm.activeNetwork ?: return false
-            val capabilities = cm.getNetworkCapabilities(activeNetwork) ?: return false
-            capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
-                    capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+            val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return true
+            val activeNetwork = cm.activeNetwork ?: return true
+            val capabilities = cm.getNetworkCapabilities(activeNetwork) ?: return true
+            capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
         } catch (_: Exception) {
-            false
+            true
         }
     }
 
@@ -136,10 +135,21 @@ object RealtimeDriveSyncCoordinator {
                                 _syncStatus.value = "✓ Google Drive Auto-sync အောင်မြင်ပါသည် ($timeStr)"
                             }
                         } else {
-                            _syncStatus.value = "⏳ အင်တာနက် ပြတ်တောက်နေပါသည် (Queue တွင် သိမ်းဆည်းထားပါသည်)"
+                            val ex = recordResult.exceptionOrNull() ?: snapshotResult.exceptionOrNull()
+                            val msg = ex?.localizedMessage ?: ex?.message
+                            if (!msg.isNullOrBlank()) {
+                                _syncStatus.value = "⚠️ Sync ခေတ္တ မအောင်မြင်ပါ: $msg"
+                            } else {
+                                _syncStatus.value = "⚠️ Sync ခေတ္တ မအောင်မြင်ပါ (နောက်တစ်ကြိမ် ပြန်လည် ကြိုးစားပါမည်)"
+                            }
                         }
                     } catch (e: Exception) {
-                        _syncStatus.value = "⏳ Drive Sync ကို Queue ထဲ ထည့်ထားပါသည် (လိုင်းပြန်ရပါက ပို့ပါမည်)"
+                        val msg = e.localizedMessage ?: e.message
+                        if (!msg.isNullOrBlank()) {
+                            _syncStatus.value = "⚠️ Drive Sync Error: $msg"
+                        } else {
+                            _syncStatus.value = "⏳ Drive Sync ကို Queue ထဲ ထည့်ထားပါသည်"
+                        }
                     } finally {
                         _isSyncing.value = false
                     }

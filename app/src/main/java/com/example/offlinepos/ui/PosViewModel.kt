@@ -12,6 +12,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
+import com.example.offlinepos.BuildConfig
 import com.example.offlinepos.Repository.Actor
 import com.example.offlinepos.Repository.CheckoutRepository
 import com.example.offlinepos.Repository.CheckoutResult
@@ -1204,10 +1205,17 @@ class PosViewModel(private val context: Context) : ViewModel() {
     val lastGoogleBackupTime: StateFlow<Long> = _lastGoogleBackupTime.asStateFlow()
     private val driveSyncManager = GoogleDriveSyncManager(context.applicationContext)
 
-    private fun googleSignInOptions(): GoogleSignInOptions = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+    private fun googleSignInOptions(): GoogleSignInOptions {
+        val builder = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
             .requestEmail()
             .requestScopes(Scope("https://www.googleapis.com/auth/drive.appdata"))
-            .build()
+
+        val webClientId = runCatching { BuildConfig.GOOGLE_WEB_CLIENT_ID }.getOrDefault("").trim()
+        if (webClientId.isNotBlank() && webClientId != "your_client_id_here") {
+            runCatching { builder.requestIdToken(webClientId) }
+        }
+        return builder.build()
+    }
 
     fun googleSignInIntent(): Intent {
         val options = googleSignInOptions()

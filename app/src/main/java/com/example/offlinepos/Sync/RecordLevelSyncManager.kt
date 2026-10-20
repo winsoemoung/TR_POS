@@ -50,14 +50,7 @@ class RecordLevelSyncManager(private val context: Context) {
 
     suspend fun sync(accountEmail: String): Result<Int> = withContext(Dispatchers.IO) {
         runCatching {
-            val token = try {
-                com.google.android.gms.auth.GoogleAuthUtil.getToken(
-                    context, android.accounts.Account(accountEmail, "com.google"), SCOPE,
-                ).also { RealtimeDriveSyncCoordinator.clearAuthRecoveryIntent() }
-            } catch (authEx: com.google.android.gms.auth.UserRecoverableAuthException) {
-                RealtimeDriveSyncCoordinator.setAuthRecoveryIntent(authEx.intent)
-                throw authEx
-            }
+            val token = GoogleAuthHelper.fetchToken(context, accountEmail, SCOPE)
             val db = AppDatabase.get(context)
             
             // 1. Read local state

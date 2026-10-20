@@ -74,9 +74,11 @@ fun SettingsBackupSubpage(
     val lastGoogleBackupTime by viewModel.lastGoogleBackupTime.collectAsState()
     val isDriveSyncing by viewModel.isDriveSyncing.collectAsState()
     val driveSyncStatus by viewModel.driveSyncStatus.collectAsState()
-    var googleEmailInput by remember(googleAccount) { mutableStateOf(googleAccount ?: "WINSOEMOUNG@gmail.com") }
+    var googleEmailInput by remember(googleAccount) { mutableStateOf(googleAccount ?: "nyeinmyolatt420@gmail.com") }
 
     var backupStatusMessage by remember { mutableStateOf<String?>(null) }
+
+
     var pendingRestoreUri by remember { mutableStateOf<Uri?>(null) }
     var showRestoreChoice by remember { mutableStateOf(false) }
 
@@ -453,7 +455,7 @@ fun SettingsBackupSubpage(
                                     googleEmailInput = it
                                     coroutineScope.launch { emailBringIntoViewRequester.bringIntoView() }
                                 },
-                                placeholder = { Text("WINSOEMOUNG@gmail.com") },
+                                placeholder = { Text("nyeinmyolatt420@gmail.com") },
                                 modifier = Modifier.weight(1f).testTag("google_email_input"),
                                 singleLine = true,
                             )
@@ -471,13 +473,14 @@ fun SettingsBackupSubpage(
                             Text("အကြံပြု အကောင့်:", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Spacer(modifier = Modifier.width(6.dp))
                             FilterChip(
-                                selected = googleEmailInput == "WINSOEMOUNG@gmail.com",
+                                selected = googleEmailInput == "nyeinmyolatt420@gmail.com",
                                 onClick = {
-                                    googleEmailInput = "WINSOEMOUNG@gmail.com"
-                                    viewModel.connectGoogleAccount("WINSOEMOUNG@gmail.com")
+                                    googleEmailInput = "nyeinmyolatt420@gmail.com"
+                                    viewModel.connectGoogleAccount("nyeinmyolatt420@gmail.com")
                                 },
-                                label = { Text("WINSOEMOUNG@gmail.com", fontSize = 10.sp) }
+                                label = { Text("nyeinmyolatt420@gmail.com", fontSize = 10.sp) }
                             )
+                        }
                         }
                     }
                 }
@@ -619,7 +622,6 @@ fun SettingsBackupSubpage(
         }
 
         Spacer(modifier = Modifier.height(48.dp))
-    }
 
     if (showRestoreChoice && pendingRestoreUri != null) {
         Dialog(onDismissRequest = {
