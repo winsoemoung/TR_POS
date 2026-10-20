@@ -70,6 +70,7 @@ enum class PosTab(val title: String) {
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        com.example.offlinepos.ai.configureAppCheck(this, intent)
         val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
             android.util.Log.e("OfflinePOS", "Uncaught exception on $thread: ${throwable.message}", throwable)

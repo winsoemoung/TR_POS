@@ -6,6 +6,7 @@ plugins {
     alias(libs.plugins.ksp) // Room compiler
     alias(libs.plugins.room) // schema export + reproducible build
     alias(libs.plugins.secrets)
+    alias(libs.plugins.google.services)
 }
 
 android {
@@ -106,6 +107,11 @@ dependencies {
     implementation(libs.coro.android)
     implementation(libs.work.runtime.ktx)
     implementation("com.google.android.gms:play-services-auth:21.2.0")
+
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.ai)
+    implementation(libs.firebase.appcheck.debug)
+    implementation(libs.firebase.appcheck.recaptcha)
 
     implementation(libs.zxing.core)
     implementation(libs.androidx.camera.core)
