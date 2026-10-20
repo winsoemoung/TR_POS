@@ -74,17 +74,17 @@ fun SettingsBackupSubpage(
     val lastGoogleBackupTime by viewModel.lastGoogleBackupTime.collectAsState()
     val isDriveSyncing by viewModel.isDriveSyncing.collectAsState()
     val driveSyncStatus by viewModel.driveSyncStatus.collectAsState()
-    var googleEmailInput by remember(googleAccount) { mutableStateOf(googleAccount ?: "nyeinmyolatt420@gmail.com") }
+    var googleEmailInput by remember(googleAccount) { mutableStateOf(googleAccount ?: "WINSOEMOUNG@gmail.com") }
 
     var backupStatusMessage by remember { mutableStateOf<String?>(null) }
-
-
     var pendingRestoreUri by remember { mutableStateOf<Uri?>(null) }
     var showRestoreChoice by remember { mutableStateOf(false) }
 
     val storeProfile by viewModel.storeProfile.collectAsState()
     var backupSchedule by remember(storeProfile) { mutableStateOf(storeProfile.autoBackupSchedule) }
     val authRecoveryIntent by viewModel.authRecoveryIntent.collectAsState()
+    var oauthCodeInput by remember { mutableStateOf("") }
+    var isExchangingCode by remember { mutableStateOf(false) }
 
     // Google Sign-In Activity Result Launcher
     val googleSignInLauncher = rememberLauncherForActivityResult(
@@ -385,6 +385,30 @@ fun SettingsBackupSubpage(
                     }
 
                     Spacer(modifier = Modifier.height(6.dp))
+                    var isTestingConn by remember { mutableStateOf(false) }
+                    OutlinedButton(
+                        onClick = {
+                            isTestingConn = true
+                            viewModel.testGoogleDriveConnection { _, msg ->
+                                isTestingConn = false
+                                backupStatusMessage = msg
+                                viewModel.setBanner(msg)
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth().testTag("test_drive_connection_button"),
+                        shape = RoundedCornerShape(8.dp),
+                        enabled = !isDriveSyncing && !isTestingConn
+                    ) {
+                        if (isTestingConn) {
+                            CircularProgressIndicator(modifier = Modifier.size(12.dp), strokeWidth = 1.5.dp)
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Google Drive API စစ်ဆေးနေပါသည်...", fontSize = 11.sp)
+                        } else {
+                            Text("🔍 Drive ချိတ်ဆက်မှု အခြေအနေ စစ်ဆေးမည် (Test Connection)", fontSize = 11.sp)
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
                     OutlinedButton(
                         onClick = { viewModel.disconnectGoogleAccount() },
                         modifier = Modifier.fillMaxWidth().testTag("disconnect_google_button"),
@@ -455,7 +479,7 @@ fun SettingsBackupSubpage(
                                     googleEmailInput = it
                                     coroutineScope.launch { emailBringIntoViewRequester.bringIntoView() }
                                 },
-                                placeholder = { Text("nyeinmyolatt420@gmail.com") },
+                                placeholder = { Text("WINSOEMOUNG@gmail.com") },
                                 modifier = Modifier.weight(1f).testTag("google_email_input"),
                                 singleLine = true,
                             )
@@ -473,15 +497,105 @@ fun SettingsBackupSubpage(
                             Text("အကြံပြု အကောင့်:", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Spacer(modifier = Modifier.width(6.dp))
                             FilterChip(
-                                selected = googleEmailInput == "nyeinmyolatt420@gmail.com",
+                                selected = googleEmailInput == "WINSOEMOUNG@gmail.com",
                                 onClick = {
-                                    googleEmailInput = "nyeinmyolatt420@gmail.com"
-                                    viewModel.connectGoogleAccount("nyeinmyolatt420@gmail.com")
+                                    googleEmailInput = "WINSOEMOUNG@gmail.com"
+                                    viewModel.connectGoogleAccount("WINSOEMOUNG@gmail.com")
                                 },
-                                label = { Text("nyeinmyolatt420@gmail.com", fontSize = 10.sp) }
+                                label = { Text("WINSOEMOUNG@gmail.com", fontSize = 10.sp) }
                             )
                         }
+
+                        Spacer(modifier = Modifier.height(14.dp))
+                        HorizontalDivider()
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        // Google Cloud OAuth 2.0 Client credentials panel
+                        Card(
+                            shape = RoundedCornerShape(10.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("🛡️ Google Cloud OAuth 2.0 (pos-sync-4)", fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                                    Surface(shape = RoundedCornerShape(4.dp), color = Color(0xFFDCFCE7)) {
+                                        Text("Configured", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color(0xFF15803D), modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp))
+                                    }
+                                }
+                                Text("Client ID: ${com.example.offlinepos.Sync.GoogleOAuthManager.CLIENT_ID}", fontSize = 9.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                                Spacer(modifier = Modifier.height(8.dp))
+
+                                OutlinedButton(
+                                    onClick = {
+                                        try {
+                                            val url = viewModel.getGoogleOAuthConsentUrl()
+                                            val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                                            context.startActivity(browserIntent)
+                                            backupStatusMessage = "ဘရောက်ဆာတွင် ခွင့်ပြုချက်ပေးပြီးနောက် ရရှိသော Code ကို အောက်တွင် ထည့်သွင်းပါ"
+                                        } catch (e: Exception) {
+                                            backupStatusMessage = "Browser ဖွင့်မရပါ: ${e.message}"
+                                        }
+                                    },
+                                    modifier = Modifier.fillMaxWidth().testTag("browser_oauth_button"),
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Text("🌐 Browser ဖြင့် တိုက်ရိုက် Google OAuth ခွင့်ပြုမည်", fontSize = 11.sp)
+                                }
+
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    OutlinedTextField(
+                                        value = oauthCodeInput,
+                                        onValueChange = { oauthCodeInput = it },
+                                        placeholder = { Text("4/0A... Authorization Code ထည့်ရန်", fontSize = 10.sp) },
+                                        modifier = Modifier.weight(1f).testTag("oauth_code_input"),
+                                        singleLine = true,
+                                    )
+                                    Button(
+                                        onClick = {
+                                            if (oauthCodeInput.isNotBlank()) {
+                                                isExchangingCode = true
+                                                viewModel.exchangeManualOAuthCode(oauthCodeInput) { ok, msg ->
+                                                    isExchangingCode = false
+                                                    backupStatusMessage = msg
+                                                    viewModel.setBanner(msg)
+                                                    if (ok) oauthCodeInput = ""
+                                                }
+                                            }
+                                        },
+                                        enabled = oauthCodeInput.isNotBlank() && !isExchangingCode,
+                                        shape = RoundedCornerShape(8.dp),
+                                        modifier = Modifier.align(Alignment.CenterVertically).testTag("exchange_oauth_code_button")
+                                    ) {
+                                        if (isExchangingCode) {
+                                            CircularProgressIndicator(modifier = Modifier.size(12.dp), color = Color.White, strokeWidth = 1.5.dp)
+                                        } else {
+                                            Text("အတည်ပြုမည်", fontSize = 11.sp)
+                                        }
+                                    }
+                                }
+                            }
                         }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+                ) {
+                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text("💡 Google Drive Sync အောင်မြင်ရန် လိုအပ်ချက်များ:", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
+                        Text("၁။ Google Cloud Console (pos-sync-4) တွင် 'Google Drive API' ကို Enable ပြုလုပ်ထားရန် လိုအပ်ပါသည်။", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("၂။ OAuth Consent Screen တွင် Status သည် Testing ဖြစ်ပါက အသုံးပြုမည့် Gmail ကို 'Test users' ထဲ ထည့်ထားပေးရပါမည်။", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("၃။ အက်ပ်တွင် '⚠️ Google Drive ခွင့်ပြုချက် အတည်ပြုရန် လိုအပ်ပါသည်' ပေါ်ပါက 'ခွင့်ပြုချက် အတည်ပြုမည်' ကို တစ်ချက်နှိပ်၍ Allow ပေးပါ။", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("၄။ Browser ဖြင့် တိုက်ရိုက်ခွင့်ပြုလိုပါက အထက်ပါ '🌐 Browser ဖြင့် တိုက်ရိုက် Google OAuth ခွင့်ပြုမည်' ကို နှိပ်၍ Code ရယူထည့်သွင်းနိုင်ပါသည်။", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
@@ -622,6 +736,7 @@ fun SettingsBackupSubpage(
         }
 
         Spacer(modifier = Modifier.height(48.dp))
+    }
 
     if (showRestoreChoice && pendingRestoreUri != null) {
         Dialog(onDismissRequest = {

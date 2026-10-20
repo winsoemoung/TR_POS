@@ -12,12 +12,12 @@ import androidx.lifecycle.viewModelScope
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
-import com.example.offlinepos.BuildConfig
 import com.example.offlinepos.Repository.Actor
 import com.example.offlinepos.Repository.CheckoutRepository
 import com.example.offlinepos.Repository.CheckoutResult
 import com.example.offlinepos.Repository.PaymentRequest
 import com.example.offlinepos.Sync.BackupManager
+import com.example.offlinepos.Sync.GoogleOAuthManager
 import com.example.offlinepos.Sync.SyncWorker
 import com.example.offlinepos.Sync.GoogleDriveSyncManager
 import com.example.offlinepos.Sync.GoogleDriveSyncWorker
@@ -1205,17 +1205,15 @@ class PosViewModel(private val context: Context) : ViewModel() {
     val lastGoogleBackupTime: StateFlow<Long> = _lastGoogleBackupTime.asStateFlow()
     private val driveSyncManager = GoogleDriveSyncManager(context.applicationContext)
 
-    private fun googleSignInOptions(): GoogleSignInOptions {
-        val builder = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
-            .requestEmail()
-            .requestScopes(Scope("https://www.googleapis.com/auth/drive.appdata"))
-
-        val webClientId = runCatching { BuildConfig.GOOGLE_WEB_CLIENT_ID }.getOrDefault("").trim()
-        if (webClientId.isNotBlank() && webClientId != "your_client_id_here") {
-            runCatching { builder.requestIdToken(webClientId) }
-        }
-        return builder.build()
-    }
+    private fun googleSignInOptions(): GoogleSignInOptions = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+        .requestEmail()
+        .requestIdToken(GoogleOAuthManager.CLIENT_ID)
+        .requestServerAuthCode(GoogleOAuthManager.CLIENT_ID, false)
+        .requestScopes(
+            Scope(GoogleOAuthManager.SCOPE_DRIVE_APPDATA),
+            Scope(GoogleOAuthManager.SCOPE_DRIVE_FILE)
+        )
+        .build()
 
     fun googleSignInIntent(): Intent {
         val options = googleSignInOptions()
@@ -1235,6 +1233,12 @@ class PosViewModel(private val context: Context) : ViewModel() {
             val task = GoogleSignIn.getSignedInAccountFromIntent(data)
             val account = task.getResult(ApiException::class.java)
             val email = account.email.orEmpty()
+            val serverAuthCode = account.serverAuthCode
+            if (!serverAuthCode.isNullOrBlank()) {
+                viewModelScope.launch(Dispatchers.IO) {
+                    GoogleOAuthManager(context).exchangeAuthorizationCode(serverAuthCode)
+                }
+            }
             if (email.isNotBlank()) {
                 connectGoogleAccount(email)
                 triggerAutoDriveSync("Google Sign-In Connect")
@@ -1245,6 +1249,55 @@ class PosViewModel(private val context: Context) : ViewModel() {
         } catch (_: Exception) {
             false
         }
+    }
+
+    fun getGoogleOAuthConsentUrl(): String {
+        return GoogleOAuthManager(context).buildConsentUrl(loginHint = _googleAccount.value)
+    }
+
+    fun exchangeManualOAuthCode(code: String, onResult: (Boolean, String) -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val result = GoogleOAuthManager(context).exchangeAuthorizationCode(code)
+            withContext(Dispatchers.Main) {
+                if (result.isSuccess) {
+                    val email = result.getOrNull() ?: "Google Account"
+                    connectGoogleAccount(email)
+                    triggerAutoDriveSync("Manual OAuth Code Exchange")
+                    onResult(true, "Google OAuth ချိတ်ဆက်မှု အောင်မြင်ပါသည် ($email)")
+                } else {
+                    val msg = result.exceptionOrNull()?.localizedMessage ?: "ကုတ် မမှန်ကန်ပါ"
+                    onResult(false, "OAuth Code မမှန်ကန်ပါ: $msg")
+                }
+            }
+        }
+    }
+
+    // App Appearance: Theme Mode State Flow
+    private val _themeMode = MutableStateFlow(storeConfig.getThemeMode())
+    val themeMode: StateFlow<StoreConfig.ThemeMode> = _themeMode.asStateFlow()
+
+    fun setThemeMode(mode: StoreConfig.ThemeMode) {
+        storeConfig.setThemeMode(mode)
+        _themeMode.value = mode
+    }
+
+    // Sales & Inventory Preferences
+    val currencySymbol = MutableStateFlow(storeConfig.getCurrencySymbol())
+    fun setCurrencySymbol(sym: String) {
+        storeConfig.setCurrencySymbol(sym)
+        currencySymbol.value = sym
+    }
+
+    val isLowStockAlertEnabled = MutableStateFlow(storeConfig.isLowStockAlertEnabled())
+    fun setLowStockAlertEnabled(enabled: Boolean) {
+        storeConfig.setLowStockAlertEnabled(enabled)
+        isLowStockAlertEnabled.value = enabled
+    }
+
+    val isPasscodeLockEnabled = MutableStateFlow(storeConfig.isPasscodeLockEnabled())
+    fun setPasscodeLockEnabled(enabled: Boolean) {
+        storeConfig.setPasscodeLockEnabled(enabled)
+        isPasscodeLockEnabled.value = enabled
     }
 
     val authRecoveryIntent: StateFlow<Intent?> = RealtimeDriveSyncCoordinator.authRecoveryIntent
@@ -1274,6 +1327,92 @@ class PosViewModel(private val context: Context) : ViewModel() {
                         else -> "Google Drive Sync မအောင်မြင်ပါ: ${ex?.localizedMessage ?: "စစ်ဆေးရန်လိုပါသည်"}"
                     }
                     onComplete(false, msg)
+                }
+            }
+        }
+    }
+
+    /**
+     * Diagnostic tool to test connection to Google Drive API step-by-step
+     */
+    fun testGoogleDriveConnection(onComplete: (Boolean, String) -> Unit) {
+        val email = _googleAccount.value
+        if (email.isNullOrBlank()) {
+            onComplete(false, "Google Account ကို အရင်ချိတ်ဆက်ထားရန် လိုအပ်ပါသည်")
+            return
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                // 1. Check Internet connection
+                val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager
+                val activeNetwork = cm?.activeNetwork
+                val caps = activeNetwork?.let { cm.getNetworkCapabilities(it) }
+                val hasInternet = caps?.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
+
+                if (!hasInternet) {
+                    withContext(Dispatchers.Main) {
+                        onComplete(false, "အင်တာနက် လိုင်းမမိပါ (Wi-Fi သို့မဟုတ် Mobile Data ဖွင့်ထားခြင်း ရှိ/မရှိ စစ်ဆေးပါ)")
+                    }
+                    return@launch
+                }
+
+                // 2. Fetch Access Token
+                val token = GoogleOAuthManager(context).getValidAccessToken(email)
+                if (token.isBlank()) {
+                    withContext(Dispatchers.Main) {
+                        onComplete(false, "Google OAuth Access Token မရရှိပါ (Google Sign-In သို့မဟုတ် Browser ဖြင့် ပြန်လည် ခွင့်ပြုပါ)")
+                    }
+                    return@launch
+                }
+
+                // 3. Test Google Drive API endpoint
+                val url = java.net.URL("https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&pageSize=1&fields=files(id,name)")
+                val conn = (url.openConnection() as java.net.HttpURLConnection).apply {
+                    requestMethod = "GET"
+                    connectTimeout = 15000
+                    readTimeout = 15000
+                    setRequestProperty("Authorization", "Bearer $token")
+                    setRequestProperty("Accept", "application/json")
+                }
+
+                val code = conn.responseCode
+                val responseBody = (if (code in 200..299) conn.inputStream else conn.errorStream)
+                    ?.bufferedReader()?.use { it.readText() }.orEmpty()
+                conn.disconnect()
+
+                withContext(Dispatchers.Main) {
+                    when (code) {
+                        in 200..299 -> {
+                            onComplete(true, "✓ Google Drive API ချိတ်ဆက်မှု အောင်မြင်ပါသည် (အင်တာနက်နှင့် ခွင့်ပြုချက် အားလုံး အဆင်ပြေပါသည်)")
+                        }
+                        401 -> {
+                            onComplete(false, "⚠️ OAuth Token သက်တမ်းကုန်နေပါသည် (HTTP 401: ပြန်လည် Login ဝင်ပါ)")
+                        }
+                        403 -> {
+                            if (responseBody.contains("disabled", ignoreCase = true) || responseBody.contains("not been used", ignoreCase = true)) {
+                                onComplete(false, "⚠️ Google Cloud Console တွင် 'Google Drive API' ကို မဖွင့်ရသေးပါ (Google Cloud > APIs & Services > Library တွင် Enable ပြုလုပ်ပေးပါ)")
+                            } else {
+                                onComplete(false, "⚠️ Google Drive အသုံးပြုခွင့် ကန့်သတ်ချက် (HTTP 403: $responseBody)")
+                            }
+                        }
+                        else -> {
+                            onComplete(false, "⚠️ Google Drive ချိတ်ဆက်မှု အဆင်မပြေပါ (HTTP $code: $responseBody)")
+                        }
+                    }
+                }
+            } catch (authEx: com.google.android.gms.auth.UserRecoverableAuthException) {
+                RealtimeDriveSyncCoordinator.setAuthRecoveryIntent(authEx.intent)
+                withContext(Dispatchers.Main) {
+                    onComplete(false, "⚠️ Google Drive ခွင့်ပြုချက် (Permission) အတည်ပြုရန် လိုအပ်ပါသည် ('ခွင့်ပြုချက် အတည်ပြုမည်' ကို နှိပ်ပါ)")
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    val msg = e.localizedMessage ?: e.message ?: "စစ်ဆေး၍မရပါ"
+                    if (e is java.net.UnknownHostException || e is java.net.SocketTimeoutException) {
+                        onComplete(false, "⏳ အင်တာနက် လိုင်းမငြိမ်ပါ သို့မဟုတ် googleapis.com သို့ ချိတ်မရပါ: $msg")
+                    } else {
+                        onComplete(false, "⚠️ စစ်ဆေးမှု မအောင်မြင်ပါ: $msg")
+                    }
                 }
             }
         }
@@ -1448,6 +1587,7 @@ class PosViewModel(private val context: Context) : ViewModel() {
         WorkManager.getInstance(context).cancelUniqueWork("google-drive-sync-queue")
         WorkManager.getInstance(context).cancelUniqueWork("google-drive-sync-now")
         GoogleSignIn.getClient(context, googleSignInOptions()).signOut()
+        GoogleOAuthManager(context).clearTokens()
         setBanner("Google အကောင့် ချိတ်ဆက်မှု ဖြုတ်ပြီးပါပြီ")
     }
 
@@ -2340,17 +2480,23 @@ class PosViewModel(private val context: Context) : ViewModel() {
                             sourceDb.rawQuery("SELECT * FROM payments", null).use { cursor ->
                                 val columns = cursor.columnNames
                                 while (cursor.moveToNext()) {
+                                    val paymentIdIdx = cursor.getColumnIndex("paymentId")
+                                    val paymentId = if (paymentIdIdx >= 0) cursor.getString(paymentIdIdx) else ""
                                     val saleIdIdx = cursor.getColumnIndex("saleId")
                                     val saleId = if (saleIdIdx >= 0) cursor.getString(saleIdIdx) else ""
 
                                     var exists = false
-                                    if (saleId.isNotBlank()) {
+                                    if (paymentId.isNotBlank()) {
+                                        sqlite.query(SimpleSQLiteQuery("SELECT 1 FROM payments WHERE paymentId = ? LIMIT 1", arrayOf(paymentId))).use { c ->
+                                            if (c.moveToFirst()) exists = true
+                                        }
+                                    } else if (saleId.isNotBlank()) {
                                         sqlite.query(SimpleSQLiteQuery("SELECT 1 FROM payments WHERE saleId = ? LIMIT 1", arrayOf(saleId))).use { c ->
                                             if (c.moveToFirst()) exists = true
                                         }
                                     }
                                     if (!exists) {
-                                        val names = columns.filter { it != "paymentId" }
+                                        val names = columns.toList()
                                         val args = names.map { col ->
                                             val idx = cursor.getColumnIndex(col)
                                             when (cursor.getType(idx)) {
@@ -2364,7 +2510,7 @@ class PosViewModel(private val context: Context) : ViewModel() {
                                         }.toTypedArray()
 
                                         sqlite.execSQL(
-                                            "INSERT INTO payments (${names.joinToString(",")}) VALUES (${names.joinToString(",") { "?" }})",
+                                            "INSERT OR IGNORE INTO payments (${names.joinToString(",")}) VALUES (${names.joinToString(",") { "?" }})",
                                             args
                                         )
                                     }

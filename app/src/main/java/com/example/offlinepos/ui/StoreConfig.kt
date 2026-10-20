@@ -233,4 +233,40 @@ class StoreConfig(context: Context) {
     fun setStaffName(name: String) {
         prefs.edit().putString("staff_client_name", name).apply()
     }
+
+    // App Appearance: Dark/Light Mode Preference (Persisted in SharedPreferences)
+    enum class ThemeMode(val label: String, val icon: String) {
+        SYSTEM("စနစ်အတိုင်း (System)", "📱"),
+        LIGHT("အလင်း (Light)", "☀️"),
+        DARK("အမှောင် (Dark)", "🌙"),
+    }
+
+    fun getThemeMode(): ThemeMode {
+        val raw = prefs.getString("app_theme_mode", ThemeMode.SYSTEM.name) ?: ThemeMode.SYSTEM.name
+        return runCatching { ThemeMode.valueOf(raw) }.getOrDefault(ThemeMode.SYSTEM)
+    }
+
+    fun setThemeMode(mode: ThemeMode) {
+        prefs.edit().putString("app_theme_mode", mode.name).apply()
+    }
+
+    fun getCurrencySymbol(): String = prefs.getString("currency_symbol", "Ks") ?: "Ks"
+    fun setCurrencySymbol(symbol: String) {
+        prefs.edit().putString("currency_symbol", symbol.trim().ifBlank { "Ks" }).apply()
+    }
+
+    fun isLowStockAlertEnabled(): Boolean = prefs.getBoolean("low_stock_alert_enabled", true)
+    fun setLowStockAlertEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean("low_stock_alert_enabled", enabled).apply()
+    }
+
+    fun isPasscodeLockEnabled(): Boolean = prefs.getBoolean("passcode_lock_enabled", false)
+    fun setPasscodeLockEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean("passcode_lock_enabled", enabled).apply()
+    }
+
+    fun getPasscodePin(): String = prefs.getString("passcode_pin", "1234") ?: "1234"
+    fun setPasscodePin(pin: String) {
+        prefs.edit().putString("passcode_pin", pin.trim()).apply()
+    }
 }

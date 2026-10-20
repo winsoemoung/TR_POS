@@ -100,7 +100,13 @@ class MainActivity : ComponentActivity() {
         }
 
         setContent {
-            OfflinePOSTheme {
+            val themeMode by viewModel.themeMode.collectAsState()
+            val isDark = when (themeMode) {
+                com.example.offlinepos.ui.StoreConfig.ThemeMode.DARK -> true
+                com.example.offlinepos.ui.StoreConfig.ThemeMode.LIGHT -> false
+                com.example.offlinepos.ui.StoreConfig.ThemeMode.SYSTEM -> androidx.compose.foundation.isSystemInDarkTheme()
+            }
+            OfflinePOSTheme(darkTheme = isDark) {
                 MainApp(viewModel = viewModel)
             }
         }

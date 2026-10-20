@@ -49,8 +49,8 @@ class RecordLevelSyncManager(private val context: Context) {
     }
 
     suspend fun sync(accountEmail: String): Result<Int> = withContext(Dispatchers.IO) {
-        runCatching {
-            val token = GoogleAuthHelper.fetchToken(context, accountEmail, SCOPE)
+        try {
+            val token = GoogleOAuthManager(context).getValidAccessToken(accountEmail)
             val db = AppDatabase.get(context)
             
             // 1. Read local state
@@ -82,7 +82,12 @@ class RecordLevelSyncManager(private val context: Context) {
                 .putString("last_conflict_summary", mergeResult.summary)
                 .apply()
                 
-            mergeResult.totalRecords
+            Result.success(mergeResult.totalRecords)
+        } catch (authEx: com.google.android.gms.auth.UserRecoverableAuthException) {
+            RealtimeDriveSyncCoordinator.setAuthRecoveryIntent(authEx.intent)
+            Result.failure(authEx)
+        } catch (t: Throwable) {
+            Result.failure(t)
         }
     }
 

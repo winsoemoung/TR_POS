@@ -3,9 +3,7 @@ package com.example.offlinepos.Sync
 import android.accounts.Account
 import android.content.Context
 import com.example.offlinepos.data.local.AppDatabase
-import com.google.android.gms.auth.GoogleAuthException
 import com.google.android.gms.auth.GoogleAuthUtil
-import com.google.android.gms.auth.UserRecoverableAuthException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -13,25 +11,6 @@ import org.json.JSONObject
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
-
-object GoogleAuthHelper {
-    fun fetchToken(context: Context, accountEmail: String, scope: String): String {
-        return try {
-            val token = GoogleAuthUtil.getToken(context, Account(accountEmail, "com.google"), scope)
-            RealtimeDriveSyncCoordinator.clearAuthRecoveryIntent()
-            token
-        } catch (e: UserRecoverableAuthException) {
-            RealtimeDriveSyncCoordinator.setAuthRecoveryIntent(e.intent)
-            throw e
-        } catch (e: GoogleAuthException) {
-            throw IllegalStateException("Virtual Device/ဖုန်း၏ Settings တွင် ($accountEmail) မရှိပါ။ Google Sign-In အသုံးပြုပါ သို့မဟုတ် Settings > Accounts တွင် အကောင့်ဝင်ပါ", e)
-        } catch (e: IllegalArgumentException) {
-            throw IllegalStateException("Virtual Device/ဖုန်း၏ Settings တွင် ($accountEmail) မရှိပါ။ Google Sign-In အသုံးပြုပါ သို့မဟုတ် Settings > Accounts တွင် အကောင့်ဝင်ပါ", e)
-        } catch (e: Exception) {
-            throw IllegalStateException(e.localizedMessage ?: "Google Auth မအောင်မြင်ပါ (Virtual Device တွင် Google Play Services မရှိပါ သို့မဟုတ် အကောင့်မဝင်ထားပါ)", e)
-        }
-    }
-}
 
 class GoogleDriveSyncManager(private val context: Context) {
     companion object {
@@ -41,9 +20,9 @@ class GoogleDriveSyncManager(private val context: Context) {
 
     suspend fun uploadLatestBackup(accountEmail: String): Result<Long> = withContext(Dispatchers.IO) {
         var lastError: Throwable? = null
-        for (attempt in 0..2) {
+        repeat(3) { attempt ->
             try {
-                val token = GoogleAuthHelper.fetchToken(context, accountEmail, DRIVE_SCOPE)
+                val token = GoogleOAuthManager(context).getValidAccessToken(accountEmail)
                 val db = AppDatabase.get(context)
                 val backupManager = BackupManager(db) { System.currentTimeMillis() }
                 val file = File(context.cacheDir, BACKUP_NAME)
@@ -58,9 +37,6 @@ class GoogleDriveSyncManager(private val context: Context) {
                 return@withContext Result.failure(authEx)
             } catch (t: Throwable) {
                 lastError = t
-                if (t.message?.contains("Settings") == true || t.message?.contains("Virtual Device") == true) {
-                    break
-                }
                 if (attempt < 2) delay(1000L * (attempt + 1))
             }
         }
@@ -69,8 +45,7 @@ class GoogleDriveSyncManager(private val context: Context) {
 
     suspend fun downloadLatestBackup(accountEmail: String, targetFile: File): Result<Boolean> = withContext(Dispatchers.IO) {
         try {
-            val token = GoogleAuthUtil.getToken(context, Account(accountEmail, "com.google"), DRIVE_SCOPE)
-            RealtimeDriveSyncCoordinator.clearAuthRecoveryIntent()
+            val token = GoogleOAuthManager(context).getValidAccessToken(accountEmail)
             val fileId = findBackupId(token) ?: return@withContext Result.failure(java.io.FileNotFoundException("Google Drive ပေါ်တွင် Backup ဖိုင် မတွေ့ရှိပါ"))
             val url = URL("https://www.googleapis.com/drive/v3/files/$fileId?alt=media")
             val connection = open(url, token, "GET")

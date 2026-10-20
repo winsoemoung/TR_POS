@@ -60,8 +60,8 @@ object RealtimeDriveSyncCoordinator {
     fun isNetworkAvailable(context: Context): Boolean {
         return try {
             val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return true
-            val activeNetwork = cm.activeNetwork ?: return true
-            val capabilities = cm.getNetworkCapabilities(activeNetwork) ?: return true
+            val activeNetwork = cm.activeNetwork ?: return false
+            val capabilities = cm.getNetworkCapabilities(activeNetwork) ?: return false
             capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
         } catch (_: Exception) {
             true
@@ -136,19 +136,35 @@ object RealtimeDriveSyncCoordinator {
                             }
                         } else {
                             val ex = recordResult.exceptionOrNull() ?: snapshotResult.exceptionOrNull()
-                            val msg = ex?.localizedMessage ?: ex?.message
-                            if (!msg.isNullOrBlank()) {
-                                _syncStatus.value = "⚠️ Sync ခေတ္တ မအောင်မြင်ပါ: $msg"
-                            } else {
-                                _syncStatus.value = "⚠️ Sync ခေတ္တ မအောင်မြင်ပါ (နောက်တစ်ကြိမ် ပြန်လည် ကြိုးစားပါမည်)"
+                            when {
+                                ex is com.google.android.gms.auth.UserRecoverableAuthException -> {
+                                    setAuthRecoveryIntent(ex.intent)
+                                    _syncStatus.value = "⚠️ Google Drive ခွင့်ပြုချက် အတည်ပြုပေးရန် လိုအပ်ပါသည် (နှိပ်၍ အတည်ပြုပါ)"
+                                }
+                                ex is java.net.UnknownHostException || ex is java.net.SocketTimeoutException -> {
+                                    _syncStatus.value = "⏳ အင်တာနက် လိုင်းမငြိမ်ပါ (Queue တွင် သိမ်းဆည်းထားပါသည်)"
+                                }
+                                ex != null && ex.message?.contains("401") == true -> {
+                                    _syncStatus.value = "⚠️ Google OAuth Token သက်တမ်းကုန်နေပါသည် (Settings တွင် ပြန်လည် ချိတ်ဆက်ပါ)"
+                                }
+                                ex != null && (ex.message?.contains("403") == true || ex.message?.contains("Drive API") == true) -> {
+                                    _syncStatus.value = "⚠️ Google Cloud တွင် Google Drive API ဖွင့်ထားရန် လိုအပ်ပါသည် (HTTP 403)"
+                                }
+                                else -> {
+                                    val err = ex?.localizedMessage ?: "Sync မအောင်မြင်ပါ"
+                                    _syncStatus.value = "⚠️ $err (Queue တွင် သိမ်းဆည်းထားပါသည်)"
+                                }
                             }
                         }
                     } catch (e: Exception) {
-                        val msg = e.localizedMessage ?: e.message
-                        if (!msg.isNullOrBlank()) {
-                            _syncStatus.value = "⚠️ Drive Sync Error: $msg"
+                        if (e is com.google.android.gms.auth.UserRecoverableAuthException) {
+                            setAuthRecoveryIntent(e.intent)
+                            _syncStatus.value = "⚠️ Google Drive ခွင့်ပြုချက် အတည်ပြုပေးရန် လိုအပ်ပါသည်"
+                        } else if (e is java.net.UnknownHostException || e is java.net.SocketTimeoutException) {
+                            _syncStatus.value = "⏳ အင်တာနက် လိုင်းမငြိမ်ပါ (Queue တွင် သိမ်းဆည်းထားပါသည်)"
                         } else {
-                            _syncStatus.value = "⏳ Drive Sync ကို Queue ထဲ ထည့်ထားပါသည်"
+                            val msg = e.localizedMessage ?: e.message ?: "စစ်ဆေးရန်လိုပါသည်"
+                            _syncStatus.value = "⚠️ Drive Sync: $msg (Queue တွင် သိမ်းဆည်းထားပါသည်)"
                         }
                     } finally {
                         _isSyncing.value = false
