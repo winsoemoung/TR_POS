@@ -7,7 +7,7 @@ import com.example.offlinepos.BuildConfig
 import com.google.firebase.FirebaseApp
 import com.google.firebase.appcheck.FirebaseAppCheck
 import com.google.firebase.appcheck.debug.DebugAppCheckProviderFactory
-import com.google.firebase.appcheck.recaptchaenterprise.RecaptchaEnterpriseAppCheckProviderFactory
+import com.google.firebase.appcheck.recaptcha.RecaptchaAppCheckProviderFactory
 
 private const val TAG = "AppCheckInit"
 
@@ -49,7 +49,7 @@ fun configureAppCheck(context: Context, intent: Intent?) {
                 val siteKey = context.getString(resId)
                 if (siteKey.isNotBlank()) {
                     FirebaseAppCheck.getInstance().installAppCheckProviderFactory(
-                        RecaptchaEnterpriseAppCheckProviderFactory.getInstance(siteKey)
+                        RecaptchaAppCheckProviderFactory.getInstance(siteKey)
                     )
                     Log.d(TAG, "RecaptchaEnterpriseAppCheckProviderFactory installed.")
                 } else {

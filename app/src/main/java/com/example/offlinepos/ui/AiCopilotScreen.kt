@@ -111,7 +111,7 @@ fun AiCopilotScreen(
                 .fillMaxSize()
                 .imePadding()
         ) {
-            // Top App Bar with Store logo, Store Name ("san thit"), "Offline" badge & user subtitle (matching HomeScreen!)
+            // Top App Bar with Store logo, Store Name & Gemini Assistant badge
             TopAppBar(
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -128,16 +128,28 @@ fun AiCopilotScreen(
                         Column {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(
-                                    text = storeProfile.storeName,
+                                    text = "Gemini AI Assistant",
                                     style = MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.Bold,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
+                                Surface(
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = MaterialTheme.colorScheme.primaryContainer,
+                                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                ) {
+                                    Text(
+                                        text = "3.8 Flash",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.SemiBold,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                }
                             }
                             Text(
-                                text = if (actor.userId.contains("Cashier") || actor.userId.contains("အရောင်းတာဝန်ခံ")) "SanThit" else actor.userId,
+                                text = "${storeProfile.storeName} • POS Copilot & General AI",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -163,7 +175,7 @@ fun AiCopilotScreen(
                 )
             )
 
-            // Search / Command Bar & Dynamic Category Chips (matching HomeScreen layout!)
+            // Search / Command Bar & Dynamic Suggestion Chips
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -172,9 +184,20 @@ fun AiCopilotScreen(
                 OutlinedTextField(
                     value = inputText,
                     onValueChange = { inputText = it },
-                    placeholder = { Text("Name or SKU") },
+                    placeholder = { 
+                        Text(
+                            "Gemini အား မေးချင်ရာမေးပါ သို့မဟုတ် POS အမိန့်ပေးပါ...",
+                            fontSize = 13.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        ) 
+                    },
                     leadingIcon = {
-                        Icon(Icons.Default.Search, contentDescription = "Search", tint = MaterialTheme.colorScheme.primary)
+                        Icon(
+                            Icons.Default.AutoAwesome, 
+                            contentDescription = "Gemini", 
+                            tint = MaterialTheme.colorScheme.primary
+                        )
                     },
                     trailingIcon = {
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -221,17 +244,17 @@ fun AiCopilotScreen(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // Dynamic Category / Suggestion Chips
+                // Dynamic Category / Suggestion Chips (Both Gemini General AI & POS Copilot)
                 val promptSuggestions = listOf(
+                    "✨ မေးချင်ရာမေးပါ",
+                    "💡 အရောင်းတိုးမည့် နည်းလမ်းများ",
+                    "📝 ကြော်ငြာစာသား ရေးပေးပါ",
                     "📊 အရောင်းရဆုံး ပစ္စည်းများ",
                     "⚠️ လက်ကျန်နည်း ပစ္စည်းများ",
                     "💰 စုစုပေါင်း အရောင်းရငွေ",
                     "📈 ဒီနေ့ အရောင်းစာရင်း",
                     "👥 အကြွေးကျန် Customer များ",
                     "📦 စတော့လက်ကျန် စစ်ဆေးရန်",
-                    "📉 Dead Stock စစ်ဆေးပါ",
-                    "➕ Code အသစ် 787-CEM-01 ထည့်ပါ",
-                    "🎟️ Promo Code '787VIP' ၁၀% ထည့်ပါ",
                     "🏷️ သံချောင်း ဈေးနှုန်း ပြင်ပါ",
                 )
 
@@ -241,7 +264,15 @@ fun AiCopilotScreen(
                     items(promptSuggestions) { prompt ->
                         FilterChip(
                             selected = false,
-                            onClick = { viewModel.sendAiCommand(prompt) },
+                            onClick = { 
+                                val actualPrompt = when (prompt) {
+                                    "✨ မေးချင်ရာမေးပါ" -> "မင်္ဂလာပါ Gemini! မင်း ဘာတွေ လုပ်ပေးနိုင်သလဲ ရှင်းပြပေးပါ။"
+                                    "💡 အရောင်းတိုးမည့် နည်းလမ်းများ" -> "ကျွန်တော့်ဆိုင် အရောင်းတိုးစေဖို့ လက်တွေ့ကျတဲ့ စီးပွားရေးနဲ့ ဈေးရောင်း နည်းလမ်းကောင်းတွေ အကြံပေးပါ။"
+                                    "📝 ကြော်ငြာစာသား ရေးပေးပါ" -> "ဆိုင်ရဲ့ ပစ္စည်းအသစ်တွေ လူသိများစေဖို့ Facebook မှာ တင်မယ့် ဆွဲဆောင်မှုရှိတဲ့ ကြော်ငြာစာသား ရေးပေးပါ။"
+                                    else -> prompt
+                                }
+                                viewModel.sendAiCommand(actualPrompt) 
+                            },
                             label = { Text(prompt, fontSize = 12.sp) },
                             modifier = Modifier.testTag("category_chip_$prompt"),
                         )
@@ -260,26 +291,70 @@ fun AiCopilotScreen(
             ) {
                 if (messages.isEmpty()) {
                     item {
-                        Box(
+                        Card(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(vertical = 40.dp),
-                            contentAlignment = Alignment.Center,
+                                .padding(vertical = 16.dp),
+                            shape = RoundedCornerShape(16.dp),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                            ),
                         ) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text("🤖", fontSize = 40.sp)
-                                Spacer(modifier = Modifier.height(8.dp))
-                                Text(
-                                    text = "787 AI ကွပ်ကဲရေး ချိတ်ဆက်ပြီးပါပြီ",
-                                    style = MaterialTheme.typography.titleSmall,
-                                    fontWeight = FontWeight.Bold,
+                            Column(
+                                modifier = Modifier.padding(20.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Icon(
+                                    Icons.Default.AutoAwesome,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(44.dp)
                                 )
-                                Spacer(modifier = Modifier.height(4.dp))
+                                Spacer(modifier = Modifier.height(10.dp))
                                 Text(
-                                    text = "အထက်ပါ Search bar တွင် စာရိုက်၍လည်းကောင်း၊ Chip များကိုနှိပ်၍လည်းကောင်း မေးမြန်းနိုင်ပါသည်",
+                                    text = "Google Gemini AI Assistant & POS Copilot",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    textAlign = TextAlign.Center
+                                )
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text(
+                                    text = "Gemini App ကဲ့သို့ မည်သည့် အထွေထွေ ဗဟုသုတ၊ စီးပွားရေး အကြံဉာဏ်၊ စာရေးသားခြင်းနှင့် ဘာသာပြန်ခြင်းများကိုမဆို လွတ်လပ်စွာ မေးမြန်းနိုင်သလို၊ ဆိုင်တွင်း စတော့၊ အရောင်း၊ စာရင်းဇယားနှင့် ဈေးနှုန်းများကိုလည်း တိုက်ရိုက် စီမံခိုင်းစေနိုင်ပါသည် ခင်ဗျာ။",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    textAlign = TextAlign.Center,
+                                    lineHeight = 20.sp
                                 )
+                                Spacer(modifier = Modifier.height(14.dp))
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
+                                    ) {
+                                        Text(
+                                            text = "🌐 Gemini 3.8 Flash Online",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.primary,
+                                            fontWeight = FontWeight.SemiBold,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                        )
+                                    }
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.1f),
+                                    ) {
+                                        Text(
+                                            text = "📦 Offline POS Copilot",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.secondary,
+                                            fontWeight = FontWeight.SemiBold,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
@@ -607,10 +682,42 @@ fun AiSettingsDialog(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(10.dp))
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Default.AutoAwesome,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column {
+                            Text(
+                                text = "Google Gemini 3.8 Flash (AI Logic)",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "App Check ဖြင့် Cloud AI အလိုအလျောက် ချိတ်ဆက်ထားပါသည်။",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 11.sp
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
 
                 Text(
-                    text = "Google Gemini API Key (Optional):",
+                    text = "Google Gemini API Key (Optional / Backup):",
                     style = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.SemiBold,
                 )
@@ -618,7 +725,7 @@ fun AiSettingsDialog(
                 OutlinedTextField(
                     value = apiKeyInput,
                     onValueChange = { apiKeyInput = it },
-                    placeholder = { Text("AIzaSy... (Gemini 3.5 Flash)", fontSize = 12.sp) },
+                    placeholder = { Text("AIzaSy... (Gemini 3.8 Flash)", fontSize = 12.sp) },
                     singleLine = true,
                     leadingIcon = { Icon(Icons.Default.Key, contentDescription = null) },
                     modifier = Modifier.fillMaxWidth().testTag("gemini_api_key_input"),
@@ -627,7 +734,7 @@ fun AiSettingsDialog(
 
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
-                    text = "💡 API Key ထည့်ထားပါက Cloud Gemini 3.5 Flash Model ဖြင့် အလွန်စမတ်ကျစွာ အလုပ်လုပ်မည်ဖြစ်ပြီး၊ API Key မထည့်ထားပါကလည်း Offline Rule Engine ဖြင့် သုံးနိုင်ပါသည်။",
+                    text = "💡 သီးသန့် Gemini API Key ထည့်ထားပါက Backup အဖြစ် သုံးစွဲမည်ဖြစ်ပါသည်။ မထည့်ထားပါကလည်း Firebase AI Logic နှင့် Offline Rule Engine တို့ဖြင့် ချောမွေ့စွာ အလုပ်လုပ်ပါသည်။",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 11.sp,

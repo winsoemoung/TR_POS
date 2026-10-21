@@ -6,8 +6,12 @@ import com.example.offlinepos.data.local.ProductEntity
 import com.example.offlinepos.data.local.SaleEntity
 import com.example.offlinepos.ui.StoreConfig
 import com.example.offlinepos.ui.StoreProfile
+import com.google.firebase.Firebase
+import com.google.firebase.ai.ai
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
+import android.util.Log
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.BufferedReader
@@ -55,20 +59,38 @@ class AiPosEngine(private val context: Context) {
         userPrompt: String,
         dbContext: PosDatabaseContext,
     ): Pair<String, AiAction?> = withContext(Dispatchers.IO) {
-        val apiKey = getApiKey()
+        val systemPrompt = buildDualSystemPrompt(dbContext)
+        val combinedPrompt = "$systemPrompt\n\nUser Question/Command: $userPrompt"
 
+        // 1. Primary: Use Firebase AI Logic (gemini-3.8-flash) via App Check (Zero-key cloud AI)
+        try {
+            val model = Firebase.ai.generativeModel("gemini-3.8-flash")
+            val response = withTimeout(60_000L) {
+                model.generateContent(combinedPrompt)
+            }
+            val text = response.text
+            if (!text.isNullOrBlank()) {
+                val parsed = parseAiResponse(text, dbContext.products)
+                return@withContext parsed
+            }
+        } catch (e: Exception) {
+            Log.w("AiPosEngine", "Firebase AI Logic inference notice: ${e.message}")
+        }
+
+        // 2. Secondary: If Firebase AI Logic failed or custom key exists, call Gemini REST API
+        val apiKey = getApiKey()
         if (apiKey.isNotBlank()) {
             try {
-                val result = callGeminiApi(apiKey, userPrompt, dbContext)
+                val result = callGeminiApi(apiKey, userPrompt, dbContext, systemPrompt)
                 if (result != null) {
                     return@withContext result
                 }
             } catch (e: Exception) {
-                // Fallback to offline rule-based NLP parser
+                Log.w("AiPosEngine", "Direct Gemini REST API notice: ${e.message}")
             }
         }
 
-        // Offline POS Database Chatbot & NLP Engine
+        // 3. Fallback: Offline Intelligent POS Assistant & Conversational Engine
         processOfflineNlpCommand(userPrompt, dbContext)
     }
 
@@ -89,28 +111,12 @@ class AiPosEngine(private val context: Context) {
         )
     )
 
-    private fun callGeminiApi(
-        apiKey: String,
-        userPrompt: String,
-        dbContext: PosDatabaseContext,
-    ): Pair<String, AiAction?>? {
-        val endpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=$apiKey"
-        val url = URL(endpoint)
-        val conn = (url.openConnection() as HttpURLConnection).apply {
-            requestMethod = "POST"
-            setRequestProperty("Content-Type", "application/json")
-            connectTimeout = 60000
-            readTimeout = 60000
-            doOutput = true
-            doInput = true
-        }
-
+    private fun buildDualSystemPrompt(dbContext: PosDatabaseContext): String {
         val products = dbContext.products
         val sales = dbContext.sales
         val storeProfile = dbContext.storeProfile
 
-        // Build rich database context summary
-        val catalogSummary = products.take(35).joinToString("\n") { p ->
+        val catalogSummary = products.take(40).joinToString("\n") { p ->
             "- ID:${p.productId}, Name:${p.name}, SKU:${p.sku}, Barcode:${p.barcode ?: "-"}, Sell:${p.sellPriceMinor}Ks, Cost:${p.costPriceMinor}Ks, Stock:${p.stockQuantity} ${p.unitName}, Cat:${p.category}"
         }
         val lowStockSummary = if (dbContext.lowStockProducts.isNotEmpty()) {
@@ -125,20 +131,27 @@ class AiPosEngine(private val context: Context) {
             }
         } else "လက်ရှိ အကြွေးကျန် Customer မရှိပါ"
 
-        val promoSummary = storeConfig.getPromoCodes().joinToString(", ") { "${it.code} (${if (it.discountPercent > 0) "${it.discountPercent}%" else "${it.discountFlatMinor}Ks"})" }
+        val promoSummary = storeConfig.getPromoCodes().joinToString(", ") { "${it.code} (${if (it.discountPercent > 0) "${it.discountPercent}%" else "${it.discountFlatMinor}Ks"})" }.ifBlank { "မရှိသေးပါ" }
 
-        val systemPrompt = """
-            You are the intelligent Gemini AI Chatbot directly connected to the SQLite POS Database of '787 POS' (Store: ${storeProfile.storeName}).
-            You have real-time access to the store's full database:
+        return """
+            You are Gemini, an intelligent, helpful, and versatile AI assistant powered by Google Gemini, operating inside '787 POS' (Store: ${storeProfile.storeName}).
+
+            You have TWO core identities and capabilities:
+            1. GENERAL GEMINI ASSISTANT (Ask Anything - just like the official Google Gemini App):
+               - You can answer ANY question on ANY subject: general knowledge, world facts, science, health, history, mathematics, business ideas, creative writing, advice, daily conversations, recipe recommendations, language translation, email drafting, or explanations.
+               - You are NOT restricted to store or inventory topics. Feel free to converse naturally, explain concepts, give business tips, and answer whatever the user asks.
+               - Respond fluently, courteously, and helpfully in Myanmar (Burmese) language by default (or the language used by the user).
+
+            2. 787 POS STORE & DATABASE COPILOT:
+               - You have live, real-time access to the store's current SQLite database:
 
             === LIVE POS DATABASE SNAPSHOT ===
-            Store Details:
-            - Store Name: ${storeProfile.storeName}
-            - Current Tax Rate: ${storeProfile.taxRatePercent}%.
-            - Active Categories: ${dbContext.categories.joinToString(", ").ifBlank { "ဘိလပ်မြေ, သွပ်ပြား, သံချောင်း, ဆေးသုတ်, ပိုက်နှင့်ဆက်စပ်" }}
+            Store Name: ${storeProfile.storeName}
+            Current Tax Rate: ${storeProfile.taxRatePercent}%
+            Active Categories: ${dbContext.categories.joinToString(", ").ifBlank { "ဘိလပ်မြေ, သွပ်ပြား, သံချောင်း, ဆေးသုတ်, ပိုက်နှင့်ဆက်စပ်" }}
 
             Inventory Status:
-            - Total Products in Database: ${products.size}
+            - Total Products: ${products.size}
             - Low Stock Products Count: ${dbContext.lowStockCount}
             - Low Stock Items:
             $lowStockSummary
@@ -161,14 +174,8 @@ class AiPosEngine(private val context: Context) {
             $catalogSummary
             ==================================
 
-            Your Capabilities:
-            1. ANSWER QUESTIONS ABOUT POS DATA: Answer any questions about stock levels, low-stock warnings, today's sales, total revenue, debtor customers, prices, profit margins, product details, or store statistics.
-            2. SUPERUSER ACTIONS: You have permission to add new products, update prices, modify SKUs/barcodes, adjust stock quantities, change tax rates, add promo codes, or run dynamic database scripts.
-
-            Guidance:
-            - Always respond courteously and clearly in Myanmar (Burmese) language.
-            - When answering questions about database data (e.g. sales, stock, debt), provide accurate numbers from the snapshot above.
-            - When the user asks you to perform an actionable command (e.g., add product, update price, adjust stock, replace code), write a concise explanation in Burmese AND append a valid JSON block enclosed in ```json and ``` at the end:
+            POS SUPERUSER ACTIONS:
+            - When the user asks you to perform an actionable store change (e.g., add new product, update price, modify SKU/barcode, adjust stock, set tax rate, add promo code, replace category, or run a database script), write a clear explanation in Myanmar AND append a JSON action block enclosed in ```json and ``` at the end:
             ```json
             {
               "action": "ADD_PRODUCT" | "REPLACE_PRODUCT_CODE" | "UPDATE_SKU" | "UPDATE_BARCODE" | "BATCH_REPLACE_PREFIX" | "UPDATE_PRICE" | "ADJUST_STOCK" | "SET_TAX_RATE" | "ADD_PROMO_CODE" | "REPLACE_PROMO_CODE" | "EXECUTE_DYNAMIC_CODE" | "UPDATE_STORE_PROFILE" | "BATCH_REPLACE_CATEGORY",
@@ -190,7 +197,26 @@ class AiPosEngine(private val context: Context) {
               }
             }
             ```
+            - If the user is asking a general question, advice, chatting, or asking about store information without requesting a database modification, answer thoroughly and do NOT append any JSON block.
         """.trimIndent()
+    }
+
+    private fun callGeminiApi(
+        apiKey: String,
+        userPrompt: String,
+        dbContext: PosDatabaseContext,
+        systemPrompt: String,
+    ): Pair<String, AiAction?>? {
+        val endpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=$apiKey"
+        val url = URL(endpoint)
+        val conn = (url.openConnection() as HttpURLConnection).apply {
+            requestMethod = "POST"
+            setRequestProperty("Content-Type", "application/json")
+            connectTimeout = 60000
+            readTimeout = 60000
+            doOutput = true
+            doInput = true
+        }
 
         val jsonRequest = JSONObject().apply {
             val contents = JSONArray().apply {
@@ -218,7 +244,7 @@ class AiPosEngine(private val context: Context) {
             val parts = content?.optJSONArray("parts")
             val fullText = parts?.optJSONObject(0)?.optString("text") ?: return null
 
-            return parseAiResponse(fullText, products)
+            return parseAiResponse(fullText, dbContext.products)
         }
         return null
     }
@@ -832,22 +858,52 @@ class AiPosEngine(private val context: Context) {
             )
         }
 
-        // Default General Guidance
+        // 18. Greetings & Casual Conversation (Offline handling)
+        if (lower.contains("မင်္ဂလာ") || lower.contains("hello") || lower.contains("hi") || lower.contains("နေကောင်း") || lower.contains("ဘယ်သူလဲ") || lower.contains("gemini")) {
+            return Pair(
+                """
+                ✨ **မင်္ဂလာပါ! ကျွန်ုပ်သည် 787 POS တွင် ထည့်သွင်းထားသော Google Gemini AI Assistant ဖြစ်ပါသည်။**
+
+                ယခုအခါ စနစ်အား Gemini App ကဲ့သို့ မေးချင်ရာမေးနိုင်သော AI စနစ်အဖြစ် အဆင့်မြှင့်တင်ထားပါသည်:
+
+                🌐 **Gemini Cloud Mode (အင်တာနက် ချိတ်ဆက်ထားချိန်):**
+                • အထွေထွေ ဗဟုသုတ၊ သိပ္ပံ၊ သမိုင်း၊ သင်္ချာ၊ နေ့စဉ်ဘဝ အမေးအဖြေများ
+                • စီးပွားရေး အကြံဉာဏ်၊ အရောင်းမြှင့်တင်ရေး စာသားရေးသားခြင်း
+                • ဘာသာပြန်ခြင်း၊ ကဗျာနှင့် စာစီစာကုံး ရေးသားပေးခြင်း
+                • ဆိုင်၏ POS ဒေတာအပေါ် အခြေခံ၍ စမတ်ကျကျ အကြံပေးခြင်း
+
+                📦 **POS Offline Copilot (အင်တာနက်မလိုဘဲ တိုက်ရိုက်ရရှိနိုင်သည်):**
+                • "📊 အရောင်းရဆုံး ပစ္စည်းများ"
+                • "⚠️ လက်ကျန်နည်းနေသော ပစ္စည်းများ"
+                • "💰 စုစုပေါင်း အရောင်းရငွေ ဘယ်လောက်လဲ"
+                • "📈 ဒီနေ့ အရောင်းစာရင်း ပြပါ"
+                • "👥 အကြွေးကျန် Customer စာရင်း ပြပါ"
+                • "📦 ဘိလပ်မြေ လက်ကျန် ဘယ်လောက်ရှိလဲ"
+                • "သံချောင်း Code နှင့် ဈေးနှုန်းကို ၁၆,၀၀၀ ပြင်ပါ"
+                """.trimIndent(),
+                null
+            )
+        }
+
+        // Default General Guidance for unknown offline queries
         return Pair(
             """
-            မင်္ဂလာပါ! ကျွန်ုပ်သည် 787 POS ၏ AI ကွပ်ကဲရေးမှူး ဖြစ်ပါသည်။
-            စနစ်ထဲမှ POS Database (စတော့၊ အရောင်း၊ အကြွေး၊ ဈေးနှုန်း) များနှင့် တိုက်ရိုက်ချိတ်ဆက်ထားပါသည်။
+            🤖 **787 POS • Google Gemini Assistant (Offline Mode)**
 
-            အောက်ပါ မေးခွန်းနှင့် command များကို စာရိုက်၍ မေးမြန်း/အမိန့်ပေးနိုင်ပါသည်-
+            လက်ရှိတွင် အင်တာနက် ချိတ်ဆက်မှု မရှိသေးသောကြောင့် Offline မုဒ်ဖြင့် အလုပ်လုပ်နေပါသည်။
+
+            💡 **အင်တာနက် ဖွင့်ထားပါက (Online):**
+            Google Gemini 3.8 Flash မှတစ်ဆင့် ယခု Gemini App တွင် သုံးနေသကဲ့သို့ မည်သည့် အထွေထွေ ဗဟုသုတ၊ မေးခွန်းများ၊ စီးပွားရေး အကြံဉာဏ်များကိုမဆို လွတ်လပ်စွာ မေးမြန်းစုံစမ်းနိုင်ပါသည်။
+
+            📦 **လက်ရှိ Offline တွင်လည်း အောက်ပါ POS လုပ်ဆောင်ချက်များကို ချက်ချင်း အသုံးပြုနိုင်ပါသည်:**
             • "📊 အရောင်းရဆုံး ပစ္စည်းများ"
             • "⚠️ လက်ကျန်နည်းနေသော ပစ္စည်းများ"
-            • "💰 စုစုပေါင်း အရောင်းရငွေ ဘယ်လောက်လဲ"
-            • "📈 ဒီနေ့ အရောင်းစာရင်း ပြပါ"
-            • "👥 အကြွေးကျန် Customer စာရင်း ပြပါ"
-            • "📦 ဘိလပ်မြေ လက်ကျန် ဘယ်လောက်ရှိလဲ"
-            • "Code အသစ် 787-CEM-01 ဖြင့် ဘိလပ်မြေ ၁၅,၀၀၀ စာရင်းထဲ ထည့်ပါ"
-            • "သံချောင်း Code နှင့် ဈေးနှုန်းကို ၁၆,၀၀၀ ပြင်ပါ"
-            • "Promo Code '787VIP' ၁၀% လျှော့စျေး ထည့်ပါ"
+            • "💰 စုစုပေါင်း အရောင်းရငွေ"
+            • "📈 ဒီနေ့ အရောင်းစာရင်း"
+            • "👥 အကြွေးကျန် Customer စာရင်း"
+            • "📦 [ပစ္စည်းအမည်] လက်ကျန် ဘယ်လောက်ရှိလဲ"
+            • "🏷️ [ပစ္စည်းအမည်] ဈေးနှုန်းကို [ဈေးနှုန်း] ပြင်ပါ"
+            • "➕ Code အသစ် [Code] ဖြင့် [ပစ္စည်း] [ဈေးနှုန်း] စာရင်းထဲ ထည့်ပါ"
             """.trimIndent(),
             null
         )
