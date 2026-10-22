@@ -73,12 +73,14 @@ abstract class CheckoutDao {
         payment: PaymentEntity,
         audit: AuditEventEntity,
         now: Long,
+        stockDeductions: Map<Long, Long> = emptyMap(),
     ) {
         require(items.isNotEmpty()) { "Sale must contain at least one line" }
         require(payment.saleId == sale.saleId) { "Payment must belong to the sale" }
         insertSale(sale)
         items.forEach { line ->
-            check(reduceStock(line.productId, line.quantity, now) == 1) { "Insufficient stock" }
+            val deductQty = stockDeductions[line.productId] ?: line.quantity
+            check(reduceStock(line.productId, deductQty, now) == 1) { "Insufficient stock" }
         }
         insertItems(items)
         insertPayment(payment)

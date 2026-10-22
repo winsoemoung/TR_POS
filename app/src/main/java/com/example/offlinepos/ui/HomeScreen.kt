@@ -2,6 +2,7 @@ package com.example.offlinepos.ui
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -26,6 +27,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AccountBalanceWallet
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Info
@@ -111,13 +113,21 @@ fun HomeScreen(
     var showShiftReport by remember { mutableStateOf(false) }
     var showServerDialog by remember { mutableStateOf(false) }
     var showThermalPrinterDialog by remember { mutableStateOf(false) }
+    var showStockPredictionDialog by remember { mutableStateOf(false) }
+    var showStockInDialog by remember { mutableStateOf(false) }
+    var stockInPreselectedProduct by remember { mutableStateOf<ProductEntity?>(null) }
+    var stockInSuggestedQty by remember { mutableStateOf(10L) }
+
     val isServerRunning by viewModel.isServerRunning.collectAsState()
     val salesHistory by viewModel.salesHistory.collectAsState()
     val allProducts by viewModel.allProducts.collectAsState()
     val customers by viewModel.customers.collectAsState()
+    val stockPredictions by viewModel.stockPredictions.collectAsState()
     val context = LocalContext.current
     var recentSearches by remember { mutableStateOf(RecentSearchHelper.getRecentSearches(context)) }
 
+    val urgentPredictions = stockPredictions.filter { (it.daysRemaining <= 7 && it.currentStock > 0) || it.currentStock <= 0 }
+    val urgentStockCount = urgentPredictions.size
     val totalItemCount = cart.sumOf { it.quantity }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -212,6 +222,31 @@ fun HomeScreen(
                         modifier = Modifier.testTag("top_bar_customer_button")
                     ) {
                         Icon(Icons.Default.People, contentDescription = "Customer Debt Ledger")
+                    }
+
+                    // AI Stock Prediction Action with Urgency Badge
+                    IconButton(
+                        onClick = { showStockPredictionDialog = true },
+                        modifier = Modifier.testTag("home_ai_prediction_button")
+                    ) {
+                        BadgedBox(
+                            badge = {
+                                if (urgentStockCount > 0) {
+                                    Badge(
+                                        containerColor = Color(0xFFDC2626),
+                                        contentColor = Color.White
+                                    ) {
+                                        Text("$urgentStockCount")
+                                    }
+                                }
+                            }
+                        ) {
+                            Icon(
+                                Icons.Default.AutoAwesome,
+                                contentDescription = "AI Stock Prediction",
+                                tint = if (urgentStockCount > 0) Color(0xFFEA580C) else MaterialTheme.colorScheme.primary
+                            )
+                        }
                     }
 
                     // Cart Button
@@ -398,6 +433,7 @@ fun HomeScreen(
                             product = product,
                             onAddToCart = { viewModel.addToCart(product) },
                             onDoubleTap = { viewModel.openProductDetails(product) },
+                            onAddWholesale = { viewModel.addToCartWholesale(product, 1L) },
                         )
                     }
                 }
@@ -503,6 +539,31 @@ fun HomeScreen(
         ThermalPrinterDialog(
             viewModel = viewModel,
             onDismiss = { showThermalPrinterDialog = false }
+        )
+    }
+
+    if (showStockPredictionDialog) {
+        StockPredictionDialog(
+            viewModel = viewModel,
+            onOpenStockIn = { prod, qty ->
+                showStockPredictionDialog = false
+                stockInPreselectedProduct = prod
+                stockInSuggestedQty = qty
+                showStockInDialog = true
+            },
+            onDismiss = { showStockPredictionDialog = false }
+        )
+    }
+
+    if (showStockInDialog) {
+        StockInDialog(
+            viewModel = viewModel,
+            preselectedProduct = stockInPreselectedProduct,
+            suggestedQty = stockInSuggestedQty,
+            onDismiss = {
+                showStockInDialog = false
+                stockInPreselectedProduct = null
+            }
         )
     }
 }
@@ -649,6 +710,7 @@ fun ProductCard(
     product: ProductEntity,
     onAddToCart: () -> Unit,
     onDoubleTap: () -> Unit,
+    onAddWholesale: (() -> Unit)? = null,
 ) {
     val isOutOfStock = product.stockQuantity <= 0
     val isLowStock = product.stockQuantity <= product.lowStockThreshold && !isOutOfStock
@@ -731,9 +793,14 @@ fun ProductCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
 
-                if (product.wholesalePriceMinor > 0 && product.wholesaleMinQty > 0) {
+                if (product.wholesalePriceMinor > 0 && (product.wholesaleMinQty > 0 || product.wholesaleUnitMultiplier > 1L)) {
+                    val wholesaleDesc = if (product.wholesaleUnitMultiplier > 1L) {
+                        "လက်ကား: ${"%,d".format(product.wholesalePriceMinor)} Ks / ${product.wholesaleUnitName} (${product.wholesaleUnitMultiplier} ${product.unitName})"
+                    } else {
+                        "လက်ကား: ${"%,d".format(product.wholesalePriceMinor)} Ks (${product.wholesaleMinQty} ${product.unitName} အထက်)"
+                    }
                     Text(
-                        text = "လက်ကား: ${"%,d".format(product.wholesalePriceMinor)} Ks (${product.wholesaleMinQty} ${product.unitName} အထက်)",
+                        text = wholesaleDesc,
                         fontSize = 10.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = Color(0xFF0F766E),
@@ -759,23 +826,51 @@ fun ProductCard(
                         }
                     }
 
-                    IconButton(
-                        onClick = onAddToCart,
-                        enabled = !isOutOfStock,
-                        modifier = Modifier
-                            .size(34.dp)
-                            .background(
-                                color = if (isOutOfStock) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.primaryContainer,
-                                shape = CircleShape
-                            )
-                            .testTag("add_product_to_cart_${product.productId}"),
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Icon(
-                            Icons.Default.Add,
-                            contentDescription = "Add to cart",
-                            tint = if (isOutOfStock) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.onPrimaryContainer,
-                            modifier = Modifier.size(18.dp),
-                        )
+                        if (product.wholesaleUnitMultiplier > 1L && !product.isRoofingSheet && onAddWholesale != null) {
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = if (isOutOfStock) MaterialTheme.colorScheme.surfaceVariant else Color(0xFFE0F2FE),
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable(enabled = !isOutOfStock) { onAddWholesale() }
+                                    .testTag("add_wholesale_to_cart_${product.productId}"),
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Text(
+                                        text = "+1 ${product.wholesaleUnitName}",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isOutOfStock) MaterialTheme.colorScheme.outline else Color(0xFF0369A1),
+                                    )
+                                }
+                            }
+                        }
+
+                        IconButton(
+                            onClick = onAddToCart,
+                            enabled = !isOutOfStock,
+                            modifier = Modifier
+                                .size(34.dp)
+                                .background(
+                                    color = if (isOutOfStock) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.primaryContainer,
+                                    shape = CircleShape
+                                )
+                                .testTag("add_product_to_cart_${product.productId}"),
+                        ) {
+                            Icon(
+                                Icons.Default.Add,
+                                contentDescription = "Add to cart",
+                                tint = if (isOutOfStock) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.onPrimaryContainer,
+                                modifier = Modifier.size(18.dp),
+                            )
+                        }
                     }
                 }
             }

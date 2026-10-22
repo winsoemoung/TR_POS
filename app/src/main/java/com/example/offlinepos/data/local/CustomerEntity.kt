@@ -1,9 +1,16 @@
 package com.example.offlinepos.data.local
 
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 
-@Entity(tableName = "customers")
+@Entity(
+    tableName = "customers",
+    indices = [
+        Index("phone"),
+        Index("currentDebtMinor"),
+    ]
+)
 data class CustomerEntity(
     @PrimaryKey(autoGenerate = true) val customerId: Long = 0,
     val name: String,

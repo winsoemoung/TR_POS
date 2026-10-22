@@ -1,6 +1,7 @@
 package com.example.offlinepos.data.local
 
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 
 object SaleStatus {
@@ -10,7 +11,15 @@ object SaleStatus {
     const val REFUNDED = "REFUNDED"
 }
 
-@Entity(tableName = "sales")
+@Entity(
+    tableName = "sales",
+    indices = [
+        Index("createdAtEpochMs"),
+        Index("businessDate"),
+        Index("customerId"),
+        Index("status"),
+    ]
+)
 data class SaleEntity(
     @PrimaryKey val saleId: String,
     val businessDate: String,

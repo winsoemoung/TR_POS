@@ -6,7 +6,11 @@ import androidx.room.PrimaryKey
 
 @Entity(
     tableName = "purchases",
-    indices = [Index("productId")],
+    indices = [
+        Index("productId"),
+        Index("createdAtEpochMs"),
+        Index("supplierName"),
+    ],
 )
 data class PurchaseEntity(
     @PrimaryKey(autoGenerate = true) val purchaseId: Long = 0,

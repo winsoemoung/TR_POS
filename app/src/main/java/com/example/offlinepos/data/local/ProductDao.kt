@@ -39,6 +39,9 @@ interface ProductDao {
     @Query("UPDATE products SET sellPriceMinor = :newPrice, updatedAtEpochMs = :now WHERE productId = :id")
     suspend fun updatePrice(id: Long, newPrice: Long, now: Long): Int
 
+    @Query("UPDATE products SET costPriceMinor = :newCost, updatedAtEpochMs = :now WHERE productId = :id")
+    suspend fun updateCostPrice(id: Long, newCost: Long, now: Long): Int
+
     @Query("UPDATE products SET sku = :newSku, updatedAtEpochMs = :now WHERE productId = :id")
     suspend fun updateSku(id: Long, newSku: String, now: Long): Int
 

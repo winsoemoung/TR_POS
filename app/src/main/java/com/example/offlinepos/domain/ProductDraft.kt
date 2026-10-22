@@ -11,6 +11,10 @@ data class ProductDraft(
     val lowStockThreshold: Long = 3,
     val imageUri: String? = null,
     val unitName: String = "ခု",
+    val wholesalePriceMinor: Long = 0L,
+    val wholesaleMinQty: Long = 0L,
+    val wholesaleUnitName: String = "ဖာ",
+    val wholesaleUnitMultiplier: Long = 1L,
 ) {
     fun validate(): List<String> = buildList {
         if (name.isBlank()) add("ကုန်ပစ္စည်း အမည် ထည့်ရန် လိုအပ်ပါသည်")

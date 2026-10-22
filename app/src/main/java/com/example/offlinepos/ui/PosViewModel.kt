@@ -102,6 +102,24 @@ class PosViewModel(private val context: Context) : ViewModel() {
         now = { System.currentTimeMillis() },
     )
 
+    val cartManager = com.example.offlinepos.managers.CartManager()
+    val inventoryManager = com.example.offlinepos.managers.InventoryManager(
+        productDao = db.productDao(),
+        operationsDao = db.operationsDao(),
+        db = db,
+        context = context,
+        coroutineScope = viewModelScope,
+        onTriggerSync = { triggerAutoDriveSync(it) },
+        onBannerMessage = { setBanner(it) }
+    )
+    val customerDebtManager = com.example.offlinepos.managers.CustomerDebtManager(
+        customerDao = db.customerDao(),
+        db = db,
+        context = context,
+        coroutineScope = viewModelScope,
+        onTriggerSync = { triggerAutoDriveSync(it) }
+    )
+
     // Local POS Server for Staff Clients over Wi-Fi
     private val _isServerRunning = MutableStateFlow(false)
     val isServerRunning: StateFlow<Boolean> = _isServerRunning.asStateFlow()
@@ -174,6 +192,16 @@ class PosViewModel(private val context: Context) : ViewModel() {
     val stockMovements: StateFlow<List<StockMovementEntity>> = db.operationsDao().observeStockMovements()
         .catch { emit(emptyList()) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    // AI Stock Predictions Flow (Sales velocity & days remaining forecasting)
+    val stockPredictions: StateFlow<List<com.example.offlinepos.domain.StockPredictionItem>> = kotlinx.coroutines.flow.combine(
+        allProducts,
+        salesHistory,
+        allSaleItems
+    ) { prods, sales, items ->
+        com.example.offlinepos.domain.StockPredictionEngine.calculatePredictions(prods, sales, items)
+    }.catch { emit(emptyList()) }
+    .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     // Shifts Flow
     val shifts: StateFlow<List<ShiftReportEntity>> = db.operationsDao().observeAllShifts()
@@ -285,6 +313,9 @@ class PosViewModel(private val context: Context) : ViewModel() {
             } catch (e: Throwable) {
                 android.util.Log.e("PosViewModel", "Failed to seed catalog", e)
             }
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            checkAndRunAutoDatabaseVacuum()
         }
         // Main POS Server stays OFF when the app opens. It starts only after
         // the user explicitly turns the Server switch ON in Settings.
@@ -977,6 +1008,100 @@ class PosViewModel(private val context: Context) : ViewModel() {
             )
         }
 
+        _cart.value = currentList
+        recalculateTotals(currentList)
+    }
+
+    fun addToCartWholesale(product: ProductEntity, packs: Long = 1L) {
+        val multiplier = if (product.wholesaleUnitMultiplier > 1L) product.wholesaleUnitMultiplier else 1L
+        val requiredBaseUnits = packs * multiplier
+        if (product.stockQuantity < requiredBaseUnits) {
+            setBanner("လက်ကျန်မလုံလောက်ပါ: စုစုပေါင်း ${product.stockQuantity} ခုသာ ကျန်ရှိသဖြင့် $packs ${product.wholesaleUnitName} မရနိုင်ပါ")
+            return
+        }
+
+        val currentList = _cart.value.toMutableList()
+        val index = currentList.indexOfFirst { it.productId == product.productId && it.isWholesale }
+        val currentTaxRate = _storeProfile.value.taxRatePercent
+        val wholesalePrice = if (product.wholesalePriceMinor > 0) product.wholesalePriceMinor else product.sellPriceMinor * multiplier
+        val singleTax = ((wholesalePrice * currentTaxRate) / 100.0).roundToLong()
+
+        if (index >= 0) {
+            val existing = currentList[index]
+            val newPacks = existing.quantity + packs
+            if (newPacks * multiplier > product.stockQuantity) {
+                setBanner("လက်ကျန်မလုံလောက်ပါ: ${product.stockQuantity} ခုသာ ကျန်ရှိပါသည်")
+                return
+            }
+            currentList[index] = existing.copy(
+                quantity = newPacks,
+                unitPriceMinor = wholesalePrice,
+                lineTaxMinor = singleTax * newPacks,
+                unitName = product.wholesaleUnitName,
+                isWholesale = true,
+                costPriceMinor = product.costPriceMinor * multiplier,
+                unitMultiplier = multiplier,
+            )
+        } else {
+            currentList.add(
+                CartItem(
+                    productId = product.productId,
+                    name = "${product.name} (လက်ကား)",
+                    unitPriceMinor = wholesalePrice,
+                    quantity = packs,
+                    lineDiscountMinor = 0,
+                    lineTaxMinor = singleTax * packs,
+                    unitName = product.wholesaleUnitName,
+                    isWholesale = true,
+                    costPriceMinor = product.costPriceMinor * multiplier,
+                    unitMultiplier = multiplier,
+                )
+            )
+        }
+
+        _cart.value = currentList
+        recalculateTotals(currentList)
+        setBanner("'${product.name}' $packs ${product.wholesaleUnitName} ကို Cart ထဲ ထည့်သွင်းပြီးပါပြီ")
+    }
+
+    fun toggleCartItemWholesale(productId: Long) {
+        val product = allProducts.value.find { it.productId == productId } ?: return
+        val currentList = _cart.value.toMutableList()
+        val index = currentList.indexOfFirst { it.productId == productId }
+        if (index < 0) return
+        val item = currentList[index]
+        val currentTaxRate = _storeProfile.value.taxRatePercent
+
+        if (item.isWholesale) {
+            val retailPrice = product.sellPriceMinor
+            val singleTax = ((retailPrice * currentTaxRate) / 100.0).roundToLong()
+            val retailQty = maxOf(1L, item.quantity * item.unitMultiplier)
+            currentList[index] = item.copy(
+                name = product.name,
+                unitPriceMinor = retailPrice,
+                quantity = retailQty,
+                unitName = product.unitName,
+                isWholesale = false,
+                costPriceMinor = product.costPriceMinor,
+                unitMultiplier = 1L,
+                lineTaxMinor = singleTax * retailQty,
+            )
+        } else {
+            val multiplier = if (product.wholesaleUnitMultiplier > 1L) product.wholesaleUnitMultiplier else 1L
+            val wholesalePrice = if (product.wholesalePriceMinor > 0) product.wholesalePriceMinor else product.sellPriceMinor * multiplier
+            val packs = maxOf(1L, item.quantity / multiplier)
+            val singleTax = ((wholesalePrice * currentTaxRate) / 100.0).roundToLong()
+            currentList[index] = item.copy(
+                name = "${product.name} (လက်ကား)",
+                unitPriceMinor = wholesalePrice,
+                quantity = packs,
+                unitName = product.wholesaleUnitName,
+                isWholesale = true,
+                costPriceMinor = product.costPriceMinor * multiplier,
+                unitMultiplier = multiplier,
+                lineTaxMinor = singleTax * packs,
+            )
+        }
         _cart.value = currentList
         recalculateTotals(currentList)
     }
@@ -1824,6 +1949,7 @@ class PosViewModel(private val context: Context) : ViewModel() {
         unitCost: Long,
         invoiceRef: String,
         note: String,
+        updateMasterCost: Boolean = true,
         onResult: (Boolean, String) -> Unit
     ) {
         viewModelScope.launch(Dispatchers.IO) {
@@ -1843,6 +1969,9 @@ class PosViewModel(private val context: Context) : ViewModel() {
                 db.operationsDao().insertPurchase(purchase)
                 val now = System.currentTimeMillis()
                 db.productDao().adjustStock(productId, quantity, now)
+                if (updateMasterCost && unitCost > 0) {
+                    db.productDao().updateCostPrice(productId, unitCost, now)
+                }
 
                 withContext(Dispatchers.Main) {
                     triggerAutoDriveSync("Purchase/Stock In ($productName)")
@@ -1853,6 +1982,41 @@ class PosViewModel(private val context: Context) : ViewModel() {
                     onResult(false, "ပစ္စည်းအဝင်သွင်းခြင်း မအောင်မြင်ပါ: ${e.message}")
                 }
             }
+        }
+    }
+
+    // Database Optimization & Compacting (VACUUM & PRAGMA optimize)
+    fun runDatabaseVacuumMaintenance(onComplete: (com.example.offlinepos.data.local.DatabaseMaintenanceResult) -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val result = com.example.offlinepos.data.local.AppDatabase.vacuumAndOptimizeDatabase(context)
+            if (result.isSuccess) {
+                try {
+                    val prefs = context.getSharedPreferences("pos_maintenance_prefs", Context.MODE_PRIVATE)
+                    prefs.edit().putLong("last_db_vacuum_epoch_ms", System.currentTimeMillis()).apply()
+                } catch (_: Exception) {}
+            }
+            withContext(Dispatchers.Main) {
+                setBanner(result.message)
+                onComplete(result)
+            }
+        }
+    }
+
+    private fun checkAndRunAutoDatabaseVacuum() {
+        try {
+            val prefs = context.getSharedPreferences("pos_maintenance_prefs", Context.MODE_PRIVATE)
+            val lastRun = prefs.getLong("last_db_vacuum_epoch_ms", 0L)
+            val now = System.currentTimeMillis()
+            val sevenDaysMs = 7L * 24L * 60L * 60L * 1000L
+            if (now - lastRun >= sevenDaysMs) {
+                val result = com.example.offlinepos.data.local.AppDatabase.vacuumAndOptimizeDatabase(context)
+                if (result.isSuccess) {
+                    prefs.edit().putLong("last_db_vacuum_epoch_ms", now).apply()
+                    android.util.Log.i("PosViewModel", "Auto VACUUM & Optimize executed: ${result.sizeFormatted}")
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("PosViewModel", "Auto VACUUM failed", e)
         }
     }
 
@@ -2018,6 +2182,10 @@ class PosViewModel(private val context: Context) : ViewModel() {
                     lowStockThreshold = draft.lowStockThreshold,
                     imageUri = draft.imageUri,
                     unitName = draft.unitName.ifBlank { "ခု" },
+                    wholesalePriceMinor = draft.wholesalePriceMinor,
+                    wholesaleMinQty = draft.wholesaleMinQty,
+                    wholesaleUnitName = draft.wholesaleUnitName.ifBlank { "ဖာ" },
+                    wholesaleUnitMultiplier = maxOf(draft.wholesaleUnitMultiplier, 1L),
                     updatedAtEpochMs = now,
                 )
                 db.productDao().insert(newEntity)

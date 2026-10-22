@@ -735,6 +735,82 @@ fun SettingsBackupSubpage(
             }
         }
 
+        // SQLite Database Maintenance & Auto-Compacting (VACUUM) Card
+        var isVacuuming by remember { mutableStateOf(false) }
+        var currentDbSize by remember { mutableStateOf(com.example.offlinepos.data.local.AppDatabase.getDatabaseFileSize(context)) }
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(14.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            border = CardDefaults.outlinedCardBorder(),
+        ) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Column {
+                    Text("🧹 Database Auto-Compacting (VACUUM)", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text("WAL Checkpoint, Index Optimization & Auto-Vacuum", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text("လက်ရှိ Database ဖိုင်ဆိုက်:", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(currentDbSize, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                        }
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = Color(0xFFDCFCE7),
+                        ) {
+                            Text(
+                                "Auto-Index Active",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF15803D),
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+                            )
+                        }
+                    }
+                }
+
+                Text(
+                    "အရောင်းပြေစာများ၊ ပစ္စည်းများ ပြင်ဆင်/ဖျက်ပစ်ခြင်း များလာပါက Database ဖိုင်ဆိုက် မဖောင်းပွစေရန်နှင့် Query မြန်ဆန်စေရန် အခါအားလျော်စွာ VACUUM ပြုလုပ်ပေးပါသည်။",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    lineHeight = 15.sp
+                )
+
+                Button(
+                    onClick = {
+                        isVacuuming = true
+                        viewModel.runDatabaseVacuumMaintenance { result ->
+                            isVacuuming = false
+                            currentDbSize = com.example.offlinepos.data.local.AppDatabase.getDatabaseFileSize(context)
+                            backupStatusMessage = result.message
+                        }
+                    },
+                    enabled = !isVacuuming,
+                    modifier = Modifier.fillMaxWidth().testTag("run_database_vacuum_button"),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    if (isVacuuming) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("နေရာလွတ် ပြန်သိမ်းနေပါသည်...", fontSize = 11.sp)
+                    } else {
+                        Text("⚡ နေရာလွတ် ပြန်သိမ်းမည် (VACUUM & Optimize Database)", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+
         Spacer(modifier = Modifier.height(48.dp))
     }
 

@@ -69,6 +69,10 @@ fun ProductDetailsDialog(
     var editCostPrice by remember(product) { mutableStateOf(product.costPriceMinor.toString()) }
     var editStock by remember(product) { mutableStateOf(product.stockQuantity.toString()) }
     var editThreshold by remember(product) { mutableStateOf(product.lowStockThreshold.toString()) }
+    var editWholesalePrice by remember(product) { mutableStateOf(if (product.wholesalePriceMinor > 0) product.wholesalePriceMinor.toString() else "") }
+    var editWholesaleMinQty by remember(product) { mutableStateOf(if (product.wholesaleMinQty > 0) product.wholesaleMinQty.toString() else "1") }
+    var editWholesaleUnitName by remember(product) { mutableStateOf(product.wholesaleUnitName) }
+    var editWholesaleMultiplier by remember(product) { mutableStateOf(product.wholesaleUnitMultiplier.toString()) }
     var editError by remember { mutableStateOf<String?>(null) }
 
     val profitMinor = product.sellPriceMinor - product.costPriceMinor
@@ -255,6 +259,51 @@ fun ProductDetailsDialog(
                         )
                     }
 
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text(
+                        "📦 လက်ကား/ဖာလိုက် သတ်မှတ်ချက် (Wholesale & Multi-Unit)",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        OutlinedTextField(
+                            value = editWholesaleUnitName,
+                            onValueChange = { editWholesaleUnitName = it },
+                            label = { Text("လက်ကားယူနစ် (ဥပမာ- ဖာ)") },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f),
+                        )
+                        OutlinedTextField(
+                            value = editWholesaleMultiplier,
+                            onValueChange = { editWholesaleMultiplier = it.filter { ch -> ch.isDigit() } },
+                            label = { Text("၁ ဖာဝင်အရေအတွက် (ဥပမာ- 12)") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            singleLine = true,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        OutlinedTextField(
+                            value = editWholesalePrice,
+                            onValueChange = { editWholesalePrice = it.filter { ch -> ch.isDigit() } },
+                            label = { Text("လက်ကားစျေး (Ks / ဖာ)") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            singleLine = true,
+                            modifier = Modifier.weight(1f),
+                        )
+                        OutlinedTextField(
+                            value = editWholesaleMinQty,
+                            onValueChange = { editWholesaleMinQty = it.filter { ch -> ch.isDigit() } },
+                            label = { Text("အနည်းဆုံးမှာယူရမည့် ဖာရေ") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            singleLine = true,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+
                     editError?.let {
                         Spacer(modifier = Modifier.height(6.dp))
                         Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
@@ -282,6 +331,9 @@ fun ProductDetailsDialog(
                                 val costP = editCostPrice.toLongOrNull() ?: 0L
                                 val stockQ = editStock.toLongOrNull() ?: product.stockQuantity
                                 val thresh = editThreshold.toLongOrNull() ?: product.lowStockThreshold
+                                val wsPrice = editWholesalePrice.toLongOrNull() ?: 0L
+                                val wsMin = editWholesaleMinQty.toLongOrNull() ?: 0L
+                                val wsMult = maxOf(editWholesaleMultiplier.toLongOrNull() ?: 1L, 1L)
 
                                 val updated = product.copy(
                                     name = editName.trim(),
@@ -294,6 +346,10 @@ fun ProductDetailsDialog(
                                     costPriceMinor = costP,
                                     stockQuantity = stockQ,
                                     lowStockThreshold = thresh,
+                                    wholesalePriceMinor = wsPrice,
+                                    wholesaleMinQty = wsMin,
+                                    wholesaleUnitName = editWholesaleUnitName.trim().ifBlank { "ဖာ" },
+                                    wholesaleUnitMultiplier = wsMult,
                                 )
                                 onUpdateProduct?.invoke(updated)
                                 isEditing = false
@@ -388,6 +444,12 @@ fun ProductDetailsDialog(
                         )
                         DetailItem("အမျိုးအစားပုံစံ", if (product.isRoofingSheet) "သွပ်ပြား (ပေအရှည်တွက်ချက်သည်)" else "သာမန်ပစ္စည်း")
                         DetailItem("ယူနစ်", product.unitName)
+                        if (product.wholesaleUnitMultiplier > 1L || product.wholesalePriceMinor > 0L) {
+                            DetailItem(
+                                "လက်ကား / ဖာလိုက်",
+                                "၁ ${product.wholesaleUnitName} = ${product.wholesaleUnitMultiplier} ${product.unitName} (လက်ကား: %,d Ks)".format(product.wholesalePriceMinor)
+                            )
+                        }
                         DetailItem("လက်ရှိ လက်ကျန်", "${product.stockQuantity} ${product.unitName}")
                         DetailItem("သတိပေး လက်ကျန်", "${product.lowStockThreshold} ${product.unitName}")
                     }

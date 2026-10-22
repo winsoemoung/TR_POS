@@ -19,8 +19,10 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -50,6 +52,7 @@ import com.example.offlinepos.data.local.ProductEntity
 fun StockInDialog(
     viewModel: PosViewModel,
     preselectedProduct: ProductEntity? = null,
+    suggestedQty: Long = 10L,
     onDismiss: () -> Unit,
 ) {
     val products by viewModel.allProducts.collectAsState()
@@ -57,17 +60,28 @@ fun StockInDialog(
     var selectedProduct by remember { mutableStateOf(preselectedProduct ?: products.firstOrNull()) }
     var dropdownExpanded by remember { mutableStateOf(false) }
 
-    var quantityText by remember { mutableStateOf("10") }
-    var unitCostText by remember(selectedProduct) {
-        mutableStateOf(selectedProduct?.costPriceMinor?.toString() ?: "1000")
+    var isWholesalePack by remember { mutableStateOf(false) }
+    var quantityText by remember { mutableStateOf(suggestedQty.toString()) }
+    var unitCostText by remember(selectedProduct, isWholesalePack) {
+        val prod = selectedProduct
+        val baseCost = prod?.costPriceMinor ?: 1000L
+        val multiplier = if (isWholesalePack && (prod?.wholesaleUnitMultiplier ?: 1L) > 1L) prod!!.wholesaleUnitMultiplier else 1L
+        mutableStateOf((baseCost * multiplier).toString())
     }
-    var supplierName by remember { mutableStateOf("ကုမ္ပဏီ / ပေးသွင်းသူ") }
+    var supplierName by remember { mutableStateOf("အထွေထွေ ပေးသွင်းသူ") }
     var invoiceRef by remember { mutableStateOf("") }
+    var updateMasterCost by remember { mutableStateOf(true) }
     var note by remember { mutableStateOf("") }
 
-    val qty = quantityText.toLongOrNull() ?: 0L
-    val unitCost = unitCostText.toLongOrNull() ?: 0L
-    val totalCost = qty * unitCost
+    val rawInputQty = quantityText.toLongOrNull() ?: 0L
+    val prodMultiplier = if (isWholesalePack && (selectedProduct?.wholesaleUnitMultiplier ?: 1L) > 1L) {
+        selectedProduct!!.wholesaleUnitMultiplier
+    } else 1L
+
+    val baseStockUnitsToAdd = rawInputQty * prodMultiplier
+    val enteredUnitCost = unitCostText.toLongOrNull() ?: 0L
+    val totalCost = rawInputQty * enteredUnitCost
+    val effectiveUnitCostPerBaseItem = if (prodMultiplier > 1) enteredUnitCost / prodMultiplier else enteredUnitCost
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
@@ -97,8 +111,8 @@ fun StockInDialog(
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = "Supplier Purchase & Cost Tracking",
-                            fontSize = 12.sp,
+                            text = "Supplier Purchase & Inventory Stock-In",
+                            fontSize = 11.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
@@ -146,7 +160,7 @@ fun StockInDialog(
                     ) {
                         products.forEach { p ->
                             DropdownMenuItem(
-                                text = { Text("${p.name} (လက်ကျန်: ${p.stockQuantity})") },
+                                text = { Text("${p.name} (လက်ကျန်: ${p.stockQuantity} ${p.unitName})") },
                                 onClick = {
                                     selectedProduct = p
                                     dropdownExpanded = false
@@ -156,13 +170,49 @@ fun StockInDialog(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Unit selection (Retail Piece vs Wholesale Box)
+                val curProd = selectedProduct
+                if (curProd != null && curProd.wholesaleUnitMultiplier > 1L) {
+                    Text("အဝင်ယူနစ် ရွေးချယ်မှု:", fontSize = 11.sp, fontWeight = FontWeight.Medium)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilterChip(
+                            selected = !isWholesalePack,
+                            onClick = { isWholesalePack = false },
+                            label = { Text("လက်လီ (${curProd.unitName})", fontSize = 11.sp) }
+                        )
+                        FilterChip(
+                            selected = isWholesalePack,
+                            onClick = { isWholesalePack = true },
+                            label = { Text("လက်ကား (${curProd.wholesaleUnitName} - x${curProd.wholesaleUnitMultiplier} ${curProd.unitName})", fontSize = 11.sp) }
+                        )
+                    }
+                    if (isWholesalePack) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "ℹ️ ၁ ${curProd.wholesaleUnitName} လျှင် ${curProd.wholesaleUnitMultiplier} ${curProd.unitName} ပါဝင်သဖြင့် စုစုပေါင်း လက်ကျန် +$baseStockUnitsToAdd ${curProd.unitName} တိုးလာပါမည်။",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.primary,
+                            lineHeight = 15.sp
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
 
                 Row(modifier = Modifier.fillMaxWidth()) {
                     OutlinedTextField(
                         value = quantityText,
                         onValueChange = { quantityText = it },
-                        label = { Text("အရေအတွက် *") },
+                        label = {
+                            val unitLabel = if (isWholesalePack && curProd != null && curProd.wholesaleUnitMultiplier > 1L) {
+                                curProd.wholesaleUnitName
+                            } else {
+                                curProd?.unitName ?: "ခု"
+                            }
+                            Text("အရေအတွက် ($unitLabel) *")
+                        },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         modifier = Modifier.weight(1f),
                         singleLine = true
@@ -171,7 +221,10 @@ fun StockInDialog(
                     OutlinedTextField(
                         value = unitCostText,
                         onValueChange = { unitCostText = it },
-                        label = { Text("တစ်ခုရင်းနှီးငွေ (Cost Ks) *") },
+                        label = {
+                            val costLabel = if (isWholesalePack) "၁ ${curProd?.wholesaleUnitName ?: "ဖာ"} ရင်းငွေ" else "၁ ခုရင်းငွေ (Cost Ks)"
+                            Text("$costLabel *")
+                        },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         modifier = Modifier.weight(1f),
                         singleLine = true
@@ -198,7 +251,25 @@ fun StockInDialog(
                     singleLine = true
                 )
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Checkbox(
+                        checked = updateMasterCost,
+                        onCheckedChange = { updateMasterCost = it }
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "ပစ္စည်း၏ မူလဝယ်ရင်းဈေး (Cost Price) အား ဤဝယ်ဈေးဖြင့် အသစ်ပြင်ဆင်မည်",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
 
                 // Summary Cost Card
                 Card(
@@ -206,15 +277,24 @@ fun StockInDialog(
                     colors = CardDefaults.cardColors(containerColor = Color(0xFFF0FDF4)),
                     shape = RoundedCornerShape(10.dp)
                 ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(12.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("စုစုပေါင်း အရင်းကုန်ကျငွေ:", fontSize = 12.sp, color = Color.DarkGray)
-                        Text("%,d Ks".format(totalCost), fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color(0xFF16A34A))
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("တိုးလာမည့် စုစုပေါင်း လက်ကျန်:", fontSize = 11.sp, color = Color.DarkGray)
+                            Text("+$baseStockUnitsToAdd ${curProd?.unitName ?: "ခု"}", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color(0xFF15803D))
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("စုစုပေါင်း အရင်းကုန်ကျငွေ:", fontSize = 11.sp, color = Color.DarkGray)
+                            Text("%,d Ks".format(totalCost), fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color(0xFF16A34A))
+                        }
                     }
                 }
 
@@ -229,22 +309,23 @@ fun StockInDialog(
                     Button(
                         onClick = {
                             val prod = selectedProduct
-                            if (prod != null && qty > 0) {
+                            if (prod != null && baseStockUnitsToAdd > 0) {
                                 viewModel.recordStockInPurchase(
                                     productId = prod.productId,
                                     productName = prod.name,
-                                    supplierName = supplierName.trim(),
-                                    quantity = qty,
-                                    unitCost = unitCost,
+                                    supplierName = supplierName.trim().ifBlank { "အထွေထွေ ပေးသွင်းသူ" },
+                                    quantity = baseStockUnitsToAdd,
+                                    unitCost = effectiveUnitCostPerBaseItem,
                                     invoiceRef = invoiceRef.trim(),
-                                    note = note.trim()
+                                    note = note.trim(),
+                                    updateMasterCost = updateMasterCost
                                 ) { success, msg ->
                                     viewModel.setBanner(msg)
                                     if (success) onDismiss()
                                 }
                             }
                         },
-                        enabled = selectedProduct != null && qty > 0
+                        enabled = selectedProduct != null && baseStockUnitsToAdd > 0
                     ) {
                         Text("စာရင်းသွင်းမည်")
                     }

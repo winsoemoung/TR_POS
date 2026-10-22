@@ -28,6 +28,7 @@ data class CartItem(
     val unitName: String = "ခု",
     val isWholesale: Boolean = false,
     val costPriceMinor: Long = 0L,
+    val unitMultiplier: Long = 1L,
 )
 
 data class CartTotals(

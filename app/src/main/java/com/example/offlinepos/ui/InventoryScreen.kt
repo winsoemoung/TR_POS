@@ -34,7 +34,9 @@ import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
@@ -87,15 +89,23 @@ fun InventoryScreen(
     val products by viewModel.allProducts.collectAsState()
     val categories by viewModel.categories.collectAsState()
     val storeProfile by viewModel.storeProfile.collectAsState()
+    val predictions by viewModel.stockPredictions.collectAsState()
     val context = LocalContext.current
     var searchQuery by remember { mutableStateOf("") }
     var selectedCategoryFilter by remember { mutableStateOf("အားလုံး") }
     var selectedStatusFilter by remember { mutableStateOf("အားလုံး") }
     var showAddDialog by remember { mutableStateOf(false) }
+    var showStockPredictionDialog by remember { mutableStateOf(false) }
+    var showStockInDialog by remember { mutableStateOf(false) }
+    var stockInPreselectedProduct by remember { mutableStateOf<ProductEntity?>(null) }
+    var stockInSuggestedQty by remember { mutableStateOf(10L) }
     var productToDelete by remember { mutableStateOf<ProductEntity?>(null) }
     var recentSearches by remember { mutableStateOf(RecentSearchHelper.getRecentSearches(context)) }
     val exportCsvLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri -> uri?.let(viewModel::exportProductsCsv) }
     val importCsvLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let(viewModel::importProductsCsv) }
+
+    val urgentPredictions = predictions.filter { (it.daysRemaining <= 7 && it.currentStock > 0) || it.currentStock <= 0 }
+    val urgentCount = urgentPredictions.size
 
     val filteredList = products.filter {
         val matchesSearch = searchQuery.isBlank() || it.name.contains(searchQuery, ignoreCase = true) || it.sku.contains(searchQuery, ignoreCase = true)
@@ -117,6 +127,47 @@ fun InventoryScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.padding(end = 12.dp),
                     ) {
+                        // AI Stock Prediction Action with Urgency Badge
+                        IconButton(
+                            onClick = { showStockPredictionDialog = true },
+                            modifier = Modifier.testTag("inventory_ai_prediction_button")
+                        ) {
+                            Box {
+                                Icon(
+                                    Icons.Default.AutoAwesome,
+                                    contentDescription = "AI Stock Prediction",
+                                    tint = if (urgentCount > 0) Color(0xFFEA580C) else MaterialTheme.colorScheme.primary
+                                )
+                                if (urgentCount > 0) {
+                                    Surface(
+                                        shape = CircleShape,
+                                        color = Color(0xFFDC2626),
+                                        modifier = Modifier.size(15.dp).align(Alignment.TopEnd)
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Text("$urgentCount", fontSize = 8.5.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Direct Stock-In Button
+                        OutlinedButton(
+                            onClick = {
+                                stockInPreselectedProduct = null
+                                stockInSuggestedQty = 10L
+                                showStockInDialog = true
+                            },
+                            modifier = Modifier.height(32.dp).testTag("inventory_stock_in_button"),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text("📥 အဝင် (Stock-In)", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+
+                        Spacer(modifier = Modifier.width(4.dp))
+
                         IconButton(onClick = { importCsvLauncher.launch(arrayOf("text/csv", "text/plain")) }) {
                             Icon(Icons.Default.FileUpload, contentDescription = "Import CSV")
                         }
@@ -289,6 +340,58 @@ fun InventoryScreen(
                 }
             }
 
+            // AI Stock Prediction Alert Banner
+            if (urgentCount > 0) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Card(
+                    modifier = Modifier.fillMaxWidth().testTag("ai_stock_prediction_alert_banner"),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF7ED)),
+                    border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(Color(0xFFFDBA74)))
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp).fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                            Surface(
+                                shape = CircleShape,
+                                color = Color(0xFFF97316).copy(alpha = 0.15f),
+                                modifier = Modifier.size(34.dp)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = Color(0xFFEA580C), modifier = Modifier.size(18.dp))
+                                }
+                            }
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column {
+                                Text(
+                                    text = "⚡ AI Stock Prediction သတိပေးချက်",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp,
+                                    color = Color(0xFF9A3412)
+                                )
+                                Text(
+                                    text = "လာမည့် ၃ ရက်မှ ၇ ရက်အတွင်း ပြတ်လပ်နိုင်သော ပစ္စည်း ($urgentCount) မျိုး ရှိပါသည်",
+                                    fontSize = 11.sp,
+                                    color = Color(0xFFC2410C)
+                                )
+                            }
+                        }
+                        Button(
+                            onClick = { showStockPredictionDialog = true },
+                            modifier = Modifier.height(32.dp),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEA580C)),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text("ခန့်မှန်းချက်", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                        }
+                    }
+                }
+            }
+
             Spacer(modifier = Modifier.height(8.dp))
 
             Text(
@@ -306,9 +409,16 @@ fun InventoryScreen(
                 modifier = Modifier.testTag("inventory_list"),
             ) {
                 items(filteredList, key = { "${it.productId}_${it.sku}" }) { product ->
+                    val prodPrediction = predictions.find { it.product.productId == product.productId }
                     InventoryItemCard(
                         product = product,
+                        prediction = prodPrediction,
                         onDoubleTap = { viewModel.openProductDetails(product) },
+                        onStockIn = {
+                            stockInPreselectedProduct = product
+                            stockInSuggestedQty = prodPrediction?.recommendedPackCount ?: 10L
+                            showStockInDialog = true
+                        },
                         onAdjustStock = { qty -> viewModel.adjustStock(product.productId, qty) },
                         onArchive = { productToDelete = product },
                         onActivate = { viewModel.activateProduct(product.productId) },
@@ -348,13 +458,37 @@ fun InventoryScreen(
             }
         )
     }
+
+    if (showStockPredictionDialog) {
+        StockPredictionDialog(
+            viewModel = viewModel,
+            onOpenStockIn = { prod, qty ->
+                showStockPredictionDialog = false
+                stockInPreselectedProduct = prod
+                stockInSuggestedQty = qty
+                showStockInDialog = true
+            },
+            onDismiss = { showStockPredictionDialog = false }
+        )
+    }
+
+    if (showStockInDialog) {
+        StockInDialog(
+            viewModel = viewModel,
+            preselectedProduct = stockInPreselectedProduct,
+            suggestedQty = stockInSuggestedQty,
+            onDismiss = { showStockInDialog = false }
+        )
+    }
 }
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun InventoryItemCard(
     product: ProductEntity,
+    prediction: com.example.offlinepos.domain.StockPredictionItem? = null,
     onDoubleTap: () -> Unit,
+    onStockIn: () -> Unit,
     onAdjustStock: (Long) -> Unit,
     onArchive: () -> Unit,
     onActivate: () -> Unit,
@@ -410,6 +544,29 @@ private fun InventoryItemCard(
                         color = MaterialTheme.colorScheme.primary,
                         fontWeight = FontWeight.SemiBold,
                     )
+                    if (product.wholesaleUnitMultiplier > 1L || product.wholesalePriceMinor > 0L) {
+                        Text(
+                            text = "📦 ၁ ${product.wholesaleUnitName} = ${product.wholesaleUnitMultiplier} ${product.unitName} (လက်ကား: %,d Ks)".format(product.wholesalePriceMinor),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color(0xFF0F766E),
+                        )
+                    }
+                    if (prediction != null && (prediction.daysRemaining <= 7 || prediction.currentStock <= 0)) {
+                        Surface(
+                            shape = RoundedCornerShape(4.dp),
+                            color = Color(prediction.riskLevel.colorHex).copy(alpha = 0.15f),
+                            modifier = Modifier.padding(top = 2.dp)
+                        ) {
+                            Text(
+                                text = if (prediction.daysRemaining in 1..7) "⚠️ ${prediction.daysRemaining} ရက်အတွင်း ပြတ်မည်" else prediction.riskLevel.labelBurmese,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(prediction.riskLevel.colorHex),
+                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
                 }
 
                 if (product.isActive) {
@@ -455,7 +612,15 @@ private fun InventoryItemCard(
                     }
                 }
 
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Button(
+                        onClick = onStockIn,
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                        modifier = Modifier.height(30.dp),
+                        shape = RoundedCornerShape(6.dp)
+                    ) {
+                        Text("အဝင် +", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
                     OutlinedButton(
                         onClick = { onAdjustStock(-1) },
                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
@@ -501,6 +666,11 @@ private fun AddProductDialog(
     var newCategoryInput by remember { mutableStateOf("") }
     var unitName by remember { mutableStateOf("ခု") }
     var isRoofingSheet by remember { mutableStateOf(false) }
+    var hasWholesale by remember { mutableStateOf(false) }
+    var wholesaleUnitName by remember { mutableStateOf("ဖာ") }
+    var wholesaleMultiplier by remember { mutableStateOf("12") }
+    var wholesalePrice by remember { mutableStateOf("") }
+    var wholesaleMinQty by remember { mutableStateOf("1") }
     var pickedImageUri by remember { mutableStateOf<String?>(null) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
@@ -691,6 +861,64 @@ private fun AddProductDialog(
                     )
                 }
 
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Wholesale Multi-Unit Packaging Option
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).padding(vertical = 4.dp),
+                ) {
+                    Checkbox(
+                        checked = hasWholesale,
+                        onCheckedChange = { hasWholesale = it },
+                        modifier = Modifier.testTag("wholesale_checkbox"),
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Column {
+                        Text("လက်ကား / ဖာလိုက် ယူနစ်ခွဲ သတ်မှတ်မည်", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        Text("၁ ဖာ = ၁၂ ခု စသဖြင့် ဖာလိုက်စျေးနှင့် စတော့ အလိုအလျောက် နုတ်ယူရန်", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                    }
+                }
+
+                if (hasWholesale) {
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = wholesaleUnitName,
+                            onValueChange = { wholesaleUnitName = it },
+                            label = { Text("လက်ကားယူနစ် (ဥပမာ- ဖာ)") },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f),
+                        )
+                        OutlinedTextField(
+                            value = wholesaleMultiplier,
+                            onValueChange = { wholesaleMultiplier = it.filter { ch -> ch.isDigit() } },
+                            label = { Text("၁ ဖာဝင် အရေအတွက်") },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = wholesalePrice,
+                            onValueChange = { wholesalePrice = it.filter { ch -> ch.isDigit() } },
+                            label = { Text("လက်ကားစျေး (Ks / ဖာ)") },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            modifier = Modifier.weight(1f),
+                        )
+                        OutlinedTextField(
+                            value = wholesaleMinQty,
+                            onValueChange = { wholesaleMinQty = it.filter { ch -> ch.isDigit() } },
+                            label = { Text("အနည်းဆုံး ဖာရေ") },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                }
+
                 errorMessage?.let {
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
@@ -714,6 +942,10 @@ private fun AddProductDialog(
                             val lowStock = lowStockThreshold.toLongOrNull() ?: 3L
                             val barcodeVal = barcode.trim().takeIf { it.isNotEmpty() }
                             val catVal = if (newCategoryInput.isNotBlank()) newCategoryInput.trim() else selectedCategory
+                            val wsPrice = if (hasWholesale) (wholesalePrice.toLongOrNull() ?: 0L) else 0L
+                            val wsMin = if (hasWholesale) (wholesaleMinQty.toLongOrNull() ?: 0L) else 0L
+                            val wsMult = if (hasWholesale) maxOf(wholesaleMultiplier.toLongOrNull() ?: 1L, 1L) else 1L
+                            val wsName = if (hasWholesale) wholesaleUnitName.trim().ifBlank { "ဖာ" } else "ဖာ"
 
                             val draft = ProductDraft(
                                 name = name.trim(),
@@ -726,6 +958,10 @@ private fun AddProductDialog(
                                 lowStockThreshold = lowStock,
                                 imageUri = pickedImageUri,
                                 unitName = unitName.trim().ifBlank { "ခု" },
+                                wholesalePriceMinor = wsPrice,
+                                wholesaleMinQty = wsMin,
+                                wholesaleUnitName = wsName,
+                                wholesaleUnitMultiplier = wsMult,
                             )
                             val errors = draft.validate()
                             if (errors.isNotEmpty()) {

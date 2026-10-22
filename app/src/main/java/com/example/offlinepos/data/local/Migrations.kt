@@ -136,6 +136,43 @@ val MIGRATION_10_11 = object : Migration(10, 11) {
         }
     }
 }
+val MIGRATION_11_12 = object : Migration(11, 12) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        // 1. Add wholesale unit name and multiplier to products table
+        runCatching {
+            val cursor = db.query("PRAGMA table_info(products)")
+            val columns = mutableSetOf<String>()
+            while (cursor.moveToNext()) {
+                val nameIdx = cursor.getColumnIndex("name")
+                if (nameIdx >= 0) columns.add(cursor.getString(nameIdx))
+            }
+            cursor.close()
+            if (!columns.contains("wholesaleUnitName")) {
+                db.execSQL("ALTER TABLE products ADD COLUMN wholesaleUnitName TEXT NOT NULL DEFAULT 'ဖာ'")
+            }
+            if (!columns.contains("wholesaleUnitMultiplier")) {
+                db.execSQL("ALTER TABLE products ADD COLUMN wholesaleUnitMultiplier INTEGER NOT NULL DEFAULT 1")
+            }
+        }
+
+        // 2. Performance Indices for rapid sales and inventory lookup
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_sales_createdAtEpochMs ON sales(createdAtEpochMs)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_sales_businessDate ON sales(businessDate)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_sales_customerId ON sales(customerId)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_sales_status ON sales(status)")
+
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_products_sku ON products(sku)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_products_category ON products(category)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_products_isActive ON products(isActive)")
+
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_customers_phone ON customers(phone)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_customers_currentDebtMinor ON customers(currentDebtMinor)")
+
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_purchases_createdAtEpochMs ON purchases(createdAtEpochMs)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_purchases_supplierName ON purchases(supplierName)")
+    }
+}
+
 val ALL_MIGRATIONS: Array<Migration> = arrayOf(
     MIGRATION_1_2,
     MIGRATION_2_3,
@@ -147,4 +184,5 @@ val ALL_MIGRATIONS: Array<Migration> = arrayOf(
     MIGRATION_8_9,
     MIGRATION_9_10,
     MIGRATION_10_11,
+    MIGRATION_11_12,
 )

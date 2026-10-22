@@ -23,7 +23,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         OutboxEntity::class,
         SyncTombstoneEntity::class,
     ],
-    version = 11,
+    version = 12,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -213,9 +213,28 @@ abstract class AppDatabase : RoomDatabase() {
                 ensureColumnExists(db, "products", "wholesalePriceMinor", "INTEGER NOT NULL DEFAULT 0")
                 ensureColumnExists(db, "products", "wholesaleMinQty", "INTEGER NOT NULL DEFAULT 0")
                 ensureColumnExists(db, "products", "unitName", "TEXT NOT NULL DEFAULT 'ခု'")
+                ensureColumnExists(db, "products", "wholesaleUnitName", "TEXT NOT NULL DEFAULT 'ဖာ'")
+                ensureColumnExists(db, "products", "wholesaleUnitMultiplier", "INTEGER NOT NULL DEFAULT 1")
                 ensureColumnExists(db, "sales", "deliveryFeeMinor", "INTEGER NOT NULL DEFAULT 0")
                 ensureColumnExists(db, "sale_items", "returnedQuantity", "INTEGER NOT NULL DEFAULT 0")
                 ensureColumnExists(db, "customers", "creditDueDateEpochMs", "INTEGER")
+
+                // Ensure all performance indices exist
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_sales_createdAtEpochMs` ON `sales` (`createdAtEpochMs`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_sales_businessDate` ON `sales` (`businessDate`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_sales_customerId` ON `sales` (`customerId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_sales_status` ON `sales` (`status`)")
+
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_products_sku` ON `products` (`sku`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_products_category` ON `products` (`category`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_products_isActive` ON `products` (`isActive`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_products_updatedAtEpochMs` ON `products` (`updatedAtEpochMs`)")
+
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_customers_phone` ON `customers` (`phone`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_customers_currentDebtMinor` ON `customers` (`currentDebtMinor`)")
+
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_purchases_createdAtEpochMs` ON `purchases` (`createdAtEpochMs`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_purchases_supplierName` ON `purchases` (`supplierName`)")
             }
         }
 
@@ -237,6 +256,47 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        fun vacuumAndOptimizeDatabase(context: Context): DatabaseMaintenanceResult {
+            return try {
+                val db = get(context).openHelper.writableDatabase
+                // 1. Flush Write-Ahead Log
+                db.query("PRAGMA wal_checkpoint(FULL)").close()
+                // 2. Reclaim free pages and rebuild B-Trees
+                db.execSQL("VACUUM")
+                // 3. Update SQLite statistics for query planner
+                db.execSQL("PRAGMA optimize")
+                
+                val dbFile = context.getDatabasePath(DB_NAME)
+                val sizeBytes = if (dbFile.exists()) dbFile.length() else 0L
+                val formatted = formatFileSize(sizeBytes)
+                DatabaseMaintenanceResult(
+                    isSuccess = true,
+                    sizeFormatted = formatted,
+                    message = "Database ဖိုင်ဆိုက်ကို အောင်မြင်စွာ VACUUM & Optimize ပြုလုပ်ပြီးပါပြီ ($formatted)"
+                )
+            } catch (e: Exception) {
+                DatabaseMaintenanceResult(
+                    isSuccess = false,
+                    sizeFormatted = "-",
+                    message = "Database optimize လုပ်ဆောင်ရာတွင် အမှားဖြစ်ပေါ်ခဲ့သည်: ${e.message}"
+                )
+            }
+        }
+
+        fun getDatabaseFileSize(context: Context): String {
+            val dbFile = context.getDatabasePath(DB_NAME)
+            val sizeBytes = if (dbFile.exists()) dbFile.length() else 0L
+            return formatFileSize(sizeBytes)
+        }
+
+        private fun formatFileSize(bytes: Long): String {
+            return when {
+                bytes >= 1024 * 1024 -> "%.2f MB".format(bytes / (1024.0 * 1024.0))
+                bytes >= 1024 -> "%.1f KB".format(bytes / 1024.0)
+                else -> "$bytes Bytes"
+            }
+        }
+
         fun closeAndReset() {
             synchronized(this) {
                 INSTANCE?.close()
@@ -245,3 +305,9 @@ abstract class AppDatabase : RoomDatabase() {
         }
     }
 }
+
+data class DatabaseMaintenanceResult(
+    val isSuccess: Boolean,
+    val sizeFormatted: String,
+    val message: String,
+)

@@ -75,6 +75,7 @@ fun CartSheet(
     onApplyDiscount: (productId: Long, discountMinor: Long) -> Unit,
     onUpdateTaxRate: ((Double) -> Unit)? = null,
     onApplyPromoCode: ((String) -> Unit)? = null,
+    onToggleWholesale: ((productId: Long) -> Unit)? = null,
     onClearCart: () -> Unit,
     onRequestManagerUnlock: () -> Unit,
     onProceedToCheckout: () -> Unit,
@@ -205,6 +206,7 @@ fun CartSheet(
                                         onRequestManagerUnlock()
                                     }
                                 },
+                                onToggleWholesale = onToggleWholesale,
                             )
                         }
                     }
@@ -465,6 +467,7 @@ private fun CartItemRow(
     onRemove: () -> Unit,
     onDirectQuantityClick: () -> Unit,
     onDiscountClick: () -> Unit,
+    onToggleWholesale: ((Long) -> Unit)? = null,
 ) {
     Card(
         modifier = Modifier
@@ -492,6 +495,41 @@ private fun CartItemRow(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                if (item.unitMultiplier > 1L || item.isWholesale) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = if (item.isWholesale) Color(0xFFE0F2FE) else Color(0xFFF1F5F9),
+                        border = BorderStroke(1.dp, if (item.isWholesale) Color(0xFF0284C7) else Color(0xFFCBD5E1)),
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .clickable(enabled = onToggleWholesale != null) {
+                                onToggleWholesale?.invoke(item.productId)
+                            }
+                            .testTag("toggle_wholesale_${item.productId}"),
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                        ) {
+                            Text(
+                                text = if (item.isWholesale) "📦 လက်ကား (${item.unitName})" else "🔹 လက်လီ (${item.unitName})",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (item.isWholesale) Color(0xFF0369A1) else Color(0xFF475569),
+                            )
+                            if (onToggleWholesale != null) {
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "⇄ ပြောင်း",
+                                    fontSize = 9.5.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                            }
+                        }
+                    }
+                }
                 if (item.lineDiscountMinor > 0) {
                     Text(
                         text = "Discount: -%,d Ks".format(item.lineDiscountMinor),

@@ -283,6 +283,7 @@ fun MainApp(viewModel: PosViewModel) {
             onRemoveItem = { id -> viewModel.removeFromCart(id) },
             onApplyDiscount = { id, disc -> viewModel.applyDiscount(id, disc) },
             onApplyPromoCode = { viewModel.applyPromoCodeToCart(it) },
+            onToggleWholesale = { id -> viewModel.toggleCartItemWholesale(id) },
             onClearCart = { viewModel.clearCart() },
             onRequestManagerUnlock = {
                 viewModel.setBanner("လျှော့စျေးကို တိုက်ရိုက်အသုံးပြုနိုင်ပါသည်")

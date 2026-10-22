@@ -92,8 +92,11 @@ class CheckoutRepository(
             aggregateType = "SALE", aggregateId = saleId, reason = null,
             approverId = null, createdAtEpochMs = timestamp, payloadHash = "",
         )
+        val stockDeductions = cart.groupBy { it.productId }.mapValues { (_, cartList) ->
+            cartList.sumOf { it.quantity * it.unitMultiplier }
+        }
         return try {
-            db.checkoutDao().commitSale(sale, lines, paymentRow, audit, timestamp)
+            db.checkoutDao().commitSale(sale, lines, paymentRow, audit, timestamp, stockDeductions)
             val operationId = newId()
             db.outboxDao().enqueue(
                 OutboxEntity(
