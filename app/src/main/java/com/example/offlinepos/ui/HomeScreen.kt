@@ -589,7 +589,7 @@ private fun PremiumDashboard(
         ) {
             Column {
                 Text("ယနေ့ လုပ်ငန်းအခြေအနေ", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold)
-                Text("Building Materials POS • Ready for business", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("AIMS Point of Sale • Cashier Ready", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Surface(shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.primaryContainer) {
                 Text("LIVE", modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp), fontSize = 10.sp, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.onPrimaryContainer)
@@ -599,7 +599,7 @@ private fun PremiumDashboard(
             DashboardMetricCard(
                 title = "Today Sales", value = "%,d Ks".format(revenueAnimated.toLong()),
                 detail = "${todaySales.size} receipts", icon = { Icon(Icons.AutoMirrored.Filled.TrendingUp, null) },
-                accent = Color(0xFFB45309), modifier = Modifier.weight(1f),
+                accent = Color(0xFF10315A), modifier = Modifier.weight(1f),
             )
             DashboardMetricCard(
                 title = "Outstanding Credit", value = "%,d Ks".format(credit), detail = "Customer balance",

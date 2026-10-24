@@ -49,7 +49,7 @@ fun StoreLogoAvatar(
         )
     } else {
         Image(
-            painter = painterResource(id = R.drawable.img_lady_owner),
+            painter = painterResource(id = R.drawable.aims_logo),
             contentDescription = contentDescription,
             contentScale = contentScale,
             modifier = finalModifier,

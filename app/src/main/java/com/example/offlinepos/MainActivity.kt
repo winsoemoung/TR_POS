@@ -43,9 +43,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Category
+import androidx.compose.material.icons.filled.Receipt
+import androidx.compose.material.icons.filled.Store
 import com.example.offlinepos.ui.AiCopilotScreen
 import com.example.offlinepos.ui.CartSheet
 import com.example.offlinepos.ui.CheckoutDialog
+import com.example.offlinepos.ui.FeaturesHomeScreen
 import com.example.offlinepos.ui.HomeScreen
 import com.example.offlinepos.ui.InventoryScreen
 import com.example.offlinepos.ui.PosViewModel
@@ -61,10 +65,11 @@ import java.io.File
 
 enum class PosTab(val title: String) {
     REGISTER("အရောင်း"),
-    INVENTORY("ပစ္စည်းစာရင်း"),
-    SALES("အရောင်းပြက္ခဒိန်"),
-    AI_COPILOT("AI ကွပ်ကဲရေး"),
+    SALES("ဘောက်ချာများ"),
+    FEATURES("လုပ်ဆောင်ချက်များ"),
+    AI_COPILOT("AI အကူ"),
     SETTINGS("ဆက်တင်"),
+    INVENTORY("ပစ္စည်းစာရင်း"),
 }
 
 class MainActivity : ComponentActivity() {
@@ -193,6 +198,7 @@ fun MainApp(viewModel: PosViewModel) {
             detailsProduct != null -> viewModel.dismissProductDetails()
             showCheckoutDialog -> showCheckoutDialog = false
             showCartSheet -> showCartSheet = false
+            selectedTab == PosTab.INVENTORY -> selectedTab = PosTab.FEATURES
             selectedTab != PosTab.REGISTER -> selectedTab = PosTab.REGISTER
         }
     }
@@ -207,29 +213,29 @@ fun MainApp(viewModel: PosViewModel) {
                     NavigationBarItem(
                         selected = selectedTab == PosTab.REGISTER,
                         onClick = { selectedTab = PosTab.REGISTER },
-                        icon = { Icon(Icons.Default.Home, contentDescription = "အရောင်း") },
+                        icon = { Icon(Icons.Default.Store, contentDescription = "အရောင်း") },
                         label = { Text("အရောင်း") },
                         modifier = Modifier.testTag("nav_register"),
                     )
                     NavigationBarItem(
-                        selected = selectedTab == PosTab.INVENTORY,
-                        onClick = { selectedTab = PosTab.INVENTORY },
-                        icon = { Icon(Icons.Default.Edit, contentDescription = "ပစ္စည်းစာရင်း") },
-                        label = { Text("ပစ္စည်းစာရင်း") },
-                        modifier = Modifier.testTag("nav_inventory"),
-                    )
-                    NavigationBarItem(
                         selected = selectedTab == PosTab.SALES,
                         onClick = { selectedTab = PosTab.SALES },
-                        icon = { Icon(Icons.Default.Star, contentDescription = "အရောင်းပြက္ခဒိန်") },
-                        label = { Text("အရောင်းပြက္ခဒိန်") },
+                        icon = { Icon(Icons.Default.Receipt, contentDescription = "ဘောက်ချာများ") },
+                        label = { Text("ဘောက်ချာများ") },
                         modifier = Modifier.testTag("nav_sales"),
+                    )
+                    NavigationBarItem(
+                        selected = selectedTab == PosTab.FEATURES || selectedTab == PosTab.INVENTORY,
+                        onClick = { selectedTab = PosTab.FEATURES },
+                        icon = { Icon(Icons.Default.Category, contentDescription = "လုပ်ဆောင်ချက်") },
+                        label = { Text("လုပ်ဆောင်ချက်") },
+                        modifier = Modifier.testTag("nav_features"),
                     )
                     NavigationBarItem(
                         selected = selectedTab == PosTab.AI_COPILOT,
                         onClick = { selectedTab = PosTab.AI_COPILOT },
-                        icon = { Icon(Icons.Default.AutoAwesome, contentDescription = "AI ကွပ်ကဲရေး") },
-                        label = { Text("AI ကွပ်ကဲရေး") },
+                        icon = { Icon(Icons.Default.AutoAwesome, contentDescription = "AI အကူ") },
+                        label = { Text("AI အကူ") },
                         modifier = Modifier.testTag("nav_ai_copilot"),
                     )
                     NavigationBarItem(
@@ -255,16 +261,22 @@ fun MainApp(viewModel: PosViewModel) {
                     viewModel = viewModel,
                     onOpenCart = { showCartSheet = true },
                 )
-                PosTab.INVENTORY -> InventoryScreen(
-                    viewModel = viewModel,
-                )
                 PosTab.SALES -> SalesHistoryScreen(
                     viewModel = viewModel,
+                )
+                PosTab.FEATURES -> FeaturesHomeScreen(
+                    viewModel = viewModel,
+                    onNavigateToInventory = { selectedTab = PosTab.INVENTORY },
+                    onNavigateToSales = { selectedTab = PosTab.SALES },
+                    onNavigateToSettings = { selectedTab = PosTab.SETTINGS },
                 )
                 PosTab.AI_COPILOT -> AiCopilotScreen(
                     viewModel = viewModel,
                 )
                 PosTab.SETTINGS -> SettingsScreen(
+                    viewModel = viewModel,
+                )
+                PosTab.INVENTORY -> InventoryScreen(
                     viewModel = viewModel,
                 )
             }

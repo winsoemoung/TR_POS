@@ -2,22 +2,27 @@ package com.example.offlinepos.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-val PosPrimary = Color(0xFFE38B16) // Safety amber
+// AIMS POS Signature Brand Palette
+// Primary: Deep Navy Blue (#10315A) from AIMS Brand Logo
+val PosPrimary = Color(0xFF10315A)
 val PosOnPrimary = Color(0xFFFFFFFF)
-val PosPrimaryContainer = Color(0xFFFFE8B2)
-val PosOnPrimaryContainer = Color(0xFF5A3900)
+val PosPrimaryContainer = Color(0xFFE2E8F0)
+val PosOnPrimaryContainer = Color(0xFF0F172A)
 
-val PosSecondary = Color(0xFF64748B) // Slate grey
+// Secondary: Royal Indigo (#4338CA)
+val PosSecondary = Color(0xFF4338CA)
 val PosOnSecondary = Color(0xFFFFFFFF)
-val PosSecondaryContainer = Color(0xFFE2E8F0)
-val PosOnSecondaryContainer = Color(0xFF273449)
+val PosSecondaryContainer = Color(0xFFEEF2FF)
+val PosOnSecondaryContainer = Color(0xFF312E81)
 
-val PosTertiary = Color(0xFFB45309) // Deep amber accent
+// Tertiary: AIMS Vibrant Red Accent (#EF0400)
+val PosTertiary = Color(0xFFDC2626)
 val PosOnTertiary = Color(0xFFFFFFFF)
-val PosTertiaryContainer = Color(0xFFFEF3C7)
-val PosOnTertiaryContainer = Color(0xFF92400E)
+val PosTertiaryContainer = Color(0xFFFEE2E2)
+val PosOnTertiaryContainer = Color(0xFF991B1B)
 
-val PosBackground = Color(0xFFF5F6F8)
+// Background & Surfaces
+val PosBackground = Color(0xFFF8FAFC)
 val PosSurface = Color(0xFFFFFFFF)
 val PosSurfaceVariant = Color(0xFFF1F5F9)
 val PosOnSurface = Color(0xFF0F172A)
@@ -25,19 +30,21 @@ val PosOnSurfaceVariant = Color(0xFF475569)
 val PosOutline = Color(0xFFCBD5E1)
 
 // Dark Theme Colors
-val PosPrimaryDark = Color(0xFFFFB83D)
-val PosOnPrimaryDark = Color(0xFF3D2500)
-val PosPrimaryContainerDark = Color(0xFF6B4700)
-val PosOnPrimaryContainerDark = Color(0xFFFFE8B2)
+val PosPrimaryDark = Color(0xFF93C5FD)
+val PosOnPrimaryDark = Color(0xFF0B192C)
+val PosPrimaryContainerDark = Color(0xFF1E3A8A)
+val PosOnPrimaryContainerDark = Color(0xFFDBEAFE)
 
-val PosBackgroundDark = Color(0xFF111827)
-val PosSurfaceDark = Color(0xFF1F2937)
+val PosBackgroundDark = Color(0xFF0F172A)
+val PosSurfaceDark = Color(0xFF1E293B)
 val PosSurfaceVariantDark = Color(0xFF334155)
 val PosOnSurfaceDark = Color(0xFFF8FAFC)
 val PosOnSurfaceVariantDark = Color(0xFF94A3B8)
 val PosOutlineDark = Color(0xFF475569)
 
 // Semantic colors
-val ColorSuccess = Color(0xFF10B981)
-val ColorWarning = Color(0xFFF59E0B)
-val ColorError = Color(0xFFEF4444)
+val ColorSuccess = Color(0xFF16A34A)
+val ColorWarning = Color(0xFFEA580C)
+val ColorError = Color(0xFFDC2626)
+val ColorInfo = Color(0xFF0284C7)
+val ColorPurple = Color(0xFF7C3AED)

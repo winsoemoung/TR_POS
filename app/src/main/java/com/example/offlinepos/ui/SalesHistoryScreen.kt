@@ -182,7 +182,7 @@ fun SalesHistoryScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("အရောင်း & စာရင်းအင်း သုံးသပ်ချက်", fontWeight = FontWeight.Bold, fontSize = 16.sp) },
+                title = { Text("ဘောက်ချာနှင့် အရောင်းစာရင်း (Receipts)", fontWeight = FontWeight.Bold, fontSize = 16.sp) },
                 actions = {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
