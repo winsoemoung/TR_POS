@@ -2,10 +2,13 @@ package com.example.offlinepos.ui
 
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -21,20 +24,29 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.FileUpload
-import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Sell
+import androidx.compose.material.icons.filled.TrendingUp
+import androidx.compose.material.icons.filled.ViewList
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -43,17 +55,20 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -64,136 +79,145 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.foundation.border
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.ui.res.painterResource
-import com.example.offlinepos.R
 import com.example.offlinepos.data.local.ProductEntity
 import com.example.offlinepos.domain.ProductDraft
-import java.io.File
 
+/**
+ * AIMS POS Product List Screen (ကုန်စည်များ)
+ * Faithfully matches user-provided screenshot:
+ * - TopAppBar: Back arrow, "ကုန်စည်များ", Grid toggle, Tag icon, Search
+ * - Category filter pills: Elevated soft rose/salmon pill for "အားလုံး(X Items)" and grey pills for categories
+ * - Product row: Crimson red rounded box with white 3D isometric cube, product title, price in Ks, soft salmon status dot
+ * - Squircle light-grey Floating Action Button (+)
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun InventoryScreen(
     viewModel: PosViewModel,
+    onNavigateBack: () -> Unit = {},
 ) {
     val products by viewModel.allProducts.collectAsState()
     val categories by viewModel.categories.collectAsState()
     val storeProfile by viewModel.storeProfile.collectAsState()
     val predictions by viewModel.stockPredictions.collectAsState()
     val context = LocalContext.current
+
     var searchQuery by remember { mutableStateOf("") }
+    var isSearchActive by remember { mutableStateOf(false) }
+    var isGridView by remember { mutableStateOf(false) }
     var selectedCategoryFilter by remember { mutableStateOf("အားလုံး") }
-    var selectedStatusFilter by remember { mutableStateOf("အားလုံး") }
+    var showCategoryDialog by remember { mutableStateOf(false) }
     var showAddDialog by remember { mutableStateOf(false) }
     var showStockPredictionDialog by remember { mutableStateOf(false) }
     var showStockInDialog by remember { mutableStateOf(false) }
     var stockInPreselectedProduct by remember { mutableStateOf<ProductEntity?>(null) }
     var stockInSuggestedQty by remember { mutableStateOf(10L) }
     var productToDelete by remember { mutableStateOf<ProductEntity?>(null) }
-    var recentSearches by remember { mutableStateOf(RecentSearchHelper.getRecentSearches(context)) }
-    val exportCsvLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri -> uri?.let(viewModel::exportProductsCsv) }
-    val importCsvLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let(viewModel::importProductsCsv) }
+    var selectedProductForOptions by remember { mutableStateOf<ProductEntity?>(null) }
 
     val urgentPredictions = predictions.filter { (it.daysRemaining <= 7 && it.currentStock > 0) || it.currentStock <= 0 }
     val urgentCount = urgentPredictions.size
 
     val filteredList = products.filter {
-        val matchesSearch = searchQuery.isBlank() || it.name.contains(searchQuery, ignoreCase = true) || it.sku.contains(searchQuery, ignoreCase = true)
+        val matchesSearch = searchQuery.isBlank() ||
+                it.name.contains(searchQuery, ignoreCase = true) ||
+                it.sku.contains(searchQuery, ignoreCase = true) ||
+                (it.barcode?.contains(searchQuery, ignoreCase = true) == true)
         val matchesCat = selectedCategoryFilter == "အားလုံး" || it.category.equals(selectedCategoryFilter, ignoreCase = true)
-        val matchesStatus = when (selectedStatusFilter) {
-            "Active" -> it.isActive
-            "Inactive" -> !it.isActive
-            else -> true
-        }
-        matchesSearch && matchesCat && matchesStatus
+        matchesSearch && matchesCat
     }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Inventory Management", fontWeight = FontWeight.Bold) },
-                actions = {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(end = 12.dp),
+                navigationIcon = {
+                    IconButton(
+                        onClick = onNavigateBack,
+                        modifier = Modifier.testTag("inventory_back_button")
                     ) {
-                        // AI Stock Prediction Action with Urgency Badge
-                        IconButton(
-                            onClick = { showStockPredictionDialog = true },
-                            modifier = Modifier.testTag("inventory_ai_prediction_button")
-                        ) {
-                            Box {
-                                Icon(
-                                    Icons.Default.AutoAwesome,
-                                    contentDescription = "AI Stock Prediction",
-                                    tint = if (urgentCount > 0) Color(0xFFEA580C) else MaterialTheme.colorScheme.primary
-                                )
-                                if (urgentCount > 0) {
-                                    Surface(
-                                        shape = CircleShape,
-                                        color = Color(0xFFDC2626),
-                                        modifier = Modifier.size(15.dp).align(Alignment.TopEnd)
-                                    ) {
-                                        Box(contentAlignment = Alignment.Center) {
-                                            Text("$urgentCount", fontSize = 8.5.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        // Direct Stock-In Button
-                        OutlinedButton(
-                            onClick = {
-                                stockInPreselectedProduct = null
-                                stockInSuggestedQty = 10L
-                                showStockInDialog = true
-                            },
-                            modifier = Modifier.height(32.dp).testTag("inventory_stock_in_button"),
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                            shape = RoundedCornerShape(8.dp)
-                        ) {
-                            Text("📥 အဝင် (Stock-In)", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        }
-
-                        Spacer(modifier = Modifier.width(4.dp))
-
-                        IconButton(onClick = { importCsvLauncher.launch(arrayOf("text/csv", "text/plain")) }) {
-                            Icon(Icons.Default.FileUpload, contentDescription = "Import CSV")
-                        }
-                        IconButton(onClick = { exportCsvLauncher.launch("products.csv") }) {
-                            Icon(Icons.Default.FileDownload, contentDescription = "Export CSV")
-                        }
-                        StoreLogoAvatar(
-                            customLogoPath = storeProfile.customLogoPath,
-                            contentDescription = "Inventory Manager",
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier
-                                .size(36.dp)
-                                .clip(CircleShape)
-                                .border(1.5.dp, MaterialTheme.colorScheme.primary, CircleShape),
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back",
+                            tint = Color(0xFF1E293B)
                         )
                     }
-                }
+                },
+                title = {
+                    Text(
+                        text = "ကုန်စည်များ",
+                        fontSize = 19.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF1E293B)
+                    )
+                },
+                actions = {
+                    IconButton(
+                        onClick = { isGridView = !isGridView },
+                        modifier = Modifier.testTag("toggle_grid_view_button")
+                    ) {
+                        Icon(
+                            imageVector = if (isGridView) Icons.Default.ViewList else Icons.Default.GridView,
+                            contentDescription = "Toggle Grid/List View",
+                            tint = Color(0xFF334155)
+                        )
+                    }
+                    IconButton(
+                        onClick = { showCategoryDialog = true },
+                        modifier = Modifier.testTag("category_filter_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Sell,
+                            contentDescription = "Categories",
+                            tint = Color(0xFF334155)
+                        )
+                    }
+                    IconButton(
+                        onClick = { isSearchActive = !isSearchActive },
+                        modifier = Modifier.testTag("toggle_search_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Search,
+                            contentDescription = "Search",
+                            tint = Color(0xFF334155)
+                        )
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Color.White,
+                    navigationIconContentColor = Color(0xFF1E293B),
+                    titleContentColor = Color(0xFF1E293B),
+                    actionIconContentColor = Color(0xFF334155),
+                )
             )
         },
         floatingActionButton = {
             FloatingActionButton(
                 onClick = { showAddDialog = true },
                 modifier = Modifier.testTag("add_new_product_fab"),
-                containerColor = MaterialTheme.colorScheme.primary,
+                containerColor = Color(0xFFE2E8F0),
+                contentColor = Color(0xFF1E293B),
+                shape = RoundedCornerShape(16.dp),
+                elevation = FloatingActionButtonDefaults.elevation(
+                    defaultElevation = 2.dp,
+                    pressedElevation = 4.dp
+                ),
             ) {
-                Icon(Icons.Default.Add, contentDescription = "Add Product", tint = MaterialTheme.colorScheme.onPrimary)
+                Icon(
+                    imageVector = Icons.Default.Add,
+                    contentDescription = "Add Product",
+                    tint = Color(0xFF1E293B),
+                    modifier = Modifier.size(24.dp)
+                )
             }
         }
     ) { innerPadding ->
@@ -201,228 +225,250 @@ fun InventoryScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .padding(horizontal = 16.dp),
+                .background(Color.White)
         ) {
-            // Search field
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = {
-                    searchQuery = it
-                    if (it.trim().length >= 2) {
-                        recentSearches = RecentSearchHelper.addSearchTerm(context, it)
-                    }
-                },
-                placeholder = { Text("Name or SKU") },
-                leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Search") },
-                trailingIcon = {
-                    if (searchQuery.isNotEmpty()) {
-                        IconButton(onClick = { searchQuery = "" }) {
-                            Icon(Icons.Default.Close, contentDescription = "Clear")
+            // Animated Search Input Bar
+            AnimatedVisibility(visible = isSearchActive) {
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    placeholder = { Text("ကုန်စည် အမည် သို့မဟုတ် Code ဖြင့် ရှာရန်...", fontSize = 13.sp) },
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color(0xFF64748B)) },
+                    trailingIcon = {
+                        if (searchQuery.isNotEmpty()) {
+                            IconButton(onClick = { searchQuery = "" }) {
+                                Icon(Icons.Default.Close, contentDescription = "Clear")
+                            }
                         }
-                    }
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("inventory_search_field"),
-                singleLine = true,
-                shape = RoundedCornerShape(12.dp),
-            )
-
-            // Recent Searches Chips (stores last 5 search terms locally)
-            if (recentSearches.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(4.dp))
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp)
-                ) {
-                    Text(
-                        text = "🕒 ရှာဖွေမှုများ:",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    LazyRow(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        items(recentSearches) { term ->
-                            androidx.compose.material3.SuggestionChip(
-                                onClick = {
-                                    searchQuery = term
-                                    recentSearches = RecentSearchHelper.addSearchTerm(context, term)
-                                },
-                                label = { Text(term, fontSize = 11.sp) },
-                                shape = RoundedCornerShape(8.dp),
-                            )
-                        }
-                    }
-                    IconButton(
-                        onClick = {
-                            RecentSearchHelper.clearSearches(context)
-                            recentSearches = emptyList()
-                        },
-                        modifier = Modifier.size(24.dp)
-                    ) {
-                        Icon(
-                            Icons.Default.Close,
-                            contentDescription = "Clear recent searches",
-                            modifier = Modifier.size(14.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Category Filter pills
-            val catPills = listOf("အားလုံး") + categories
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                items(catPills) { cat ->
-                    FilterChip(
-                        selected = selectedCategoryFilter == cat,
-                        onClick = { selectedCategoryFilter = cat },
-                        label = { Text(cat, fontSize = 12.sp) },
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                listOf("အားလုံး", "Active", "Inactive").forEach { status ->
-                    FilterChip(
-                        selected = selectedStatusFilter == status,
-                        onClick = { selectedStatusFilter = status },
-                        label = { Text(status, fontSize = 12.sp) },
-                    )
-                }
-            }
-
-            // Inventory Summary card
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)),
-                shape = RoundedCornerShape(12.dp),
-            ) {
-                Row(
+                    },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(12.dp),
-                    horizontalArrangement = Arrangement.SpaceAround,
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("ပစ္စည်း စုစုပေါင်း", style = MaterialTheme.typography.labelSmall)
-                        Text("${products.size}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    }
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("Active", style = MaterialTheme.typography.labelSmall)
-                        Text("${products.count { it.isActive }}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color(0xFF15803D))
-                    }
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("Inactive", style = MaterialTheme.typography.labelSmall)
-                        Text("${products.count { !it.isActive }}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.error)
-                    }
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("လက်ကျန် စုစုပေါင်း", style = MaterialTheme.typography.labelSmall)
-                        Text("${products.sumOf { it.stockQuantity }}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    }
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("လက်ကျန်နည်း ပစ္စည်း", style = MaterialTheme.typography.labelSmall)
+                        .padding(horizontal = 16.dp, vertical = 6.dp)
+                        .testTag("inventory_search_field"),
+                    singleLine = true,
+                    shape = RoundedCornerShape(12.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = Color(0xFFF8FAFC),
+                        unfocusedContainerColor = Color(0xFFF8FAFC),
+                    )
+                )
+            }
+
+            // Category Filter Pills (AIMS soft salmon pill when selected, grey pills for others)
+            val categoryList = remember(categories, products) {
+                listOf("အားလုံး") + (categories + products.map { it.category }).filter { it.isNotBlank() }.distinct()
+            }
+
+            LazyRow(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
+                contentPadding = PaddingValues(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                items(categoryList) { cat ->
+                    val isSelected = selectedCategoryFilter == cat
+                    val pillLabel = if (cat == "အားလုံး") "အားလုံး(${products.size} Items)" else cat
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = if (isSelected) Color(0xFFEAA6A6) else Color(0xFFE5E7EB),
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable { selectedCategoryFilter = cat }
+                            .testTag("category_pill_$cat")
+                    ) {
                         Text(
-                            "${products.count { it.stockQuantity <= it.lowStockThreshold }}",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFFDC2626)
+                            text = pillLabel,
+                            fontSize = 13.sp,
+                            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                            color = if (isSelected) Color(0xFF3B1D1D) else Color(0xFF4B5563),
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
                         )
                     }
                 }
             }
 
-            // AI Stock Prediction Alert Banner
-            if (urgentCount > 0) {
-                Spacer(modifier = Modifier.height(8.dp))
-                Card(
-                    modifier = Modifier.fillMaxWidth().testTag("ai_stock_prediction_alert_banner"),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF7ED)),
-                    border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(Color(0xFFFDBA74)))
+            // Product List or Grid
+            if (isGridView) {
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(2),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 12.dp)
+                        .testTag("inventory_grid"),
+                    contentPadding = PaddingValues(top = 4.dp, bottom = 88.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    Row(
-                        modifier = Modifier.padding(12.dp).fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                            Surface(
-                                shape = CircleShape,
-                                color = Color(0xFFF97316).copy(alpha = 0.15f),
-                                modifier = Modifier.size(34.dp)
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = Color(0xFFEA580C), modifier = Modifier.size(18.dp))
-                                }
-                            }
-                            Spacer(modifier = Modifier.width(10.dp))
-                            Column {
-                                Text(
-                                    text = "⚡ AI Stock Prediction သတိပေးချက်",
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 12.sp,
-                                    color = Color(0xFF9A3412)
-                                )
-                                Text(
-                                    text = "လာမည့် ၃ ရက်မှ ၇ ရက်အတွင်း ပြတ်လပ်နိုင်သော ပစ္စည်း ($urgentCount) မျိုး ရှိပါသည်",
-                                    fontSize = 11.sp,
-                                    color = Color(0xFFC2410C)
-                                )
-                            }
-                        }
-                        Button(
-                            onClick = { showStockPredictionDialog = true },
-                            modifier = Modifier.height(32.dp),
-                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEA580C)),
-                            shape = RoundedCornerShape(8.dp)
-                        ) {
-                            Text("ခန့်မှန်းချက်", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                        }
+                    items(filteredList, key = { "${it.productId}_${it.sku}" }) { product ->
+                        AimsProductGridCard(
+                            product = product,
+                            onClick = { viewModel.openProductDetails(product) },
+                            onLongClick = { selectedProductForOptions = product },
+                        )
+                    }
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .testTag("inventory_list"),
+                    contentPadding = PaddingValues(bottom = 88.dp),
+                ) {
+                    items(filteredList, key = { "${it.productId}_${it.sku}" }) { product ->
+                        AimsProductListItem(
+                            product = product,
+                            onClick = { viewModel.openProductDetails(product) },
+                            onLongClick = { selectedProductForOptions = product },
+                        )
                     }
                 }
             }
+        }
+    }
 
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Text(
-                text = "💡 Product name ကို Double Tap နှိပ်၍ အသေးစိတ် အချက်အလက် ကြည့်ရှုနိုင်ပါသည်",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.primary,
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Products List
-            LazyColumn(
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                contentPadding = PaddingValues(bottom = 80.dp),
-                modifier = Modifier.testTag("inventory_list"),
+    // Category Filter Selection Dialog (triggered by Tag Icon in TopAppBar)
+    if (showCategoryDialog) {
+        val categoryList = remember(categories, products) {
+            listOf("အားလုံး") + (categories + products.map { it.category }).filter { it.isNotBlank() }.distinct()
+        }
+        Dialog(onDismissRequest = { showCategoryDialog = false }) {
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = Color.White,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp)
             ) {
-                items(filteredList, key = { "${it.productId}_${it.sku}" }) { product ->
-                    val prodPrediction = predictions.find { it.product.productId == product.productId }
-                    InventoryItemCard(
-                        product = product,
-                        prediction = prodPrediction,
-                        onDoubleTap = { viewModel.openProductDetails(product) },
-                        onStockIn = {
-                            stockInPreselectedProduct = product
-                            stockInSuggestedQty = prodPrediction?.recommendedPackCount ?: 10L
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "အမျိုးအစား ရွေးချယ်ရန် (Categories)",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF1E293B)
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    LazyColumn(
+                        modifier = Modifier.height(280.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        items(categoryList) { cat ->
+                            val count = if (cat == "အားလုံး") products.size else products.count { it.category.equals(cat, ignoreCase = true) }
+                            val isSelected = selectedCategoryFilter == cat
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = if (isSelected) Color(0xFFEAA6A6) else Color(0xFFF1F5F9),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .clickable {
+                                        selectedCategoryFilter = cat
+                                        showCategoryDialog = false
+                                    }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = cat,
+                                        fontSize = 14.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                        color = if (isSelected) Color(0xFF3B1D1D) else Color(0xFF1E293B)
+                                    )
+                                    Text(
+                                        text = "$count မျိုး",
+                                        fontSize = 12.sp,
+                                        color = if (isSelected) Color(0xFF3B1D1D) else Color(0xFF64748B)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    TextButton(
+                        onClick = { showCategoryDialog = false },
+                        modifier = Modifier.align(Alignment.End)
+                    ) {
+                        Text("ပိတ်မည်")
+                    }
+                }
+            }
+        }
+    }
+
+    // Long-Press Product Actions Dialog
+    selectedProductForOptions?.let { prod ->
+        Dialog(onDismissRequest = { selectedProductForOptions = null }) {
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = Color.White,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp)
+            ) {
+                Column(modifier = Modifier.padding(18.dp)) {
+                    Text(
+                        text = prod.name,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF1E293B),
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = "လက်ကျန်: ${prod.stockQuantity} ${prod.unitName} | ဈေး: %,d Ks".format(prod.sellPriceMinor),
+                        fontSize = 12.5.sp,
+                        color = Color(0xFF64748B)
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    OutlinedButton(
+                        onClick = {
+                            selectedProductForOptions = null
+                            stockInPreselectedProduct = prod
+                            stockInSuggestedQty = 10L
                             showStockInDialog = true
                         },
-                        onAdjustStock = { qty -> viewModel.adjustStock(product.productId, qty) },
-                        onArchive = { productToDelete = product },
-                        onActivate = { viewModel.activateProduct(product.productId) },
-                    )
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Icon(Icons.Default.TrendingUp, contentDescription = null, tint = Color(0xFF16A34A))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("📥 အဝင်စတော့ သွင်းမည် (Stock-In)")
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    OutlinedButton(
+                        onClick = {
+                            selectedProductForOptions = null
+                            viewModel.openProductDetails(prod)
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Icon(Icons.Default.Edit, contentDescription = null, tint = Color(0xFF2563EB))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("✏️ အချက်အလက် ကြည့်ရှု / ပြင်ဆင်မည်")
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Button(
+                        onClick = {
+                            selectedProductForOptions = null
+                            productToDelete = prod
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFDC2626)),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Icon(Icons.Default.Delete, contentDescription = null, tint = Color.White)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("🗑️ ကုန်ပစ္စည်း ဖျက်မည်", color = Color.White)
+                    }
                 }
             }
         }
@@ -482,168 +528,192 @@ fun InventoryScreen(
     }
 }
 
+@Composable
+fun AimsIsometricCube(modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .size(44.dp)
+            .background(Color(0xFFDC2626), RoundedCornerShape(10.dp)),
+        contentAlignment = Alignment.Center,
+    ) {
+        Canvas(modifier = Modifier.size(24.dp)) {
+            val w = size.width
+            val h = size.height
+            val cx = w / 2f
+            val cy = h / 2f
+            val r = w * 0.44f
+            val gap = 1.2.dp.toPx()
+
+            // Isometric 3D cube top face (diamond)
+            val topPath = Path().apply {
+                moveTo(cx, cy - r)
+                lineTo(cx + r * 0.866f, cy - r * 0.5f)
+                lineTo(cx, cy)
+                lineTo(cx - r * 0.866f, cy - r * 0.5f)
+                close()
+            }
+            // Left face
+            val leftPath = Path().apply {
+                moveTo(cx - r * 0.866f, cy - r * 0.5f + gap)
+                lineTo(cx - gap * 0.5f, cy + gap * 0.5f)
+                lineTo(cx - gap * 0.5f, cy + r - gap * 0.5f)
+                lineTo(cx - r * 0.866f, cy + r * 0.5f)
+                close()
+            }
+            // Right face
+            val rightPath = Path().apply {
+                moveTo(cx + gap * 0.5f, cy + gap * 0.5f)
+                lineTo(cx + r * 0.866f, cy - r * 0.5f + gap)
+                lineTo(cx + r * 0.866f, cy + r * 0.5f)
+                lineTo(cx + gap * 0.5f, cy + r - gap * 0.5f)
+                close()
+            }
+
+            drawPath(topPath, Color.White)
+            drawPath(leftPath, Color.White.copy(alpha = 0.92f))
+            drawPath(rightPath, Color.White.copy(alpha = 0.85f))
+        }
+    }
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun InventoryItemCard(
+fun AimsProductListItem(
     product: ProductEntity,
-    prediction: com.example.offlinepos.domain.StockPredictionItem? = null,
-    onDoubleTap: () -> Unit,
-    onStockIn: () -> Unit,
-    onAdjustStock: (Long) -> Unit,
-    onArchive: () -> Unit,
-    onActivate: () -> Unit,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    val isLowStock = product.stockQuantity <= product.lowStockThreshold
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongClick,
+            )
+            .testTag("product_row_${product.productId}")
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            // Crimson Red rounded container with white 3D isometric cube
+            AimsIsometricCube()
 
-    Card(
-        modifier = Modifier
+            Spacer(modifier = Modifier.width(14.dp))
+
+            // Product name and price in Ks
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = product.name,
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color(0xFF1E293B),
+                    ),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(modifier = Modifier.height(3.dp))
+                Text(
+                    text = "%,d Ks".format(product.sellPriceMinor),
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        fontSize = 13.sp,
+                        color = Color(0xFF64748B),
+                    ),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+
+            Spacer(modifier = Modifier.width(8.dp))
+
+            // Soft salmon/rose pink status dot as shown in screenshot
+            Box(
+                modifier = Modifier
+                    .size(8.dp)
+                    .background(
+                        color = if (product.isActive) Color(0xFFEAA6A6) else Color(0xFFCBD5E1),
+                        shape = CircleShape
+                    )
+            )
+        }
+
+        // Hairline divider starting after red box
+        HorizontalDivider(
+            color = Color(0xFFF1F5F9),
+            thickness = 1.dp,
+            modifier = Modifier.padding(start = 74.dp)
+        )
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+fun AimsProductGridCard(
+    product: ProductEntity,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = Color.White,
+        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFF1F5F9)),
+        shadowElevation = 1.dp,
+        modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
             .combinedClickable(
-                onClick = onDoubleTap,
-                onDoubleClick = onDoubleTap,
+                onClick = onClick,
+                onLongClick = onLongClick,
             )
-            .testTag("inventory_item_${product.productId}"),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = CardDefaults.outlinedCardBorder(),
+            .testTag("product_grid_${product.productId}")
     ) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                ProductVisualHelper.ProductVisual(
-                    product = product,
-                    modifier = Modifier.size(54.dp),
-                )
-
-                Spacer(modifier = Modifier.width(12.dp))
-
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = product.name,
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.Bold,
-                    )
-                    Text(
-                        text = "အမျိုးအစား: ${product.category} | SKU: ${product.sku}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Text(
-                        text = if (product.isActive) "အခြေအနေ: Active" else "အခြေအနေ: Inactive",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (product.isActive) Color(0xFF15803D) else MaterialTheme.colorScheme.error,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    Text(
-                        text = if (product.isRoofingSheet) "ရောင်း: %,d Ks/ပေ | ဝယ်: %,d Ks/ပေ".format(product.sellPriceMinor, product.costPriceMinor)
-                        else "ရောင်း: %,d Ks | ဝယ်: %,d Ks".format(product.sellPriceMinor, product.costPriceMinor),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    if (product.wholesaleUnitMultiplier > 1L || product.wholesalePriceMinor > 0L) {
-                        Text(
-                            text = "📦 ၁ ${product.wholesaleUnitName} = ${product.wholesaleUnitMultiplier} ${product.unitName} (လက်ကား: %,d Ks)".format(product.wholesalePriceMinor),
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = Color(0xFF0F766E),
-                        )
-                    }
-                    if (prediction != null && (prediction.daysRemaining <= 7 || prediction.currentStock <= 0)) {
-                        Surface(
-                            shape = RoundedCornerShape(4.dp),
-                            color = Color(prediction.riskLevel.colorHex).copy(alpha = 0.15f),
-                            modifier = Modifier.padding(top = 2.dp)
-                        ) {
-                            Text(
-                                text = if (prediction.daysRemaining in 1..7) "⚠️ ${prediction.daysRemaining} ရက်အတွင်း ပြတ်မည်" else prediction.riskLevel.labelBurmese,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color(prediction.riskLevel.colorHex),
-                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
-                            )
-                        }
-                    }
-                }
-
-                if (product.isActive) {
-                    IconButton(
-                        onClick = onArchive,
-                        modifier = Modifier.testTag("archive_product_${product.productId}")
-                    ) {
-                        Icon(Icons.Default.Delete, contentDescription = "Archive", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(20.dp))
-                    }
-                } else {
-                    TextButton(onClick = onActivate, modifier = Modifier.testTag("activate_product_${product.productId}")) {
-                        Text("ပြန်သုံးမည်", fontSize = 11.sp)
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-            HorizontalDivider()
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Stock adjustments
+        Column(
+            modifier = Modifier.padding(12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
+                verticalAlignment = Alignment.Top,
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = "လက်ကျန်: ",
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                    Surface(
-                        shape = RoundedCornerShape(6.dp),
-                        color = if (isLowStock) Color(0xFFFEF2F2) else Color(0xFFDCFCE7),
-                    ) {
-                        Text(
-                            text = "${product.stockQuantity} ${product.unitName}${if (isLowStock) " (⚠️သတိပေး)" else ""}",
-                            style = MaterialTheme.typography.bodySmall,
-                            fontWeight = FontWeight.Bold,
-                            color = if (isLowStock) Color(0xFFDC2626) else Color(0xFF15803D),
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                AimsIsometricCube(modifier = Modifier.size(38.dp))
+                Box(
+                    modifier = Modifier
+                        .size(8.dp)
+                        .background(
+                            color = if (product.isActive) Color(0xFFEAA6A6) else Color(0xFFCBD5E1),
+                            shape = CircleShape
                         )
-                    }
-                }
-
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Button(
-                        onClick = onStockIn,
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                        modifier = Modifier.height(30.dp),
-                        shape = RoundedCornerShape(6.dp)
-                    ) {
-                        Text("အဝင် +", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                    }
-                    OutlinedButton(
-                        onClick = { onAdjustStock(-1) },
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                        modifier = Modifier.height(30.dp),
-                    ) {
-                        Text("-1", fontSize = 11.sp)
-                    }
-                    OutlinedButton(
-                        onClick = { onAdjustStock(5) },
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                        modifier = Modifier.height(30.dp),
-                    ) {
-                        Text("+5", fontSize = 11.sp)
-                    }
-                    OutlinedButton(
-                        onClick = { onAdjustStock(10) },
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                        modifier = Modifier.height(30.dp),
-                    ) {
-                        Text("+10", fontSize = 11.sp)
-                    }
-                }
+                )
             }
+            Spacer(modifier = Modifier.height(10.dp))
+            Text(
+                text = product.name,
+                style = MaterialTheme.typography.bodyMedium.copy(
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color(0xFF1E293B),
+                ),
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "%,d Ks".format(product.sellPriceMinor),
+                style = MaterialTheme.typography.bodySmall.copy(
+                    fontSize = 12.5.sp,
+                    color = Color(0xFF64748B),
+                ),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.fillMaxWidth()
+            )
         }
     }
 }

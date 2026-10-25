@@ -104,6 +104,7 @@ fun FeaturesHomeScreen(
     onNavigateToInventory: () -> Unit,
     onNavigateToSales: () -> Unit,
     onNavigateToSettings: () -> Unit,
+    onNavigateToAiCopilot: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val storeProfile by viewModel.storeProfile.collectAsState()
@@ -162,6 +163,14 @@ fun FeaturesHomeScreen(
                         badgeText = if (urgentCount > 0) "$urgentCount" else null,
                         badgeColor = Color(0xFFDC2626),
                         onClick = { showStockPredictionDialog = true },
+                    ),
+                    AimFeatureTile(
+                        id = "feat_ai_assistant",
+                        title = "AI အကူ (Gemini Copilot)",
+                        subtitle = "POS စီမံခန့်ခွဲမှု & အမေးအဖြေ",
+                        icon = Icons.Default.AutoAwesome,
+                        iconBgColor = Color(0xFF4F46E5),
+                        onClick = onNavigateToAiCopilot,
                     ),
                     AimFeatureTile(
                         id = "feat_categories",

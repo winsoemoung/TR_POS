@@ -82,12 +82,14 @@ import androidx.compose.ui.window.Dialog
 import com.example.offlinepos.ai.AiAction
 import com.example.offlinepos.ai.AiActionType
 import com.example.offlinepos.ai.AiChatMessage
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import com.example.offlinepos.ai.MessageSender
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AiCopilotScreen(
     viewModel: PosViewModel,
+    onNavigateBack: () -> Unit = {},
 ) {
     val messages by viewModel.aiMessages.collectAsState()
     val isThinking by viewModel.isAiThinking.collectAsState()
@@ -113,6 +115,14 @@ fun AiCopilotScreen(
         ) {
             // Top App Bar with Store logo, Store Name & Gemini Assistant badge
             TopAppBar(
+                navigationIcon = {
+                    IconButton(
+                        onClick = onNavigateBack,
+                        modifier = Modifier.testTag("ai_back_button")
+                    ) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         StoreLogoAvatar(

@@ -65,7 +65,7 @@ class AiPosEngine(private val context: Context) {
         // 1. Primary: Use Firebase AI Logic (gemini-3.8-flash) via App Check (Zero-key cloud AI)
         try {
             val model = Firebase.ai.generativeModel("gemini-3.8-flash")
-            val response = withTimeout(60_000L) {
+            val response = withTimeout(6_000L) {
                 model.generateContent(combinedPrompt)
             }
             val text = response.text
