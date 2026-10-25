@@ -260,6 +260,10 @@ fun MainApp(viewModel: PosViewModel) {
                 PosTab.REGISTER -> HomeScreen(
                     viewModel = viewModel,
                     onOpenCart = { showCartSheet = true },
+                    onNavigateToInventory = { selectedTab = PosTab.INVENTORY },
+                    onNavigateToSales = { selectedTab = PosTab.SALES },
+                    onNavigateToSettings = { selectedTab = PosTab.SETTINGS },
+                    onNavigateToAiCopilot = { selectedTab = PosTab.AI_COPILOT },
                 )
                 PosTab.INVENTORY -> InventoryScreen(
                     viewModel = viewModel,

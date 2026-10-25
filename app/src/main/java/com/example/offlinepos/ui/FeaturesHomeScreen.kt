@@ -279,7 +279,7 @@ fun FeaturesHomeScreen(
                             modifier = Modifier.size(36.dp),
                         ) {
                             Box(contentAlignment = Alignment.Center) {
-                                Text("AIMS", fontWeight = FontWeight.Black, fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
+                                Text("TR", fontWeight = FontWeight.Black, fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
                             }
                         }
                         Spacer(modifier = Modifier.width(10.dp))
@@ -290,7 +290,7 @@ fun FeaturesHomeScreen(
                                 fontWeight = FontWeight.Bold,
                             )
                             Text(
-                                text = "${storeProfile.storeName} • AIMS POS",
+                                text = "${storeProfile.storeName} • TR-POS",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -458,7 +458,7 @@ private fun AimsFeatureHeroCard(
                             color = Color.White,
                         )
                         Text(
-                            text = "AIMS Point of Sale • All-In-One Hub",
+                            text = "TR-POS Point of Sale • All-In-One Hub",
                             style = MaterialTheme.typography.labelSmall,
                             color = Color(0xFF93C5FD),
                         )
