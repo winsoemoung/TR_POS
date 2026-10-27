@@ -34,7 +34,7 @@ import androidx.compose.material.icons.filled.ListAlt
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material.icons.filled.WifiOff
 import androidx.compose.material3.Button
@@ -605,7 +605,7 @@ fun StaffClientScreen(
                                     if (isSubmitting) {
                                         CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Color.White, strokeWidth = 2.dp)
                                     } else {
-                                        Icon(Icons.Default.Send, contentDescription = null, modifier = Modifier.size(18.dp))
+                                        Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null, modifier = Modifier.size(18.dp))
                                         Spacer(modifier = Modifier.width(8.dp))
                                         Text("🚀 Main Server Database သို့ ပေါင်းထည့်မည်", fontWeight = FontWeight.Bold, fontSize = 14.sp)
                                     }

@@ -111,7 +111,7 @@ fun SalesHistoryScreen(
     val purchases by viewModel.purchases.collectAsState()
     val shifts by viewModel.shifts.collectAsState()
     val showCandlestickChart = context.getSharedPreferences("pos_settings", 0)
-        .getBoolean("show_sales_candlestick", true)
+        .getBoolean("show_sales_candlestick", false)
 
     var selectedTab by remember { mutableStateOf(AnalyticsTab.SALES) }
     var selectedFilterMode by remember { mutableStateOf(DateFilterMode.TODAY) }

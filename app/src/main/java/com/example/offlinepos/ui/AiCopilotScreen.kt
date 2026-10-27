@@ -35,7 +35,7 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Security
-import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.input.KeyboardType
@@ -227,7 +227,7 @@ fun AiCopilotScreen(
                                 modifier = Modifier.testTag("ai_send_button")
                             ) {
                                 Icon(
-                                    Icons.Default.Send,
+                                    Icons.AutoMirrored.Filled.Send,
                                     contentDescription = "Send",
                                     tint = if (inputText.isNotBlank() && !isThinking) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
                                 )

@@ -35,6 +35,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.TrendingUp
+import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Close
@@ -45,8 +47,6 @@ import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Sell
-import androidx.compose.material.icons.filled.TrendingUp
-import androidx.compose.material.icons.filled.ViewList
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -83,6 +83,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
@@ -113,7 +114,7 @@ fun InventoryScreen(
     val context = LocalContext.current
 
     var searchQuery by remember { mutableStateOf("") }
-    var isSearchActive by remember { mutableStateOf(false) }
+    var isSearchActive by remember { mutableStateOf(true) }
     var isGridView by remember { mutableStateOf(false) }
     var selectedCategoryFilter by remember { mutableStateOf("အားလုံး") }
     var showCategoryDialog by remember { mutableStateOf(false) }
@@ -166,7 +167,7 @@ fun InventoryScreen(
                         modifier = Modifier.testTag("toggle_grid_view_button")
                     ) {
                         Icon(
-                            imageVector = if (isGridView) Icons.Default.ViewList else Icons.Default.GridView,
+                            imageVector = if (isGridView) Icons.AutoMirrored.Filled.ViewList else Icons.Default.GridView,
                             contentDescription = "Toggle Grid/List View",
                             tint = Color(0xFF334155)
                         )
@@ -232,12 +233,13 @@ fun InventoryScreen(
                 OutlinedTextField(
                     value = searchQuery,
                     onValueChange = { searchQuery = it },
-                    placeholder = { Text("ကုန်စည် အမည် သို့မဟုတ် Code ဖြင့် ရှာရန်...", fontSize = 13.sp) },
+                    textStyle = TextStyle(color = Color(0xFF1E293B), fontSize = 14.sp, fontWeight = FontWeight.SemiBold),
+                    placeholder = { Text("ကုန်စည် အမည် သို့မဟုတ် Code ဖြင့် ရှာရန်...", fontSize = 13.sp, color = Color(0xFF94A3B8)) },
                     leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color(0xFF64748B)) },
                     trailingIcon = {
                         if (searchQuery.isNotEmpty()) {
                             IconButton(onClick = { searchQuery = "" }) {
-                                Icon(Icons.Default.Close, contentDescription = "Clear")
+                                Icon(Icons.Default.Close, contentDescription = "Clear", tint = Color(0xFF64748B))
                             }
                         }
                     },
@@ -248,8 +250,13 @@ fun InventoryScreen(
                     singleLine = true,
                     shape = RoundedCornerShape(12.dp),
                     colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color(0xFF1E293B),
+                        unfocusedTextColor = Color(0xFF1E293B),
                         focusedContainerColor = Color(0xFFF8FAFC),
                         unfocusedContainerColor = Color(0xFFF8FAFC),
+                        focusedBorderColor = Color(0xFFDC2626),
+                        unfocusedBorderColor = Color(0xFFCBD5E1),
+                        cursorColor = Color(0xFFDC2626),
                     )
                 )
             }
@@ -434,7 +441,7 @@ fun InventoryScreen(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(10.dp)
                     ) {
-                        Icon(Icons.Default.TrendingUp, contentDescription = null, tint = Color(0xFF16A34A))
+                        Icon(Icons.AutoMirrored.Filled.TrendingUp, contentDescription = null, tint = Color(0xFF16A34A))
                         Spacer(modifier = Modifier.width(8.dp))
                         Text("📥 အဝင်စတော့ သွင်းမည် (Stock-In)")
                     }

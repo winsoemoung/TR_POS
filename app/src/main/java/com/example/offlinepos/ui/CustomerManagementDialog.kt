@@ -21,7 +21,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Person
@@ -601,7 +601,7 @@ private fun CustomerLedgerDetailsDialog(
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         IconButton(onClick = onDismiss) {
-                            Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                         }
                         Spacer(modifier = Modifier.width(6.dp))
                         Column {

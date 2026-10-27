@@ -74,6 +74,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -91,6 +92,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -1016,20 +1018,30 @@ fun VoucherSaleRegisterDialog(
                 OutlinedTextField(
                     value = searchQuery,
                     onValueChange = { viewModel.setSearchQuery(it) },
+                    textStyle = TextStyle(color = Color(0xFF1E293B), fontSize = 14.sp, fontWeight = FontWeight.SemiBold),
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 8.dp),
-                    placeholder = { Text("ကုန်ပစ္စည်းအမည် (သို့) ဘားကုဒ် ရှာရန်...") },
-                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                    placeholder = { Text("ကုန်ပစ္စည်းအမည် (သို့) ဘားကုဒ် ရှာရန်...", color = Color(0xFF94A3B8)) },
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color(0xFF64748B)) },
                     trailingIcon = {
                         if (searchQuery.isNotEmpty()) {
                             IconButton(onClick = { viewModel.setSearchQuery("") }) {
-                                Icon(Icons.Default.Close, contentDescription = "Clear")
+                                Icon(Icons.Default.Close, contentDescription = "Clear", tint = Color(0xFF64748B))
                             }
                         }
                     },
                     shape = RoundedCornerShape(12.dp),
-                    singleLine = true
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color(0xFF1E293B),
+                        unfocusedTextColor = Color(0xFF1E293B),
+                        focusedContainerColor = Color(0xFFF8FAFC),
+                        unfocusedContainerColor = Color(0xFFF8FAFC),
+                        focusedBorderColor = Color(0xFFDC2626),
+                        unfocusedBorderColor = Color(0xFFCBD5E1),
+                        cursorColor = Color(0xFFDC2626),
+                    )
                 )
 
                 // Categories Row

@@ -35,7 +35,7 @@ import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.Receipt
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Storage
-import androidx.compose.material.icons.filled.TrendingUp
+import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.Badge
@@ -146,7 +146,7 @@ fun FeaturesHomeScreen(
                         id = "feat_stock_in",
                         title = "အဝင်စတော့ သွင်းမည်",
                         subtitle = "Supplier & Invoice",
-                        icon = Icons.Default.TrendingUp,
+                        icon = Icons.AutoMirrored.Filled.TrendingUp,
                         iconBgColor = Color(0xFF16A34A),
                         onClick = {
                             stockInPreselectedProduct = null

@@ -452,7 +452,7 @@ class RecordLevelSyncManager(private val context: Context) {
                         sqlite.query(
                             SimpleSQLiteQuery(
                                 "SELECT 1 FROM sale_items WHERE saleId = ? AND productNameSnapshot = ? AND quantity = ? LIMIT 1",
-                                arrayOf(saleId, prodName, qty)
+                                arrayOf<Any>(saleId, prodName, qty)
                             )
                         ).use { c ->
                             if (c.moveToFirst()) exists = true
@@ -499,7 +499,7 @@ class RecordLevelSyncManager(private val context: Context) {
                 when (t.optString("entityType")) {
                     "customers" -> sqlite.execSQL("DELETE FROM customers WHERE customerId = ?", arrayOf(t.optString("entityId")))
                     "parked_orders" -> sqlite.execSQL("DELETE FROM parked_orders WHERE parkId = ?", arrayOf(t.optString("entityId")))
-                    "products" -> sqlite.execSQL("UPDATE products SET isActive = 0, updatedAtEpochMs = ? WHERE sku = ?", arrayOf(t.optLong("deletedAtEpochMs"), t.optString("entityId")))
+                    "products" -> sqlite.execSQL("UPDATE products SET isActive = 0, updatedAtEpochMs = ? WHERE sku = ?", arrayOf<Any>(t.optLong("deletedAtEpochMs"), t.optString("entityId")))
                 }
             }
 
@@ -508,7 +508,7 @@ class RecordLevelSyncManager(private val context: Context) {
                 try {
                     sqlite.execSQL(
                         "INSERT INTO audit_events (action, category, details, timestampEpochMs, cashierId) VALUES (?, ?, ?, ?, ?)",
-                        arrayOf("TWO_WAY_AUTO_MERGE", "SYNC", mergeResult.summary, System.currentTimeMillis(), "SYSTEM")
+                        arrayOf<Any>("TWO_WAY_AUTO_MERGE", "SYNC", mergeResult.summary, System.currentTimeMillis(), "SYSTEM")
                     )
                 } catch (_: Exception) { }
             }
@@ -603,7 +603,7 @@ class RecordLevelSyncManager(private val context: Context) {
         val now = System.currentTimeMillis()
         db.openHelper.writableDatabase.execSQL(
             "INSERT OR REPLACE INTO sync_tombstones(tombstoneId,entityType,entityId,deletedAtEpochMs,deletedByDeviceId) VALUES(?,?,?,?,?)",
-            arrayOf("$entityType:$entityId", entityType, entityId, now, DEVICE_ID),
+            arrayOf<Any>("$entityType:$entityId", entityType, entityId, now, DEVICE_ID),
         )
     }
 

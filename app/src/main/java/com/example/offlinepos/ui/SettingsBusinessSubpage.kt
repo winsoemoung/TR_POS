@@ -41,7 +41,7 @@ fun SettingsBusinessSubpage(
     val scrollState = rememberScrollState()
 
     var showCandlestickChart by remember {
-        mutableStateOf(context.getSharedPreferences("pos_settings", 0).getBoolean("show_sales_candlestick", true))
+        mutableStateOf(context.getSharedPreferences("pos_settings", 0).getBoolean("show_sales_candlestick", false))
     }
 
     var showCustomerDialog by remember { mutableStateOf(false) }
