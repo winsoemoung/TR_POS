@@ -196,9 +196,12 @@ object BluetoothPrinterHelper {
 
         // Bill Info
         val dateStr = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date(receipt.timestampEpochMs))
-        canvas.drawText("ဘေလ်: #${receipt.saleId.take(8).uppercase()}", leftMargin, y, paintBody)
+        val vNo = receipt.displayVoucherNumber
+        canvas.drawText("ဘောင်ချာအမှတ်: $vNo", leftMargin, y, paintBodyBold)
         y += 24f
         canvas.drawText("ရက်စွဲ: $dateStr", leftMargin, y, paintBody)
+        y += 22f
+        canvas.drawText("Ref Code: #${receipt.saleId.take(8).uppercase()}", leftMargin, y, paintBody)
         val cashierX = if (is58mm) leftMargin else 320f
         if (is58mm) {
             y += 22f

@@ -1,6 +1,7 @@
 package com.example.offlinepos.ui
 
 import android.bluetooth.BluetoothDevice
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -178,8 +179,51 @@ fun ReceiptDialog(
                         HorizontalDivider(color = Color(0xFFCBD5E1))
                         Spacer(modifier = Modifier.height(6.dp))
 
+                        // Voucher Number badge
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = Color(0xFFEFF6FF),
+                            border = BorderStroke(1.dp, Color(0xFFBFDBFE)),
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column {
+                                    Text(
+                                        text = "ဘောင်ချာအမှတ်",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = Color(0xFF1E40AF),
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                    Text(
+                                        text = receipt.displayVoucherNumber,
+                                        style = MaterialTheme.typography.titleMedium,
+                                        color = Color(0xFF1E3A8A),
+                                        fontWeight = FontWeight.Bold,
+                                        fontFamily = FontFamily.Monospace
+                                    )
+                                }
+                                Column(horizontalAlignment = Alignment.End) {
+                                    Text(
+                                        text = "Ref Code",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = Color(0xFF64748B)
+                                    )
+                                    Text(
+                                        text = "#${receipt.saleId.take(8).uppercase()}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = Color(0xFF475569),
+                                        fontFamily = FontFamily.Monospace
+                                    )
+                                }
+                            }
+                        }
+
                         Text(
-                            text = "ဘေလ်အမှတ်: #${receipt.saleId.take(8).uppercase()} | နေ့စွဲ: ${receipt.businessDate}",
+                            text = "နေ့စွဲ: ${receipt.businessDate}",
                             style = MaterialTheme.typography.labelSmall,
                             color = Color(0xFF64748B),
                             fontFamily = FontFamily.Monospace,

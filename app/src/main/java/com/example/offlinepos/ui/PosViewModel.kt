@@ -1284,6 +1284,10 @@ class PosViewModel(private val context: Context) : ViewModel() {
                     }
 
                     val dateStr = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date())
+                    val todayYmd = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
+                    val todaySalesCount = salesHistory.value.count { it.businessDate == todayYmd } + 1
+                    val autoVoucherNo = com.example.offlinepos.domain.VoucherHelper.formatVoucherNumber(System.currentTimeMillis(), todaySalesCount)
+
                     val receiptData = ReceiptData(
                         saleId = result.saleId,
                         businessDate = dateStr,
@@ -1298,6 +1302,7 @@ class PosViewModel(private val context: Context) : ViewModel() {
                         customerName = selectedCustomer?.name,
                         splitCashMinor = splitCashMinor,
                         splitDigitalMinor = splitDigitalMinor,
+                        voucherNo = autoVoucherNo,
                     )
 
                     _receipt.value = receiptData
@@ -2116,6 +2121,7 @@ class PosViewModel(private val context: Context) : ViewModel() {
         viewModelScope.launch {
             val items = db.checkoutDao().getItemsForSale(sale.saleId)
             val payment = db.checkoutDao().getPaymentForSale(sale.saleId)
+            val autoVoucherNo = com.example.offlinepos.domain.VoucherHelper.getVoucherNumber(sale, salesHistory.value)
             val receiptData = ReceiptData(
                 saleId = sale.saleId,
                 businessDate = sale.businessDate,
@@ -2137,6 +2143,7 @@ class PosViewModel(private val context: Context) : ViewModel() {
                 splitCashMinor = sale.splitCashMinor,
                 splitDigitalMinor = sale.splitDigitalMinor,
                 saleStatus = sale.status,
+                voucherNo = autoVoucherNo,
             )
             _receipt.value = receiptData
         }

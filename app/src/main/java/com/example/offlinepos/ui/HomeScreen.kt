@@ -1790,6 +1790,13 @@ fun DynamicReportViewerDialog(
                                 Text("လက်ကျန်နည်းနေသော ပစ္စည်း", fontSize = 12.sp, color = BrandRed)
                                 Text("$lowStockCount မျိုး", fontWeight = FontWeight.Bold, fontSize = 20.sp, color = BrandRed)
                             }
+                            "DAILY_SALES" -> {
+                                val todayStr = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
+                                val todaySales = sales.filter { it.businessDate == todayStr }
+                                val todayTotal = todaySales.sumOf { it.totalMinor }
+                                Text("ယနေ့ ဘောင်ချာ စုစုပေါင်း (${todaySales.size} စောင်)", fontSize = 12.sp, color = BrandRed)
+                                Text("%,d Ks".format(todayTotal), fontWeight = FontWeight.Bold, fontSize = 20.sp, color = BrandRed)
+                            }
                             else -> {
                                 Text("အချက်အလက် စုစုပေါင်း", fontSize = 12.sp, color = BrandRed)
                                 Text("မှတ်တမ်းစုံလင်စွာ သိမ်းဆည်းထားပြီးဖြစ်ပါသည်", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = BrandRed)
@@ -1803,6 +1810,29 @@ fun DynamicReportViewerDialog(
                 // Items preview list
                 LazyColumn(modifier = Modifier.height(200.dp)) {
                     when (reportType) {
+                        "DAILY_SALES" -> {
+                            val todayStr = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
+                            val todaySales = sales.filter { it.businessDate == todayStr }.sortedByDescending { it.createdAtEpochMs }
+                            if (todaySales.isEmpty()) {
+                                item { Text("ယနေ့ အရောင်းမှတ်တမ်း မရှိသေးပါ။", color = TextMuted) }
+                            } else {
+                                items(todaySales) { s ->
+                                    val vNo = com.example.offlinepos.domain.VoucherHelper.getVoucherNumber(s, sales)
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column {
+                                            Text(vNo, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Color(0xFF1E3A8A))
+                                            Text("Ref: #${s.saleId.take(8).uppercase()}", fontSize = 11.sp, color = TextMuted)
+                                        }
+                                        Text("%,d Ks".format(s.totalMinor), fontWeight = FontWeight.Bold, fontSize = 13.sp, color = BrandRed)
+                                    }
+                                    HorizontalDivider(color = BorderLight, thickness = 0.5.dp)
+                                }
+                            }
+                        }
                         "LOW_STOCK" -> {
                             val lowProds = products.filter { it.stockQuantity <= it.lowStockThreshold }
                             if (lowProds.isEmpty()) {

@@ -70,8 +70,13 @@ object PdfReceiptHelper {
 
         // 2. Receipt metadata
         paint.textAlign = Paint.Align.LEFT
+        paint.textSize = 12f
+        paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        canvas.drawText("ဘောင်ချာအမှတ်: ${receipt.displayVoucherNumber}", 30f, y, paint)
+        paint.typeface = Typeface.DEFAULT
         paint.textSize = 11f
-        canvas.drawText("ပြေစာအမှတ်: ${receipt.saleId.take(16)}", 30f, y, paint)
+        y += 18f
+        canvas.drawText("Ref Code: #${receipt.saleId.take(8).uppercase()}", 30f, y, paint)
         y += 18f
         if (receipt.saleStatus != "COMPLETED") {
             paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
@@ -207,7 +212,8 @@ object PdfReceiptHelper {
 
         // Save to cache dir
         val receiptsDir = File(context.cacheDir, "receipts").apply { mkdirs() }
-        val pdfFile = File(receiptsDir, "Receipt_${receipt.saleId.take(8)}_${System.currentTimeMillis()}.pdf")
+        val safeVoucher = receipt.displayVoucherNumber.replace("-", "_")
+        val pdfFile = File(receiptsDir, "Receipt_${safeVoucher}_${System.currentTimeMillis()}.pdf")
 
         return try {
             FileOutputStream(pdfFile).use { out ->
@@ -222,8 +228,8 @@ object PdfReceiptHelper {
             val shareIntent = Intent(Intent.ACTION_SEND).apply {
                 type = "application/pdf"
                 putExtra(Intent.EXTRA_STREAM, contentUri)
-                putExtra(Intent.EXTRA_SUBJECT, "ပြေစာ: ${storeProfile.storeName}")
-                putExtra(Intent.EXTRA_TEXT, "${storeProfile.storeName} မှ အရောင်းပြေစာ #${receipt.saleId.take(8)} (ကျသင့်ငွေ: %,d Ks)".format(receipt.totalMinor))
+                putExtra(Intent.EXTRA_SUBJECT, "ဘောင်ချာ: ${receipt.displayVoucherNumber} (${storeProfile.storeName})")
+                putExtra(Intent.EXTRA_TEXT, "${storeProfile.storeName} မှ ဘောင်ချာအမှတ် ${receipt.displayVoucherNumber} (ကျသင့်ငွေ: %,d Ks)".format(receipt.totalMinor))
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }

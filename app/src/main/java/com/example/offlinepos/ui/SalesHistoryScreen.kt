@@ -24,7 +24,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -33,10 +35,12 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
@@ -119,9 +123,16 @@ fun SalesHistoryScreen(
     var showStockInDialog by remember { mutableStateOf(false) }
     var showShiftReportDialog by remember { mutableStateOf(false) }
     var saleToRefund by remember { mutableStateOf<SaleEntity?>(null) }
+    var voucherSearchQuery by remember { mutableStateOf("") }
 
     var customStartMs by remember { mutableStateOf(PosViewModel.getStartOfToday()) }
     var customEndMs by remember { mutableStateOf(PosViewModel.getEndOfToday()) }
+
+    val voucherNumberMap = remember(allSales) {
+        allSales.associate { sale ->
+            sale.saleId to com.example.offlinepos.domain.VoucherHelper.getVoucherNumber(sale, allSales)
+        }
+    }
 
     val (rangeStart, rangeEnd) = when (selectedFilterMode) {
         DateFilterMode.TODAY -> Pair(PosViewModel.getStartOfToday(), PosViewModel.getEndOfToday())
@@ -156,7 +167,14 @@ fun SalesHistoryScreen(
         DateFilterMode.CUSTOM -> Pair(customStartMs, customEndMs)
     }
 
-    val filteredSales = allSales.filter { it.createdAtEpochMs in rangeStart..rangeEnd }
+    val filteredSales = if (voucherSearchQuery.isNotBlank()) {
+        allSales.filter { sale ->
+            val vNo = voucherNumberMap[sale.saleId] ?: com.example.offlinepos.domain.VoucherHelper.formatVoucherNumberFallback(sale.saleId, sale.createdAtEpochMs)
+            com.example.offlinepos.domain.VoucherHelper.matchesQuery(vNo, sale.saleId, sale.customerName, voucherSearchQuery)
+        }
+    } else {
+        allSales.filter { it.createdAtEpochMs in rangeStart..rangeEnd }
+    }
     val filteredPurchases = purchases.filter { it.createdAtEpochMs in rangeStart..rangeEnd }
     val filteredSaleItems = allSaleItems.filter { item -> filteredSales.any { it.saleId == item.saleId } }
 
@@ -245,6 +263,64 @@ fun SalesHistoryScreen(
 
             when (selectedTab) {
                 AnalyticsTab.SALES -> {
+                    // Voucher Search Bar
+                    OutlinedTextField(
+                        value = voucherSearchQuery,
+                        onValueChange = { voucherSearchQuery = it },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 10.dp)
+                            .testTag("voucher_search_input"),
+                        placeholder = { Text("ဘောင်ချာနံပါတ် (သို့) Ref ဖြင့် ရှာရန် (ဥပမာ- 0001, TR-..., #Ref)") },
+                        leadingIcon = {
+                            Icon(
+                                Icons.Default.Search,
+                                contentDescription = "Search Voucher",
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        },
+                        trailingIcon = {
+                            if (voucherSearchQuery.isNotBlank()) {
+                                IconButton(onClick = { voucherSearchQuery = "" }) {
+                                    Icon(Icons.Default.Clear, contentDescription = "Clear Search")
+                                }
+                            }
+                        },
+                        singleLine = true,
+                        shape = RoundedCornerShape(12.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color(0xFF1E293B),
+                            unfocusedTextColor = Color(0xFF1E293B),
+                            focusedContainerColor = Color(0xFFF8FAFC),
+                            unfocusedContainerColor = Color(0xFFF8FAFC),
+                            focusedBorderColor = MaterialTheme.colorScheme.primary,
+                            unfocusedBorderColor = Color(0xFFCBD5E1),
+                        ),
+                    )
+
+                    if (voucherSearchQuery.isNotBlank()) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 8.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "ရှာဖွေမှု: \"$voucherSearchQuery\" (${filteredSales.size} စောင် တွေ့ရှိ)",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            TextButton(
+                                onClick = { voucherSearchQuery = "" },
+                                contentPadding = PaddingValues(0.dp)
+                            ) {
+                                Text("ရှာဖွေမှုပယ်ဖျက်မည်", fontSize = 11.sp)
+                            }
+                        }
+                    }
+
                     // Revenue Summary Cards
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -285,7 +361,12 @@ fun SalesHistoryScreen(
                             modifier = Modifier.fillMaxWidth().weight(1f),
                             contentAlignment = Alignment.Center,
                         ) {
-                            Text("ရွေးချယ်ထားသော ကာလတွင် အရောင်းမှတ်တမ်း မရှိပါ", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            val emptyMsg = if (voucherSearchQuery.isNotBlank()) {
+                                "ဘောင်ချာနံပါတ် (သို့) Ref '$voucherSearchQuery' နှင့် ကိုက်ညီသော စာရင်းမရှိပါ"
+                            } else {
+                                "ရွေးချယ်ထားသော ကာလတွင် အရောင်းမှတ်တမ်း မရှိပါ"
+                            }
+                            Text(emptyMsg, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     } else {
                         LazyColumn(
@@ -295,6 +376,7 @@ fun SalesHistoryScreen(
                             items(filteredSales, key = { it.saleId }) { sale ->
                                 SaleRecordCard(
                                     sale = sale,
+                                    voucherNumber = voucherNumberMap[sale.saleId],
                                     onClick = { viewModel.viewPastReceipt(sale) },
                                     onRefund = { saleToRefund = sale },
                                 )
@@ -564,9 +646,12 @@ fun SalesHistoryScreen(
 @Composable
 private fun SaleRecordCard(
     sale: SaleEntity,
+    voucherNumber: String? = null,
     onClick: () -> Unit,
     onRefund: () -> Unit,
 ) {
+    val displayVoucher = voucherNumber ?: com.example.offlinepos.domain.VoucherHelper.formatVoucherNumberFallback(sale.saleId, sale.createdAtEpochMs)
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -587,10 +672,11 @@ private fun SaleRecordCard(
             Column {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        text = "#${sale.saleId.take(8).uppercase()}",
+                        text = displayVoucher,
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold,
                         fontFamily = FontFamily.Monospace,
+                        color = MaterialTheme.colorScheme.primary,
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Surface(
@@ -614,6 +700,12 @@ private fun SaleRecordCard(
                         )
                     }
                 }
+                Text(
+                    text = "Ref: #${sale.saleId.take(8).uppercase()}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color(0xFF64748B),
+                    fontFamily = FontFamily.Monospace,
+                )
                 if (!sale.customerName.isNullOrBlank()) {
                     Text(
                         text = "ဝယ်သူ: ${sale.customerName}",

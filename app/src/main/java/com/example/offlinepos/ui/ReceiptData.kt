@@ -18,7 +18,11 @@ data class ReceiptData(
     val splitCashMinor: Long = 0L,
     val splitDigitalMinor: Long = 0L,
     val saleStatus: String = "COMPLETED",
+    val voucherNo: String? = null,
 ) {
+    val displayVoucherNumber: String
+        get() = voucherNo ?: com.example.offlinepos.domain.VoucherHelper.formatVoucherNumberFallback(saleId, timestampEpochMs)
+
     val subtotalMinor: Long get() = totals.subtotalMinor
     val discountMinor: Long get() = totals.discountMinor
     val taxMinor: Long get() = totals.taxMinor
