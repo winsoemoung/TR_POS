@@ -1,0 +1,112 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global Safety Net: Default deny all unspecified collections
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Global helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidUserProfile(data) {
+      return data.userId is string && data.userId.size() <= 128 &&
+             data.email is string && data.email.size() <= 200 &&
+             (!('displayName' in data) || (data.displayName is string && data.displayName.size() <= 100)) &&
+             (!('storeName' in data) || (data.storeName is string && data.storeName.size() <= 100)) &&
+             (!('createdAt' in data) || (data.createdAt is timestamp && data.createdAt <= request.time)) &&
+             (!('updatedAt' in data) || (data.updatedAt is timestamp && data.updatedAt <= request.time));
+    }
+
+    function isValidProduct(data) {
+      return data.id is string && data.id.size() <= 128 &&
+             data.userId is string && data.userId.size() <= 128 &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 200 &&
+             data.costPriceMinor is int && data.costPriceMinor >= 0 &&
+             data.sellPriceMinor is int && data.sellPriceMinor >= 0 &&
+             (!('sku' in data) || (data.sku is string && data.sku.size() <= 100)) &&
+             (!('barcode' in data) || data.barcode == null || (data.barcode is string && data.barcode.size() <= 100)) &&
+             (!('category' in data) || (data.category is string && data.category.size() <= 100)) &&
+             (!('stockQuantity' in data) || data.stockQuantity is int) &&
+             (!('lowStockThreshold' in data) || data.lowStockThreshold is int) &&
+             (!('isActive' in data) || data.isActive is bool) &&
+             (!('createdAt' in data) || (data.createdAt is timestamp && data.createdAt <= request.time)) &&
+             (!('updatedAt' in data) || (data.updatedAt is timestamp && data.updatedAt <= request.time));
+    }
+
+    function isValidSale(data) {
+      return data.id is string && data.id.size() <= 128 &&
+             data.userId is string && data.userId.size() <= 128 &&
+             data.totalMinor is int && data.totalMinor >= 0 &&
+             data.paymentMethod is string && data.paymentMethod.size() <= 50 &&
+             (!('businessDate' in data) || (data.businessDate is string && data.businessDate.size() <= 50)) &&
+             (!('subtotalMinor' in data) || data.subtotalMinor is int) &&
+             (!('discountMinor' in data) || data.discountMinor is int) &&
+             (!('taxMinor' in data) || data.taxMinor is int) &&
+             (!('status' in data) || (data.status is string && data.status.size() <= 50)) &&
+             (!('voucherNo' in data) || (data.voucherNo is string && data.voucherNo.size() <= 100)) &&
+             (!('customerName' in data) || data.customerName == null || (data.customerName is string && data.customerName.size() <= 100)) &&
+             (!('createdAt' in data) || (data.createdAt is timestamp && data.createdAt <= request.time)) &&
+             (!('updatedAt' in data) || (data.updatedAt is timestamp && data.updatedAt <= request.time));
+    }
+
+    function isValidCustomer(data) {
+      return data.id is string && data.id.size() <= 128 &&
+             data.userId is string && data.userId.size() <= 128 &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 200 &&
+             (!('phone' in data) || (data.phone is string && data.phone.size() <= 50)) &&
+             (!('address' in data) || (data.address is string && data.address.size() <= 300)) &&
+             (!('currentDebtMinor' in data) || data.currentDebtMinor is int) &&
+             (!('createdAt' in data) || (data.createdAt is timestamp && data.createdAt <= request.time)) &&
+             (!('updatedAt' in data) || (data.updatedAt is timestamp && data.updatedAt <= request.time));
+    }
+
+    // User Profile
+    match /users/{userId} {
+      allow get, list: if isSignedIn() && request.auth.uid == userId;
+      allow create: if isSignedIn() && request.auth.uid == userId && incoming().userId == request.auth.uid && isValidUserProfile(incoming());
+      allow update: if isSignedIn() && request.auth.uid == userId && incoming().userId == existing().userId && isValidUserProfile(incoming());
+      allow delete: if isSignedIn() && request.auth.uid == userId;
+
+      // Products subcollection
+      match /products/{productId} {
+        allow get, list: if isSignedIn() && request.auth.uid == userId;
+        allow create: if isSignedIn() && request.auth.uid == userId && isValidId(productId) && incoming().userId == request.auth.uid && isValidProduct(incoming());
+        allow update: if isSignedIn() && request.auth.uid == userId && isValidId(productId) && incoming().userId == existing().userId && isValidProduct(incoming());
+        allow delete: if isSignedIn() && request.auth.uid == userId && isValidId(productId);
+      }
+
+      // Sales subcollection
+      match /sales/{saleId} {
+        allow get, list: if isSignedIn() && request.auth.uid == userId;
+        allow create: if isSignedIn() && request.auth.uid == userId && isValidId(saleId) && incoming().userId == request.auth.uid && isValidSale(incoming());
+        allow update: if isSignedIn() && request.auth.uid == userId && isValidId(saleId) && incoming().userId == existing().userId && isValidSale(incoming());
+        allow delete: if isSignedIn() && request.auth.uid == userId && isValidId(saleId);
+      }
+
+      // Customers subcollection
+      match /customers/{customerId} {
+        allow get, list: if isSignedIn() && request.auth.uid == userId;
+        allow create: if isSignedIn() && request.auth.uid == userId && isValidId(customerId) && incoming().userId == request.auth.uid && isValidCustomer(incoming());
+        allow update: if isSignedIn() && request.auth.uid == userId && isValidId(customerId) && incoming().userId == existing().userId && isValidCustomer(incoming());
+        allow delete: if isSignedIn() && request.auth.uid == userId && isValidId(customerId);
+      }
+    }
+  }
+}

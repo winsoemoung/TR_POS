@@ -6,7 +6,9 @@ import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -22,14 +24,19 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -74,6 +81,10 @@ fun SettingsBackupSubpage(
     val lastGoogleBackupTime by viewModel.lastGoogleBackupTime.collectAsState()
     val isDriveSyncing by viewModel.isDriveSyncing.collectAsState()
     val driveSyncStatus by viewModel.driveSyncStatus.collectAsState()
+    val firebaseUser by viewModel.firebaseUser.collectAsState()
+    val isFirestoreSyncing by viewModel.isFirestoreSyncing.collectAsState()
+    val firestoreSyncStatus by viewModel.firestoreSyncStatus.collectAsState()
+    val lastFirestoreSyncTime by viewModel.lastFirestoreSyncTime.collectAsState()
     var googleEmailInput by remember(googleAccount) { mutableStateOf(googleAccount ?: "WINSOEMOUNG@gmail.com") }
 
     var backupStatusMessage by remember { mutableStateOf<String?>(null) }
@@ -196,6 +207,173 @@ fun SettingsBackupSubpage(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
+        // -------------------------------------------------------------
+        // FIREBASE CLOUD FIRESTORE & GOOGLE SIGN-IN SYNC CARD
+        // -------------------------------------------------------------
+        Card(
+            modifier = Modifier.fillMaxWidth().testTag("firebase_firestore_sync_card"),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFFFEF2F2)),
+            border = BorderStroke(1.5.dp, Color(0xFFFCA5A5))
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Surface(
+                            shape = CircleShape,
+                            color = Color(0xFFFEE2E2),
+                            modifier = Modifier.size(38.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text("🔥", fontSize = 20.sp)
+                            }
+                        }
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column {
+                            Text("Firebase Firestore Cloud Sync", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Color(0xFF991B1B))
+                            Text("Google Account တိုက်ရိုက်ချိတ်ဆက်မှု", fontSize = 11.sp, color = Color(0xFF7F1D1D))
+                        }
+                    }
+
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = if (firebaseUser != null) Color(0xFFDCFCE7) else Color(0xFFFEE2E2)
+                    ) {
+                        Text(
+                            text = if (firebaseUser != null) "✓ Logged In" else "Sign In လိုအပ်",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (firebaseUser != null) Color(0xFF15803D) else Color(0xFFB91C1C),
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                if (firebaseUser != null) {
+                    // Logged in user info
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = Color.White,
+                        border = BorderStroke(1.dp, Color(0xFFFECACA)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Surface(
+                                    shape = CircleShape,
+                                    color = Color(0xFFEFF6FF),
+                                    modifier = Modifier.size(40.dp)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Text("👤", fontSize = 20.sp)
+                                    }
+                                }
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Column {
+                                    Text(
+                                        text = firebaseUser?.displayName ?: "Google User",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 14.sp,
+                                        color = Color(0xFF1E293B)
+                                    )
+                                    Text(
+                                        text = firebaseUser?.email ?: "",
+                                        fontSize = 12.sp,
+                                        color = Color(0xFF64748B)
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(8.dp))
+                            HorizontalDivider(color = Color(0xFFF1F5F9))
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            firestoreSyncStatus?.let { status ->
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text("📡 အခြေအနေ: ", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF475569))
+                                    Text(status, fontSize = 11.sp, color = Color(0xFF15803D), fontWeight = FontWeight.Medium)
+                                }
+                            }
+                            if (lastFirestoreSyncTime > 0L) {
+                                val syncDate = SimpleDateFormat("dd/MM/yyyy HH:mm:ss", Locale.getDefault()).format(Date(lastFirestoreSyncTime))
+                                Text("နောက်ဆုံး Sync: $syncDate", fontSize = 10.sp, color = Color(0xFF64748B))
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(
+                            onClick = { viewModel.triggerFirestoreSync("Settings Sync Button") },
+                            modifier = Modifier.weight(1f).testTag("firestore_sync_now_button"),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFDC2626)),
+                            enabled = !isFirestoreSyncing
+                        ) {
+                            if (isFirestoreSyncing) {
+                                CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Sync လုပ်နေသည်...", fontSize = 12.sp)
+                            } else {
+                                Icon(Icons.Default.CloudSync, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("⚡ အခုပဲ Sync မည်", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+
+                        OutlinedButton(
+                            onClick = { viewModel.signOutGoogle(context as? Activity) },
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFDC2626))
+                        ) {
+                            Text("အကောင့်ထွက်မည်", fontSize = 11.sp)
+                        }
+                    }
+                } else {
+                    // Not logged in: Show Google Sign-In prompt
+                    Text(
+                        text = "Google Account ဖြင့် ဝင်ရောက်ထားပါက ကုန်ပစ္စည်းများ၊ အရောင်းဘောင်ချာများနှင့် ဖောက်သည်အကြွေးစာရင်းများကို Cloud Firestore သို့ အချိန်နှင့်တပြေးညီ အလိုအလျောက် Sync သိမ်းဆည်းပေးမည်ဖြစ်ပါသည်။",
+                        fontSize = 12.sp,
+                        color = Color(0xFF475569),
+                        lineHeight = 18.sp
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Button(
+                        onClick = {
+                            val activity = context as? Activity
+                            if (activity != null) {
+                                viewModel.signInWithGoogle(activity) { success, err ->
+                                    if (success) {
+                                        backupStatusMessage = "Google Account ဖြင့် အောင်မြင်စွာ ချိတ်ဆက်ပြီးပါပြီ"
+                                    } else if (err != null) {
+                                        backupStatusMessage = err
+                                    }
+                                }
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth().testTag("google_signin_button"),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E3A8A)),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("G ", fontWeight = FontWeight.ExtraBold, fontSize = 16.sp, color = Color(0xFFFBBF24))
+                            Text("Google Account ဖြင့် Sign In ဝင်မည်", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        }
+                    }
+                }
+            }
+        }
+
         // Two-way Conflict Resolution Auto-merge Status Card
         Card(
             modifier = Modifier.fillMaxWidth(),
@@ -527,7 +705,7 @@ fun SettingsBackupSubpage(
                                         Text("Configured", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color(0xFF15803D), modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp))
                                     }
                                 }
-                                Text("Client ID: ${com.example.offlinepos.Sync.GoogleOAuthManager.CLIENT_ID}", fontSize = 9.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                                Text("Client ID: ${com.example.offlinepos.Sync.GoogleOAuthManager.getClientId(context)}", fontSize = 9.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
                                 Spacer(modifier = Modifier.height(8.dp))
 
                                 OutlinedButton(

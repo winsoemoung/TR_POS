@@ -1335,15 +1335,20 @@ class PosViewModel(private val context: Context) : ViewModel() {
     val lastGoogleBackupTime: StateFlow<Long> = _lastGoogleBackupTime.asStateFlow()
     private val driveSyncManager = GoogleDriveSyncManager(context.applicationContext)
 
-    private fun googleSignInOptions(): GoogleSignInOptions = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
-        .requestEmail()
-        .requestIdToken(GoogleOAuthManager.CLIENT_ID)
-        .requestServerAuthCode(GoogleOAuthManager.CLIENT_ID, false)
-        .requestScopes(
-            Scope(GoogleOAuthManager.SCOPE_DRIVE_APPDATA),
-            Scope(GoogleOAuthManager.SCOPE_DRIVE_FILE)
-        )
-        .build()
+    private fun googleSignInOptions(): GoogleSignInOptions {
+        val builder = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+            .requestEmail()
+            .requestScopes(
+                Scope(GoogleOAuthManager.SCOPE_DRIVE_APPDATA),
+                Scope(GoogleOAuthManager.SCOPE_DRIVE_FILE)
+            )
+        val cid = GoogleOAuthManager.getClientId(context)
+        if (cid.isNotBlank()) {
+            builder.requestIdToken(cid)
+            builder.requestServerAuthCode(cid, false)
+        }
+        return builder.build()
+    }
 
     fun googleSignInIntent(): Intent {
         val options = googleSignInOptions()
@@ -1598,6 +1603,34 @@ class PosViewModel(private val context: Context) : ViewModel() {
     val isDriveSyncing: StateFlow<Boolean> = RealtimeDriveSyncCoordinator.isSyncing
     val driveSyncStatus: StateFlow<String?> = RealtimeDriveSyncCoordinator.syncStatus
 
+    // Firebase Auth & Cloud Firestore Sync
+    val firebaseUser: StateFlow<com.google.firebase.auth.FirebaseUser?> = com.example.offlinepos.firebase.FirebaseAuthManager.currentUser
+    val isFirestoreSyncing: StateFlow<Boolean> = com.example.offlinepos.firebase.FirebaseFirestoreSyncManager.isSyncing
+    val firestoreSyncStatus: StateFlow<String?> = com.example.offlinepos.firebase.FirebaseFirestoreSyncManager.syncStatus
+    val lastFirestoreSyncTime: StateFlow<Long> = com.example.offlinepos.firebase.FirebaseFirestoreSyncManager.lastSyncTimeEpochMs
+
+    fun signInWithGoogle(activity: android.app.Activity, onComplete: (Boolean, String?) -> Unit = { _, _ -> }) {
+        com.example.offlinepos.firebase.FirebaseAuthManager.signInWithGoogle(activity, viewModelScope) { success, err ->
+            if (success) {
+                triggerFirestoreSync("Google Sign-In Success")
+            }
+            onComplete(success, err)
+        }
+    }
+
+    fun signOutGoogle(activity: android.app.Activity? = null) {
+        com.example.offlinepos.firebase.FirebaseAuthManager.signOut(context, viewModelScope) {
+            setBanner("Google Account မှ ထွက်ပြီးပါပြီ")
+        }
+    }
+
+    fun triggerFirestoreSync(reason: String = "Manual Sync") {
+        viewModelScope.launch {
+            val res = com.example.offlinepos.firebase.FirebaseFirestoreSyncManager.syncAll(context, db, _storeProfile.value.storeName)
+            setBanner(res.message)
+        }
+    }
+
     // Automated Telegram & Viber Bot Reporting Methods
     suspend fun buildDailyReportData(
         cashSales: Long? = null,
@@ -1693,6 +1726,11 @@ class PosViewModel(private val context: Context) : ViewModel() {
      */
     fun triggerAutoDriveSync(reason: String = "Data Change") {
         RealtimeDriveSyncCoordinator.triggerSync(context, reason)
+        if (com.google.firebase.auth.FirebaseAuth.getInstance().currentUser != null) {
+            viewModelScope.launch {
+                com.example.offlinepos.firebase.FirebaseFirestoreSyncManager.syncAll(context, db, _storeProfile.value.storeName)
+            }
+        }
     }
 
     private fun enqueueGoogleDriveSync(reason: String = "Auto Sync") {

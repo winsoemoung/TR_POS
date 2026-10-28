@@ -17,9 +17,7 @@ import java.net.URLEncoder
 /**
  * Robust Google OAuth 2.0 & Auto-Sync Token Manager.
  *
- * Utilizes the Google Cloud OAuth client credentials from:
- * project_id: "pos-sync-4"
- * client_id: "365061373735-5j04mcds3apjgn0tbdomfjcp7rorl80d.apps.googleusercontent.com"
+ * Utilizes Google Cloud OAuth client credentials resolved from default_web_client_id.
  *
  * Supports:
  * 1. OAuth2 Server Auth Code exchange & Refresh Token persistence (Permanent 24/7 background sync)
@@ -30,7 +28,14 @@ import java.net.URLEncoder
 class GoogleOAuthManager(private val context: Context) {
 
     companion object {
-        const val CLIENT_ID = "365061373735-5j04mcds3apjgn0tbdomfjcp7rorl80d.apps.googleusercontent.com"
+        fun getClientId(context: Context): String {
+            return try {
+                val resId = context.resources.getIdentifier("default_web_client_id", "string", context.packageName)
+                if (resId != 0) context.getString(resId) else ""
+            } catch (e: Exception) {
+                ""
+            }
+        }
         const val PROJECT_ID = "pos-sync-4"
         const val AUTH_URI = "https://accounts.google.com/o/oauth2/auth"
         const val TOKEN_URI = "https://oauth2.googleapis.com/token"
@@ -43,14 +48,15 @@ class GoogleOAuthManager(private val context: Context) {
         const val SCOPES_COMBINED = "https://www.googleapis.com/auth/drive.appdata https://www.googleapis.com/auth/drive.file email profile"
     }
 
+    private val clientId: String = getClientId(context)
     private val prefs: SharedPreferences = context.getSharedPreferences("pos_google_oauth_tokens", Context.MODE_PRIVATE)
 
     init {
         val lastClientId = prefs.getString("oauth_client_id_cached", null)
-        if (lastClientId != null && lastClientId != CLIENT_ID) {
+        if (lastClientId != null && lastClientId != clientId) {
             clearTokens()
         }
-        prefs.edit().putString("oauth_client_id_cached", CLIENT_ID).apply()
+        prefs.edit().putString("oauth_client_id_cached", clientId).apply()
     }
 
     fun isConnected(): Boolean {
@@ -86,7 +92,7 @@ class GoogleOAuthManager(private val context: Context) {
      */
     fun buildConsentUrl(redirectUri: String = REDIRECT_URI_OOB, loginHint: String? = null): String {
         val builder = Uri.parse(AUTH_URI).buildUpon()
-            .appendQueryParameter("client_id", CLIENT_ID)
+            .appendQueryParameter("client_id", clientId)
             .appendQueryParameter("redirect_uri", redirectUri)
             .appendQueryParameter("response_type", "code")
             .appendQueryParameter("scope", SCOPES_COMBINED)
@@ -113,7 +119,7 @@ class GoogleOAuthManager(private val context: Context) {
 
             val postData = buildString {
                 append("code=").append(URLEncoder.encode(cleanCode, "UTF-8"))
-                append("&client_id=").append(URLEncoder.encode(CLIENT_ID, "UTF-8"))
+                append("&client_id=").append(URLEncoder.encode(clientId, "UTF-8"))
                 append("&grant_type=authorization_code")
                 append("&redirect_uri=").append(URLEncoder.encode(redirectUri, "UTF-8"))
             }
@@ -170,7 +176,7 @@ class GoogleOAuthManager(private val context: Context) {
         runCatching {
             val refreshToken = getRefreshToken() ?: error("Refresh token မရှိပါ")
             val postData = buildString {
-                append("client_id=").append(URLEncoder.encode(CLIENT_ID, "UTF-8"))
+                append("client_id=").append(URLEncoder.encode(clientId, "UTF-8"))
                 append("&refresh_token=").append(URLEncoder.encode(refreshToken, "UTF-8"))
                 append("&grant_type=refresh_token")
             }
@@ -246,7 +252,7 @@ class GoogleOAuthManager(private val context: Context) {
             val tokenWithClient = GoogleAuthUtil.getToken(
                 context,
                 account,
-                "oauth2:server:client_id:$CLIENT_ID:api_scope:$SCOPES_COMBINED"
+                "oauth2:server:client_id:$clientId:api_scope:$SCOPES_COMBINED"
             )
             cacheGoogleAuthUtilToken(tokenWithClient, email)
             RealtimeDriveSyncCoordinator.clearAuthRecoveryIntent()

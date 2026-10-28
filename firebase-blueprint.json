@@ -1,0 +1,94 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User account profile for authenticated store owner / cashier",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Firebase Auth UID" },
+        "email": { "type": "string", "description": "Google account email" },
+        "displayName": { "type": "string", "description": "User display name" },
+        "storeName": { "type": "string", "description": "Store or shop name" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Creation timestamp via serverTimestamp" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Last update timestamp via serverTimestamp" }
+      },
+      "required": ["userId", "email"]
+    },
+    "Product": {
+      "title": "Product",
+      "description": "POS inventory item",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Product UUID" },
+        "userId": { "type": "string", "description": "Store owner UID" },
+        "name": { "type": "string", "description": "Product display name" },
+        "barcode": { "type": "string", "description": "Barcode number" },
+        "sku": { "type": "string", "description": "Stock keeping unit code" },
+        "category": { "type": "string", "description": "Category name" },
+        "costPriceMinor": { "type": "integer", "description": "Cost price in Ks" },
+        "sellPriceMinor": { "type": "integer", "description": "Retail sell price in Ks" },
+        "stockQuantity": { "type": "integer", "description": "Available stock quantity" },
+        "lowStockThreshold": { "type": "integer", "description": "Warning threshold" },
+        "isActive": { "type": "boolean", "description": "Active status" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Creation timestamp" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Update timestamp" }
+      },
+      "required": ["id", "userId", "name", "costPriceMinor", "sellPriceMinor"]
+    },
+    "Sale": {
+      "title": "Sale",
+      "description": "Completed or recorded POS sale transaction",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Sale UUID" },
+        "userId": { "type": "string", "description": "Store owner UID" },
+        "businessDate": { "type": "string", "description": "Date YYYY-MM-DD" },
+        "paymentMethod": { "type": "string", "description": "CASH, KPAY, WAVEPAY, CREDIT" },
+        "totalMinor": { "type": "integer", "description": "Final total in Ks" },
+        "subtotalMinor": { "type": "integer", "description": "Subtotal in Ks" },
+        "discountMinor": { "type": "integer", "description": "Discount in Ks" },
+        "taxMinor": { "type": "integer", "description": "Tax in Ks" },
+        "status": { "type": "string", "description": "COMPLETED, REFUNDED" },
+        "voucherNo": { "type": "string", "description": "Auto voucher number" },
+        "customerName": { "type": "string", "description": "Customer name" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Creation timestamp" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Update timestamp" }
+      },
+      "required": ["id", "userId", "totalMinor", "paymentMethod"]
+    },
+    "Customer": {
+      "title": "Customer",
+      "description": "Store customer record for debt and purchase history",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Customer UUID" },
+        "userId": { "type": "string", "description": "Store owner UID" },
+        "name": { "type": "string", "description": "Customer full name" },
+        "phone": { "type": "string", "description": "Phone number" },
+        "address": { "type": "string", "description": "Address or location" },
+        "currentDebtMinor": { "type": "integer", "description": "Current unpaid credit debt in Ks" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Creation timestamp" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Update timestamp" }
+      },
+      "required": ["id", "userId", "name"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "Store user account and preferences"
+    },
+    "/users/{userId}/products/{productId}": {
+      "schema": "Product",
+      "description": "Products catalog for the user's store"
+    },
+    "/users/{userId}/sales/{saleId}": {
+      "schema": "Sale",
+      "description": "Sales history records for the user's store"
+    },
+    "/users/{userId}/customers/{customerId}": {
+      "schema": "Customer",
+      "description": "Customer and debt records for the user's store"
+    }
+  }
+}

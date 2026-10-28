@@ -12,6 +12,12 @@ abstract class CheckoutDao {
     @Query("SELECT * FROM sales ORDER BY createdAtEpochMs DESC")
     abstract fun observeSales(): Flow<List<SaleEntity>>
 
+    @Query("SELECT * FROM sales")
+    abstract suspend fun getAllSales(): List<SaleEntity>
+
+    @Insert(onConflict = androidx.room.OnConflictStrategy.REPLACE)
+    abstract suspend fun upsertSale(sale: SaleEntity)
+
     @Query("SELECT * FROM sale_items WHERE saleId = :saleId")
     abstract suspend fun getItemsForSale(saleId: String): List<SaleItemEntity>
 

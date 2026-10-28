@@ -109,6 +109,11 @@ dependencies {
     implementation("com.google.android.gms:play-services-auth:21.2.0")
 
     implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.firestore)
+    implementation(libs.firebase.auth)
+    implementation(libs.androidx.credentials)
+    implementation(libs.androidx.credentials.play.services)
+    implementation(libs.googleid)
     implementation(libs.firebase.ai)
     implementation(libs.firebase.appcheck.debug)
     implementation(libs.firebase.appcheck.recaptcha)

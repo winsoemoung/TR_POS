@@ -13,6 +13,9 @@ interface CustomerDao {
     @Query("SELECT * FROM customers ORDER BY currentDebtMinor DESC, name ASC")
     fun observeAllCustomers(): Flow<List<CustomerEntity>>
 
+    @Query("SELECT * FROM customers")
+    suspend fun getAllCustomers(): List<CustomerEntity>
+
     @Query("SELECT * FROM customers WHERE currentDebtMinor > 0 ORDER BY currentDebtMinor DESC")
     fun observeDebtors(): Flow<List<CustomerEntity>>
 

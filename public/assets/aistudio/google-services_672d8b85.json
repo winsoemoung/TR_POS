@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "206769543658",
+    "project_id": "fir-winsoe",
+    "storage_bucket": "fir-winsoe.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:206769543658:android:3ac30c4b3b924b705dfa93",
+        "android_client_info": {
+          "package_name": "com.example.offlinepos.knzeso"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBu8mDNCQt0brU6MgvvfBnwjX8l3BfWGrc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

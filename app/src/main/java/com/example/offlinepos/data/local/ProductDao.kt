@@ -12,6 +12,12 @@ interface ProductDao {
     @Query("SELECT * FROM products ORDER BY category, name")
     fun observeAll(): Flow<List<ProductEntity>>
 
+    @Query("SELECT * FROM products")
+    suspend fun getAll(): List<ProductEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(product: ProductEntity): Long
+
     @Query("SELECT * FROM products WHERE isActive = 1 ORDER BY category, name")
     fun observeActive(): Flow<List<ProductEntity>>
 
