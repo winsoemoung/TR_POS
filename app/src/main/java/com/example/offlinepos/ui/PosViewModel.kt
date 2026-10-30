@@ -208,6 +208,11 @@ class PosViewModel(private val context: Context) : ViewModel() {
         .catch { emit(emptyList()) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    // Outbox Sync Pending Count Flow
+    val outboxPendingCount: StateFlow<Int> = db.outboxDao().observePendingCount()
+        .catch { emit(0) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+
     // Single-user shop mode; no role/PIN switching.
     private val _currentRole = MutableStateFlow("CASHIER")
     val currentRole: StateFlow<String> = _currentRole.asStateFlow()

@@ -34,7 +34,9 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.FilterChip
+import androidx.compose.ui.draw.clip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -85,6 +87,7 @@ fun SettingsBackupSubpage(
     val isFirestoreSyncing by viewModel.isFirestoreSyncing.collectAsState()
     val firestoreSyncStatus by viewModel.firestoreSyncStatus.collectAsState()
     val lastFirestoreSyncTime by viewModel.lastFirestoreSyncTime.collectAsState()
+    val outboxPendingCount by viewModel.outboxPendingCount.collectAsState()
     var googleEmailInput by remember(googleAccount) { mutableStateOf(googleAccount ?: "WINSOEMOUNG@gmail.com") }
 
     var backupStatusMessage by remember { mutableStateOf<String?>(null) }
@@ -781,13 +784,85 @@ fun SettingsBackupSubpage(
 
         // Local SQLite Database Export & Restore Card
         Card(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().testTag("local_database_sync_card"),
             shape = RoundedCornerShape(14.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
             border = CardDefaults.outlinedCardBorder(),
         ) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("💾 ဒေသတွင်း ဒေတာ အရန်သိမ်း/ပြန်တင်ခြင်း (Local DB Backup)", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("💾 Local Database Sync & Backup", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Text("Offline-First Room SQLite v3", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = if (outboxPendingCount > 0) Color(0xFFFEF3C7) else Color(0xFFDCFCE7)
+                    ) {
+                        Text(
+                            text = if (outboxPendingCount > 0) "Pending Queue: $outboxPendingCount" else "✓ Local DB Synced",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (outboxPendingCount > 0) Color(0xFFB45309) else Color(0xFF15803D),
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                        )
+                    }
+                }
+
+                // Small animated progress bar when Pending Queue > 0
+                if (outboxPendingCount > 0) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFFFFFBEB)),
+                        border = BorderStroke(1.dp, Color(0xFFFDE68A))
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(10.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(12.dp),
+                                        strokeWidth = 2.dp,
+                                        color = Color(0xFFD97706)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        "⏳ Syncing pending operations...",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = Color(0xFFB45309)
+                                    )
+                                }
+                                Text(
+                                    "Pending Queue: $outboxPendingCount",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFFB45309)
+                                )
+                            }
+                            LinearProgressIndicator(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(4.dp)
+                                    .clip(RoundedCornerShape(2.dp)),
+                                color = Color(0xFFD97706),
+                                trackColor = Color(0xFFFDE68A)
+                            )
+                        }
+                    }
+                }
                 Surface(
                     shape = RoundedCornerShape(8.dp),
                     color = Color(0xFFDCFCE7),

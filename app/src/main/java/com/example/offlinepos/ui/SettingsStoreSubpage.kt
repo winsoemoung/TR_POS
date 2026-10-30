@@ -72,8 +72,9 @@ fun SettingsStoreSubpage(
         contract = ActivityResultContracts.PickVisualMedia(),
     ) { uri ->
         if (uri != null) {
-            viewModel.updateStoreProfile(storeProfile.copy(customLogoPath = uri.toString()))
-            viewModel.setBanner("ဆိုင် Logo ကို ပြောင်းလဲသိမ်းဆည်းပြီးပါပြီ")
+            viewModel.saveStoreLogo(uri) { success, msg ->
+                viewModel.setBanner(msg)
+            }
         }
     }
 
@@ -149,6 +150,15 @@ fun SettingsStoreSubpage(
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    if (!storeProfile.customLogoPath.isNullOrBlank()) {
+                        androidx.compose.material3.TextButton(
+                            onClick = { viewModel.resetStoreLogo() },
+                            contentPadding = PaddingValues(0.dp),
+                            modifier = Modifier.height(28.dp),
+                        ) {
+                            Text("🗑️ Mūla Logo သို့ ပြန်ထားမည်", fontSize = 11.sp, color = MaterialTheme.colorScheme.error)
+                        }
+                    }
                 }
             }
         }

@@ -80,6 +80,8 @@ import com.example.offlinepos.hardware.ThermalPrinterManager
  * Products, Stock-In, AI Stock Prediction, Customers & Debt,
  * Shift Report, Thermal Printer Setup, Wi-Fi Server, and DB Maintenance.
  */
+import androidx.compose.material3.LinearProgressIndicator
+
 data class AimFeatureTile(
     val id: String,
     val title: String,
@@ -89,6 +91,7 @@ data class AimFeatureTile(
     val iconTint: Color = Color.White,
     val badgeText: String? = null,
     val badgeColor: Color = Color(0xFFDC2626),
+    val showProgressBar: Boolean = false,
     val onClick: () -> Unit,
 )
 
@@ -114,6 +117,7 @@ fun FeaturesHomeScreen(
     val customers by viewModel.customers.collectAsState()
     val isServerRunning by viewModel.isServerRunning.collectAsState()
     val googleAccount by viewModel.googleAccount.collectAsState()
+    val outboxPendingCount by viewModel.outboxPendingCount.collectAsState()
 
     var showCustomerDialog by remember { mutableStateOf(false) }
     var showShiftReportDialog by remember { mutableStateOf(false) }
@@ -129,7 +133,7 @@ fun FeaturesHomeScreen(
     val debtorsCount = customers.count { it.currentDebtMinor > 0 }
     val totalDebtAmount = customers.sumOf { it.currentDebtMinor }
 
-    val featureGroups = remember(urgentCount, debtorsCount, isServerRunning, googleAccount, allProducts.size) {
+    val featureGroups = remember(urgentCount, debtorsCount, isServerRunning, googleAccount, allProducts.size, outboxPendingCount) {
         listOf(
             AimFeatureGroup(
                 groupTitle = "📦 ကုန်ပစ္စည်းနှင့် စတော့ (Products & Inventory)",
@@ -229,6 +233,17 @@ fun FeaturesHomeScreen(
             AimFeatureGroup(
                 groupTitle = "⚙️ စနစ်ဆက်တင်နှင့် ချိတ်ဆက်မှုများ (Hardware & System)",
                 tiles = listOf(
+                    AimFeatureTile(
+                        id = "feat_local_db_sync",
+                        title = "Local Database Sync",
+                        subtitle = if (outboxPendingCount > 0) "Pending Queue: $outboxPendingCount" else "✓ Local DB Synced",
+                        icon = Icons.Default.CloudSync,
+                        iconBgColor = if (outboxPendingCount > 0) Color(0xFFD97706) else Color(0xFF15803D),
+                        badgeText = if (outboxPendingCount > 0) "$outboxPendingCount pending" else null,
+                        badgeColor = if (outboxPendingCount > 0) Color(0xFFB45309) else Color(0xFF15803D),
+                        showProgressBar = outboxPendingCount > 0,
+                        onClick = onNavigateToSettings,
+                    ),
                     AimFeatureTile(
                         id = "feat_printer",
                         title = "Thermal Printer ချိတ်မည်",
@@ -590,6 +605,17 @@ private fun AimsFeatureTileCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
+                )
+            }
+
+            if (tile.showProgressBar) {
+                LinearProgressIndicator(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(4.dp)
+                        .clip(RoundedCornerShape(2.dp)),
+                    color = Color(0xFFD97706),
+                    trackColor = Color(0xFFFDE68A),
                 )
             }
         }

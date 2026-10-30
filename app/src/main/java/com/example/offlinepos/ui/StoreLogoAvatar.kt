@@ -12,6 +12,9 @@ import androidx.compose.ui.res.painterResource
 import com.example.offlinepos.R
 import java.io.File
 
+import android.net.Uri
+import androidx.compose.ui.platform.LocalContext
+
 @Composable
 fun StoreLogoAvatar(
     customLogoPath: String?,
@@ -20,17 +23,28 @@ fun StoreLogoAvatar(
     contentScale: ContentScale = ContentScale.Crop,
     onClick: (() -> Unit)? = null,
 ) {
+    val context = LocalContext.current
     val bitmap = remember(customLogoPath) {
         if (!customLogoPath.isNullOrBlank()) {
             val cleanPath = customLogoPath.substringBefore("?")
-            val file = File(cleanPath)
-            if (file.exists() && file.canRead()) {
+            if (cleanPath.startsWith("content://") || cleanPath.startsWith("file://")) {
                 try {
-                    BitmapFactory.decodeFile(file.absolutePath)
+                    context.contentResolver.openInputStream(Uri.parse(cleanPath))?.use { input ->
+                        BitmapFactory.decodeStream(input)
+                    }
                 } catch (e: Exception) {
                     null
                 }
-            } else null
+            } else {
+                val file = File(cleanPath)
+                if (file.exists() && file.canRead()) {
+                    try {
+                        BitmapFactory.decodeFile(file.absolutePath)
+                    } catch (e: Exception) {
+                        null
+                    }
+                } else null
+            }
         } else null
     }
 
