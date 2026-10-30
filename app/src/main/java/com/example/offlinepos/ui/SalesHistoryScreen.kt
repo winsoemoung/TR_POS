@@ -1,7 +1,9 @@
 package com.example.offlinepos.ui
 
 import android.content.Intent
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
+import com.example.offlinepos.data.local.PickupStatus
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -124,6 +126,7 @@ fun SalesHistoryScreen(
     var showShiftReportDialog by remember { mutableStateOf(false) }
     var saleToRefund by remember { mutableStateOf<SaleEntity?>(null) }
     var voucherSearchQuery by remember { mutableStateOf("") }
+    var showOnlyPendingPickup by remember { mutableStateOf(false) }
 
     var customStartMs by remember { mutableStateOf(PosViewModel.getStartOfToday()) }
     var customEndMs by remember { mutableStateOf(PosViewModel.getEndOfToday()) }
@@ -167,6 +170,8 @@ fun SalesHistoryScreen(
         DateFilterMode.CUSTOM -> Pair(customStartMs, customEndMs)
     }
 
+    val pendingPickupCount = allSales.count { it.pickupStatus == PickupStatus.PENDING_PICKUP }
+
     val filteredSales = if (voucherSearchQuery.isNotBlank()) {
         allSales.filter { sale ->
             val vNo = voucherNumberMap[sale.saleId] ?: com.example.offlinepos.domain.VoucherHelper.formatVoucherNumberFallback(sale.saleId, sale.createdAtEpochMs)
@@ -174,6 +179,12 @@ fun SalesHistoryScreen(
         }
     } else {
         allSales.filter { it.createdAtEpochMs in rangeStart..rangeEnd }
+    }.let { list ->
+        if (showOnlyPendingPickup) {
+            list.filter { it.pickupStatus == PickupStatus.PENDING_PICKUP }
+        } else {
+            list
+        }
     }
     val filteredPurchases = purchases.filter { it.createdAtEpochMs in rangeStart..rangeEnd }
     val filteredSaleItems = allSaleItems.filter { item -> filteredSales.any { it.saleId == item.saleId } }
@@ -256,6 +267,22 @@ fun SalesHistoryScreen(
                             },
                             label = { Text(mode.label, fontSize = 11.sp) },
                         )
+                    }
+                    if (selectedTab == AnalyticsTab.SALES) {
+                        item {
+                            FilterChip(
+                                selected = showOnlyPendingPickup,
+                                onClick = { showOnlyPendingPickup = !showOnlyPendingPickup },
+                                label = {
+                                    Text(
+                                        text = if (pendingPickupCount > 0) "📦 မယူရသေးသော ($pendingPickupCount)" else "📦 မယူရသေးသော",
+                                        fontSize = 11.sp,
+                                        fontWeight = if (showOnlyPendingPickup) FontWeight.Bold else FontWeight.Normal,
+                                    )
+                                },
+                                modifier = Modifier.testTag("pending_pickup_filter_chip")
+                            )
+                        }
                     }
                 }
                 Spacer(modifier = Modifier.height(8.dp))
@@ -379,6 +406,9 @@ fun SalesHistoryScreen(
                                     voucherNumber = voucherNumberMap[sale.saleId],
                                     onClick = { viewModel.viewPastReceipt(sale) },
                                     onRefund = { saleToRefund = sale },
+                                    onMarkPickedUp = if (sale.pickupStatus == PickupStatus.PENDING_PICKUP) {
+                                        { viewModel.markSaleAsPickedUp(sale.saleId) }
+                                    } else null,
                                 )
                             }
                         }
@@ -649,6 +679,7 @@ private fun SaleRecordCard(
     voucherNumber: String? = null,
     onClick: () -> Unit,
     onRefund: () -> Unit,
+    onMarkPickedUp: (() -> Unit)? = null,
 ) {
     val displayVoucher = voucherNumber ?: com.example.offlinepos.domain.VoucherHelper.formatVoucherNumberFallback(sale.saleId, sale.createdAtEpochMs)
 
@@ -662,84 +693,139 @@ private fun SaleRecordCard(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         border = CardDefaults.outlinedCardBorder(),
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(14.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Column {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = displayVoucher,
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = FontFamily.Monospace,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Surface(
-                        shape = RoundedCornerShape(6.dp),
-                        color = when (sale.paymentMethod) {
-                            "CREDIT" -> Color(0xFFFEE2E2)
-                            "KPAY", "WAVEPAY" -> Color(0xFFE0F2FE)
-                            else -> Color(0xFFDCFCE7)
-                        },
-                    ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            text = sale.paymentMethod,
-                            fontSize = 10.sp,
+                            text = displayVoucher,
+                            style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
                             color = when (sale.paymentMethod) {
-                                "CREDIT" -> Color(0xFFB91C1C)
-                                "KPAY", "WAVEPAY" -> Color(0xFF0369A1)
-                                else -> Color(0xFF15803D)
+                                "CREDIT" -> Color(0xFFFEE2E2)
+                                "KPAY", "WAVEPAY" -> Color(0xFFE0F2FE)
+                                else -> Color(0xFFDCFCE7)
                             },
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                        ) {
+                            Text(
+                                text = sale.paymentMethod,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = when (sale.paymentMethod) {
+                                    "CREDIT" -> Color(0xFFB91C1C)
+                                    "KPAY", "WAVEPAY" -> Color(0xFF0369A1)
+                                    else -> Color(0xFF15803D)
+                                },
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                            )
+                        }
+                    }
+                    Text(
+                        text = "Ref: #${sale.saleId.take(8).uppercase()}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color(0xFF64748B),
+                        fontFamily = FontFamily.Monospace,
+                    )
+                    if (!sale.customerName.isNullOrBlank()) {
+                        Text(
+                            text = "ဝယ်သူ: ${sale.customerName}",
+                            fontSize = 11.sp,
+                            color = Color(0xFF1E3A8A),
+                            fontWeight = FontWeight.SemiBold
                         )
                     }
-                }
-                Text(
-                    text = "Ref: #${sale.saleId.take(8).uppercase()}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Color(0xFF64748B),
-                    fontFamily = FontFamily.Monospace,
-                )
-                if (!sale.customerName.isNullOrBlank()) {
                     Text(
-                        text = "ဝယ်သူ: ${sale.customerName}",
-                        fontSize = 11.sp,
-                        color = Color(0xFF1E3A8A),
-                        fontWeight = FontWeight.SemiBold
+                        text = "${sale.businessDate} • ${sale.cashierId}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                Text(
-                    text = "${sale.businessDate} • ${sale.cashierId}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+
+                Column(horizontalAlignment = Alignment.End) {
+                    Text(
+                        text = "%,d Ks".format(sale.totalMinor),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontFamily = FontFamily.Monospace,
+                    )
+                    Text(
+                        text = "ပြေစာကြည့်မည် →",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                    if (sale.status == com.example.offlinepos.data.local.SaleStatus.COMPLETED || sale.status == com.example.offlinepos.data.local.SaleStatus.PARTIALLY_REFUNDED) {
+                        TextButton(onClick = onRefund, contentPadding = PaddingValues(horizontal = 0.dp, vertical = 0.dp)) {
+                            Text("Return / Partial", fontSize = 10.sp, color = MaterialTheme.colorScheme.error)
+                        }
+                    } else {
+                        Text(sale.status, fontSize = 10.sp, color = MaterialTheme.colorScheme.error)
+                    }
+                }
             }
 
-            Column(horizontalAlignment = Alignment.End) {
-                Text(
-                    text = "%,d Ks".format(sale.totalMinor),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = MaterialTheme.colorScheme.primary,
-                    fontFamily = FontFamily.Monospace,
-                )
-                Text(
-                    text = "ပြေစာကြည့်မည် →",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.primary,
-                )
-                if (sale.status == com.example.offlinepos.data.local.SaleStatus.COMPLETED || sale.status == com.example.offlinepos.data.local.SaleStatus.PARTIALLY_REFUNDED) {
-                    TextButton(onClick = onRefund, contentPadding = PaddingValues(horizontal = 0.dp, vertical = 0.dp)) {
-                        Text("Return / Partial", fontSize = 10.sp, color = MaterialTheme.colorScheme.error)
+            if (sale.pickupStatus == PickupStatus.PENDING_PICKUP) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = Color(0xFFEFF6FF),
+                    border = BorderStroke(1.dp, Color(0xFF3B82F6)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(10.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "📦 PENDING PICKUP (ပစ္စည်း မယူရသေးပါ)",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF1D4ED8)
+                            )
+                            Text(
+                                text = "ထုတ်ယူမည့်ရက်: ${sale.expectedPickupDate ?: "မသိရသေးပါ"}",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Color(0xFF1E40AF)
+                            )
+                        }
+                        if (!sale.pickupNote.isNullOrBlank()) {
+                            Text(
+                                text = "မှတ်ချက်: ${sale.pickupNote}",
+                                fontSize = 11.sp,
+                                color = Color.DarkGray
+                            )
+                        }
+                        if (onMarkPickedUp != null) {
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Button(
+                                onClick = onMarkPickedUp,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("mark_picked_up_button_${sale.saleId}"),
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(vertical = 4.dp)
+                            ) {
+                                Text("✓ ပစ္စည်း ထုတ်ပေးပြီးကြောင်း မှတ်တမ်းတင်မည်", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
                     }
-                } else {
-                    Text(sale.status, fontSize = 10.sp, color = MaterialTheme.colorScheme.error)
                 }
             }
         }

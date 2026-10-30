@@ -30,6 +30,9 @@ abstract class CheckoutDao {
     @Query("SELECT status FROM sales WHERE saleId = :saleId LIMIT 1")
     abstract suspend fun getSaleStatus(saleId: String): String?
 
+    @Query("UPDATE sales SET pickupStatus = :status WHERE saleId = :saleId")
+    abstract suspend fun updatePickupStatus(saleId: String, status: String): Int
+
     @Query("SELECT * FROM payments WHERE saleId = :saleId LIMIT 1")
     abstract suspend fun getPaymentForSale(saleId: String): PaymentEntity?
 

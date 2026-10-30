@@ -19,6 +19,9 @@ data class ReceiptData(
     val splitDigitalMinor: Long = 0L,
     val saleStatus: String = "COMPLETED",
     val voucherNo: String? = null,
+    val pickupStatus: String = "PICKED_UP",
+    val expectedPickupDate: String? = null,
+    val pickupNote: String? = null,
 ) {
     val displayVoucherNumber: String
         get() = voucherNo ?: com.example.offlinepos.domain.VoucherHelper.formatVoucherNumberFallback(saleId, timestampEpochMs)

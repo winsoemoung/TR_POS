@@ -216,6 +216,9 @@ abstract class AppDatabase : RoomDatabase() {
                 ensureColumnExists(db, "products", "wholesaleUnitName", "TEXT NOT NULL DEFAULT 'ဖာ'")
                 ensureColumnExists(db, "products", "wholesaleUnitMultiplier", "INTEGER NOT NULL DEFAULT 1")
                 ensureColumnExists(db, "sales", "deliveryFeeMinor", "INTEGER NOT NULL DEFAULT 0")
+                ensureColumnExists(db, "sales", "pickupStatus", "TEXT NOT NULL DEFAULT 'PICKED_UP'")
+                ensureColumnExists(db, "sales", "expectedPickupDate", "TEXT")
+                ensureColumnExists(db, "sales", "pickupNote", "TEXT")
                 ensureColumnExists(db, "sale_items", "returnedQuantity", "INTEGER NOT NULL DEFAULT 0")
                 ensureColumnExists(db, "customers", "creditDueDateEpochMs", "INTEGER")
 
@@ -224,6 +227,7 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_sales_businessDate` ON `sales` (`businessDate`)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_sales_customerId` ON `sales` (`customerId`)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_sales_status` ON `sales` (`status`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_sales_pickupStatus` ON `sales` (`pickupStatus`)")
 
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_products_sku` ON `products` (`sku`)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_products_category` ON `products` (`category`)")

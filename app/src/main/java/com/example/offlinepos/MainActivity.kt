@@ -327,7 +327,7 @@ fun MainApp(viewModel: PosViewModel) {
             customLogoPath = storeProfile.customLogoPath,
             customers = customers,
             onDismiss = { showCheckoutDialog = false },
-            onConfirm = { method, tendered, customer, splitCash, splitDigital, deliveryFee ->
+            onConfirm = { method, tendered, customer, splitCash, splitDigital, deliveryFee, pickupStatus, expectedPickupDate, pickupNote ->
                 viewModel.checkout(
                     paymentMethod = method,
                     tenderedMinor = tendered,
@@ -335,6 +335,9 @@ fun MainApp(viewModel: PosViewModel) {
                     selectedCustomer = customer,
                     splitCashMinor = splitCash,
                     splitDigitalMinor = splitDigital,
+                    pickupStatus = pickupStatus,
+                    expectedPickupDate = expectedPickupDate,
+                    pickupNote = pickupNote,
                 ) { success, msg ->
                     if (success) {
                         showCheckoutDialog = false

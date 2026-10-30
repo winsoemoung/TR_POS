@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 12,
-    "identityHash": "b8c7bf752452d6d777a84a822a99c0e5",
+    "identityHash": "c5330c839d6e37ec99f4d06c22214ec0",
     "entities": [
       {
         "tableName": "products",
@@ -171,7 +171,7 @@
       },
       {
         "tableName": "sales",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`saleId` TEXT NOT NULL, `businessDate` TEXT NOT NULL, `subtotalMinor` INTEGER NOT NULL, `discountMinor` INTEGER NOT NULL, `taxMinor` INTEGER NOT NULL, `totalMinor` INTEGER NOT NULL, `status` TEXT NOT NULL, `cashierId` TEXT NOT NULL, `deviceId` TEXT NOT NULL, `createdAtEpochMs` INTEGER NOT NULL, `customerId` INTEGER, `customerName` TEXT, `paymentMethod` TEXT NOT NULL, `splitCashMinor` INTEGER NOT NULL, `splitDigitalMinor` INTEGER NOT NULL, `deliveryFeeMinor` INTEGER NOT NULL, PRIMARY KEY(`saleId`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`saleId` TEXT NOT NULL, `businessDate` TEXT NOT NULL, `subtotalMinor` INTEGER NOT NULL, `discountMinor` INTEGER NOT NULL, `taxMinor` INTEGER NOT NULL, `totalMinor` INTEGER NOT NULL, `status` TEXT NOT NULL, `cashierId` TEXT NOT NULL, `deviceId` TEXT NOT NULL, `createdAtEpochMs` INTEGER NOT NULL, `customerId` INTEGER, `customerName` TEXT, `paymentMethod` TEXT NOT NULL, `splitCashMinor` INTEGER NOT NULL, `splitDigitalMinor` INTEGER NOT NULL, `deliveryFeeMinor` INTEGER NOT NULL, `pickupStatus` TEXT NOT NULL, `expectedPickupDate` TEXT, `pickupNote` TEXT, PRIMARY KEY(`saleId`))",
         "fields": [
           {
             "fieldPath": "saleId",
@@ -266,6 +266,22 @@
             "columnName": "deliveryFeeMinor",
             "affinity": "INTEGER",
             "notNull": true
+          },
+          {
+            "fieldPath": "pickupStatus",
+            "columnName": "pickupStatus",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "expectedPickupDate",
+            "columnName": "expectedPickupDate",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "pickupNote",
+            "columnName": "pickupNote",
+            "affinity": "TEXT"
           }
         ],
         "primaryKey": {
@@ -310,6 +326,15 @@
             ],
             "orders": [],
             "createSql": "CREATE INDEX IF NOT EXISTS `index_sales_status` ON `${TABLE_NAME}` (`status`)"
+          },
+          {
+            "name": "index_sales_pickupStatus",
+            "unique": false,
+            "columnNames": [
+              "pickupStatus"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_sales_pickupStatus` ON `${TABLE_NAME}` (`pickupStatus`)"
           }
         ]
       },
@@ -1391,7 +1416,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'b8c7bf752452d6d777a84a822a99c0e5')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'c5330c839d6e37ec99f4d06c22214ec0')"
     ]
   }
 }

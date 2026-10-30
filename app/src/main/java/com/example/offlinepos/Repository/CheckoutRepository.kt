@@ -11,6 +11,11 @@ data class PaymentRequest(
     val providerReference: String?,
     val manualRecorded: Boolean,
     val deliveryFeeMinor: Long = 0L,
+    val pickupStatus: String = "PICKED_UP",
+    val expectedPickupDate: String? = null,
+    val pickupNote: String? = null,
+    val customerName: String? = null,
+    val customerId: Long? = null,
 )
 sealed interface CheckoutResult {
     data class Committed(val saleId: String, val changeMinor: Long) : CheckoutResult
@@ -60,6 +65,11 @@ class CheckoutRepository(
             deviceId = deviceId,
             createdAtEpochMs = timestamp,
             paymentMethod = payment.method,
+            customerId = payment.customerId,
+            customerName = payment.customerName,
+            pickupStatus = payment.pickupStatus,
+            expectedPickupDate = payment.expectedPickupDate,
+            pickupNote = payment.pickupNote,
         )
         val lines = cart.map { item ->
             val gross = (Money.multiply(item.unitPriceMinor, item.quantity) as

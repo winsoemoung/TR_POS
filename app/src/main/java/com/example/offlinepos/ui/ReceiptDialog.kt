@@ -242,6 +242,37 @@ fun ReceiptDialog(
                             )
                         }
 
+                        if (receipt.pickupStatus == com.example.offlinepos.data.local.PickupStatus.PENDING_PICKUP) {
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = Color(0xFFEFF6FF),
+                                border = BorderStroke(1.dp, Color(0xFF3B82F6)),
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(8.dp)) {
+                                    Text(
+                                        text = "📦 ပစ္စည်း မယူရသေးပါ (PENDING PICKUP)",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF1D4ED8)
+                                    )
+                                    Text(
+                                        text = "ထုတ်ယူမည့် ရက်စွဲ: ${receipt.expectedPickupDate ?: "မသိရသေးပါ"}",
+                                        fontSize = 10.sp,
+                                        color = Color(0xFF1E40AF)
+                                    )
+                                    if (!receipt.pickupNote.isNullOrBlank()) {
+                                        Text(
+                                            text = "မှတ်ချက်: ${receipt.pickupNote}",
+                                            fontSize = 10.sp,
+                                            color = Color.DarkGray
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
                         Spacer(modifier = Modifier.height(8.dp))
                         HorizontalDivider(color = Color(0xFFCBD5E1))
                         Spacer(modifier = Modifier.height(8.dp))

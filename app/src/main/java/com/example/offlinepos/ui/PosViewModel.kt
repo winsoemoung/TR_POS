@@ -1215,6 +1215,9 @@ class PosViewModel(private val context: Context) : ViewModel() {
         selectedCustomer: CustomerEntity? = null,
         splitCashMinor: Long = 0L,
         splitDigitalMinor: Long = 0L,
+        pickupStatus: String = com.example.offlinepos.data.local.PickupStatus.PICKED_UP,
+        expectedPickupDate: String? = null,
+        pickupNote: String? = null,
         onComplete: (Boolean, String) -> Unit,
     ) {
         val cartItems = _cart.value
@@ -1242,6 +1245,11 @@ class PosViewModel(private val context: Context) : ViewModel() {
                 authorizationState = "APPROVED",
                 providerReference = if (paymentMethod == "CASH") null else "TXN-${System.currentTimeMillis()}",
                 manualRecorded = false,
+                pickupStatus = pickupStatus,
+                expectedPickupDate = expectedPickupDate,
+                pickupNote = pickupNote,
+                customerName = selectedCustomer?.name,
+                customerId = selectedCustomer?.customerId,
             )
 
             when (val result = checkoutRepo.checkout(cartItems, paymentRequest, _actor.value)) {
@@ -1308,6 +1316,9 @@ class PosViewModel(private val context: Context) : ViewModel() {
                         splitCashMinor = splitCashMinor,
                         splitDigitalMinor = splitDigitalMinor,
                         voucherNo = autoVoucherNo,
+                        pickupStatus = pickupStatus,
+                        expectedPickupDate = expectedPickupDate,
+                        pickupNote = pickupNote,
                     )
 
                     _receipt.value = receiptData
@@ -1328,6 +1339,17 @@ class PosViewModel(private val context: Context) : ViewModel() {
                     onComplete(false, result.reason)
                 }
             }
+        }
+    }
+
+    fun markSaleAsPickedUp(saleId: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            db.checkoutDao().updatePickupStatus(saleId, com.example.offlinepos.data.local.PickupStatus.PICKED_UP)
+            withContext(Dispatchers.Main) {
+                setBanner("📦 ပစ္စည်း ထုတ်ပေးပြီးကြောင်း အောင်မြင်စွာ မှတ်တမ်းတင်ပြီးပါပြီ")
+            }
+            triggerAutoDriveSync("Mark Picked Up ($saleId)")
+            triggerFirestoreSync("Mark Picked Up ($saleId)")
         }
     }
 
@@ -2187,6 +2209,9 @@ class PosViewModel(private val context: Context) : ViewModel() {
                 splitDigitalMinor = sale.splitDigitalMinor,
                 saleStatus = sale.status,
                 voucherNo = autoVoucherNo,
+                pickupStatus = sale.pickupStatus,
+                expectedPickupDate = sale.expectedPickupDate,
+                pickupNote = sale.pickupNote,
             )
             _receipt.value = receiptData
         }

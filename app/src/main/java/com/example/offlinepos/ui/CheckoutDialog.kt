@@ -75,7 +75,10 @@ fun CheckoutDialog(
         customer: CustomerEntity?,
         splitCash: Long,
         splitDigital: Long,
-        deliveryFeeMinor: Long
+        deliveryFeeMinor: Long,
+        pickupStatus: String,
+        expectedPickupDate: String?,
+        pickupNote: String?,
     ) -> Unit,
 ) {
     var selectedMethod by remember { mutableStateOf("CASH") } // CASH, KPAY, WAVEPAY, CREDIT, SPLIT
@@ -84,6 +87,12 @@ fun CheckoutDialog(
     var customerDropdownOpen by remember { mutableStateOf(false) }
     var includeDeliveryFee by remember { mutableStateOf(false) }
     var deliveryFeeText by remember { mutableStateOf("") }
+
+    // Pending pickup states
+    var isPendingPickup by remember { mutableStateOf(false) }
+    var pickupDateMode by remember { mutableStateOf("UNSPECIFIED") } // UNSPECIFIED, SPECIFIC
+    var specificPickupDateText by remember { mutableStateOf("") }
+    var pickupNoteText by remember { mutableStateOf("") }
     val deliveryFeeMinor = if (includeDeliveryFee) deliveryFeeText.toLongOrNull()?.coerceAtLeast(0L) ?: 0L else 0L
     val payableTotals = totals.copy(
         deliveryFeeMinor = deliveryFeeMinor,
@@ -586,6 +595,83 @@ fun CheckoutDialog(
                     )
                 }
 
+                // Pending Pickup Option
+                Card(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (isPendingPickup) Color(0xFFEFF6FF) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                    ),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Column(modifier = Modifier.padding(10.dp)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { isPendingPickup = !isPendingPickup }
+                        ) {
+                            Checkbox(
+                                checked = isPendingPickup,
+                                onCheckedChange = { isPendingPickup = it },
+                                modifier = Modifier.testTag("pending_pickup_checkbox")
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "📦 ပစ္စည်း မယူသေးပါ (Paid & Pending Pickup)",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp,
+                                color = if (isPendingPickup) Color(0xFF1D4ED8) else MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+
+                        if (isPendingPickup) {
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = "ပစ္စည်း လာရောက်ထုတ်ယူမည့် ရက်စွဲ:",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Color.DarkGray
+                            )
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                modifier = Modifier.padding(vertical = 4.dp)
+                            ) {
+                                FilterChip(
+                                    selected = pickupDateMode == "UNSPECIFIED",
+                                    onClick = { pickupDateMode = "UNSPECIFIED" },
+                                    label = { Text("ရက်စွဲ မသိသေးပါ", fontSize = 11.sp) },
+                                    modifier = Modifier.testTag("pickup_date_unspecified_chip")
+                                )
+                                FilterChip(
+                                    selected = pickupDateMode == "SPECIFIC",
+                                    onClick = { pickupDateMode = "SPECIFIC" },
+                                    label = { Text("ရက်စွဲ သတ်မှတ်မည်", fontSize = 11.sp) },
+                                    modifier = Modifier.testTag("pickup_date_specific_chip")
+                                )
+                            }
+
+                            if (pickupDateMode == "SPECIFIC") {
+                                OutlinedTextField(
+                                    value = specificPickupDateText,
+                                    onValueChange = { specificPickupDateText = it },
+                                    label = { Text("ထုတ်ယူမည့် ရက်စွဲ (ဥပမာ - 05/11/2026)") },
+                                    singleLine = true,
+                                    modifier = Modifier.fillMaxWidth().testTag("specific_pickup_date_input")
+                                )
+                                Spacer(modifier = Modifier.height(6.dp))
+                            }
+
+                            OutlinedTextField(
+                                value = pickupNoteText,
+                                onValueChange = { pickupNoteText = it },
+                                label = { Text("မှတ်ချက် (ဥပမာ - ဘောင်ချာပြ၍ လာယူမည်)") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth().testTag("pickup_note_input")
+                            )
+                        }
+                    }
+                }
+
                 Spacer(modifier = Modifier.height(10.dp))
 
                 // Confirm Button
@@ -597,7 +683,10 @@ fun CheckoutDialog(
                             "SPLIT" -> payableTotals.totalMinor
                             else -> payableTotals.totalMinor
                         }
-                        onConfirm(selectedMethod, tenderedToPass, selectedCustomer, splitCash, splitDigital, deliveryFeeMinor)
+                        val status = if (isPendingPickup) "PENDING_PICKUP" else "PICKED_UP"
+                        val date = if (isPendingPickup && pickupDateMode == "SPECIFIC") specificPickupDateText.ifBlank { null } else null
+                        val note = if (isPendingPickup) pickupNoteText.ifBlank { null } else null
+                        onConfirm(selectedMethod, tenderedToPass, selectedCustomer, splitCash, splitDigital, deliveryFeeMinor, status, date, note)
                     },
                     modifier = Modifier
                         .fillMaxWidth()
@@ -607,9 +696,11 @@ fun CheckoutDialog(
                     shape = RoundedCornerShape(12.dp),
                 ) {
                     Text(
-                        text = when (selectedMethod) {
-                            "CREDIT" -> "အကြွေးအရောင်း အတည်ပြုမည် (Confirm Credit)"
-                            "SPLIT" -> "Split စနစ်ဖြင့် ရှင်းမည် (%,d Ks)".format(payableTotals.totalMinor)
+                        text = when {
+                            isPendingPickup && selectedMethod == "CREDIT" -> "အကြွေး + ပစ္စည်းကျန် အတည်ပြုမည်"
+                            isPendingPickup -> "ငွေရှင်း + ပစ္စည်းကျန် အတည်ပြုမည်"
+                            selectedMethod == "CREDIT" -> "အကြွေးအရောင်း အတည်ပြုမည် (Confirm Credit)"
+                            selectedMethod == "SPLIT" -> "Split စနစ်ဖြင့် ရှင်းမည် (%,d Ks)".format(payableTotals.totalMinor)
                             else -> "အတည်ပြု ငွေရှင်းမည် (Confirm %,d Ks)".format(payableTotals.totalMinor)
                         },
                         fontWeight = FontWeight.Bold,
