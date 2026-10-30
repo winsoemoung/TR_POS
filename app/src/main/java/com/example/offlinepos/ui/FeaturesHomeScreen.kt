@@ -1,5 +1,10 @@
 package com.example.offlinepos.ui
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -236,10 +241,10 @@ fun FeaturesHomeScreen(
                     AimFeatureTile(
                         id = "feat_local_db_sync",
                         title = "Local Database Sync",
-                        subtitle = if (outboxPendingCount > 0) "Pending Queue: $outboxPendingCount" else "✓ Local DB Synced",
+                        subtitle = if (outboxPendingCount > 0) "Pending: $outboxPendingCount item${if (outboxPendingCount > 1) "s" else ""}" else "✓ Local DB Synced",
                         icon = Icons.Default.CloudSync,
                         iconBgColor = if (outboxPendingCount > 0) Color(0xFFD97706) else Color(0xFF15803D),
-                        badgeText = if (outboxPendingCount > 0) "$outboxPendingCount pending" else null,
+                        badgeText = if (outboxPendingCount > 0) "Pending: $outboxPendingCount item${if (outboxPendingCount > 1) "s" else ""}" else null,
                         badgeColor = if (outboxPendingCount > 0) Color(0xFFB45309) else Color(0xFF15803D),
                         showProgressBar = outboxPendingCount > 0,
                         onClick = onNavigateToSettings,
@@ -608,7 +613,11 @@ private fun AimsFeatureTileCard(
                 )
             }
 
-            if (tile.showProgressBar) {
+            AnimatedVisibility(
+                visible = tile.showProgressBar,
+                enter = fadeIn() + expandVertically(),
+                exit = fadeOut() + shrinkVertically()
+            ) {
                 LinearProgressIndicator(
                     modifier = Modifier
                         .fillMaxWidth()

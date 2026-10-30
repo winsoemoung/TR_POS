@@ -6,6 +6,11 @@ import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -805,7 +810,7 @@ fun SettingsBackupSubpage(
                         color = if (outboxPendingCount > 0) Color(0xFFFEF3C7) else Color(0xFFDCFCE7)
                     ) {
                         Text(
-                            text = if (outboxPendingCount > 0) "Pending Queue: $outboxPendingCount" else "✓ Local DB Synced",
+                            text = if (outboxPendingCount > 0) "Pending: $outboxPendingCount item${if (outboxPendingCount > 1) "s" else ""}" else "✓ Local DB Synced",
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
                             color = if (outboxPendingCount > 0) Color(0xFFB45309) else Color(0xFF15803D),
@@ -814,8 +819,12 @@ fun SettingsBackupSubpage(
                     }
                 }
 
-                // Small animated progress bar when Pending Queue > 0
-                if (outboxPendingCount > 0) {
+                // Small animated progress bar with item count details when Pending Queue > 0
+                AnimatedVisibility(
+                    visible = outboxPendingCount > 0,
+                    enter = fadeIn() + expandVertically(),
+                    exit = fadeOut() + shrinkVertically()
+                ) {
                     Card(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(8.dp),
@@ -839,14 +848,14 @@ fun SettingsBackupSubpage(
                                     )
                                     Spacer(modifier = Modifier.width(6.dp))
                                     Text(
-                                        "⏳ Syncing pending operations...",
+                                        "⏳ Syncing $outboxPendingCount pending operation${if (outboxPendingCount > 1) "s" else ""} to cloud...",
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.SemiBold,
                                         color = Color(0xFFB45309)
                                     )
                                 }
                                 Text(
-                                    "Pending Queue: $outboxPendingCount",
+                                    "Pending: $outboxPendingCount item${if (outboxPendingCount > 1) "s" else ""}",
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = Color(0xFFB45309)
@@ -855,10 +864,16 @@ fun SettingsBackupSubpage(
                             LinearProgressIndicator(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(4.dp)
-                                    .clip(RoundedCornerShape(2.dp)),
+                                    .height(5.dp)
+                                    .clip(RoundedCornerShape(2.5.dp)),
                                 color = Color(0xFFD97706),
                                 trackColor = Color(0xFFFDE68A)
+                            )
+                            Text(
+                                "အော့ဖ်လိုင်း ပြုလုပ်ထားသော အရောင်း/ပစ္စည်း ပြင်ဆင်မှု $outboxPendingCount ခုကို အင်တာနက် ရရှိသည်နှင့် အလိုအလျောက် Cloud Sync ပြုလုပ်ပေးနေပါသည် ($outboxPendingCount items in queue).",
+                                fontSize = 10.sp,
+                                color = Color(0xFF92400E),
+                                lineHeight = 14.sp
                             )
                         }
                     }
