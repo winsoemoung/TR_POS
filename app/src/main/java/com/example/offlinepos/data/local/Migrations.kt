@@ -173,6 +173,64 @@ val MIGRATION_11_12 = object : Migration(11, 12) {
     }
 }
 
+val MIGRATION_12_13 = object : Migration(12, 13) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS `suppliers` (
+                `supplierId` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                `name` TEXT NOT NULL,
+                `shopName` TEXT NOT NULL DEFAULT '',
+                `phone` TEXT NOT NULL DEFAULT '',
+                `email` TEXT NOT NULL DEFAULT '',
+                `address` TEXT NOT NULL DEFAULT '',
+                `taxNumber` TEXT NOT NULL DEFAULT '',
+                `note` TEXT NOT NULL DEFAULT '',
+                `createdAtEpochMs` INTEGER NOT NULL
+            )
+        """)
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_suppliers_name` ON `suppliers` (`name`)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_suppliers_shopName` ON `suppliers` (`shopName`)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_suppliers_phone` ON `suppliers` (`phone`)")
+
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS `receipt_templates` (
+                `templateId` INTEGER PRIMARY KEY NOT NULL,
+                `name` TEXT NOT NULL,
+                `isDefault` INTEGER NOT NULL DEFAULT 0,
+                `showLogo` INTEGER NOT NULL DEFAULT 1,
+                `storeNameFontSize` TEXT NOT NULL DEFAULT 'LARGE',
+                `storeNameAlign` TEXT NOT NULL DEFAULT 'CENTER',
+                `showAddress` INTEGER NOT NULL DEFAULT 1,
+                `showPhone` INTEGER NOT NULL DEFAULT 1,
+                `showHeaderNote` INTEGER NOT NULL DEFAULT 1,
+                `customHeaderNote` TEXT NOT NULL DEFAULT '',
+                `showCashierInfo` INTEGER NOT NULL DEFAULT 1,
+                `showVoucherNumber` INTEGER NOT NULL DEFAULT 1,
+                `showCustomerInfo` INTEGER NOT NULL DEFAULT 1,
+                `itemNameWidthWeight` REAL NOT NULL DEFAULT 0.42,
+                `qtyWidthWeight` REAL NOT NULL DEFAULT 0.16,
+                `priceWidthWeight` REAL NOT NULL DEFAULT 0.20,
+                `amountWidthWeight` REAL NOT NULL DEFAULT 0.22,
+                `rowPaddingDp` INTEGER NOT NULL DEFAULT 4,
+                `gridLineStyle` TEXT NOT NULL DEFAULT 'DASHED',
+                `bodyFontSize` TEXT NOT NULL DEFAULT 'MEDIUM',
+                `itemNameAlign` TEXT NOT NULL DEFAULT 'LEFT',
+                `qtyAlign` TEXT NOT NULL DEFAULT 'CENTER',
+                `priceAlign` TEXT NOT NULL DEFAULT 'RIGHT',
+                `amountAlign` TEXT NOT NULL DEFAULT 'RIGHT',
+                `showTotalsBreakdown` INTEGER NOT NULL DEFAULT 1,
+                `showPaymentMethod` INTEGER NOT NULL DEFAULT 1,
+                `showBarcodeOrQr` INTEGER NOT NULL DEFAULT 1,
+                `footerMessage` TEXT NOT NULL DEFAULT '',
+                `returnPolicyText` TEXT NOT NULL DEFAULT '',
+                `footerAlign` TEXT NOT NULL DEFAULT 'CENTER',
+                `footerFontSize` TEXT NOT NULL DEFAULT 'SMALL',
+                `updatedAtEpochMs` INTEGER NOT NULL
+            )
+        """)
+    }
+}
+
 val ALL_MIGRATIONS: Array<Migration> = arrayOf(
     MIGRATION_1_2,
     MIGRATION_2_3,
@@ -185,4 +243,5 @@ val ALL_MIGRATIONS: Array<Migration> = arrayOf(
     MIGRATION_9_10,
     MIGRATION_10_11,
     MIGRATION_11_12,
+    MIGRATION_12_13,
 )

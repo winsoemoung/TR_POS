@@ -33,6 +33,7 @@ import androidx.compose.material.icons.filled.Category
 import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.Inventory
+import androidx.compose.material.icons.filled.LocalShipping
 import androidx.compose.material.icons.filled.MoneyOff
 import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.PointOfSale
@@ -120,11 +121,13 @@ fun FeaturesHomeScreen(
     val allProducts by viewModel.allProducts.collectAsState()
     val predictions by viewModel.stockPredictions.collectAsState()
     val customers by viewModel.customers.collectAsState()
+    val suppliers by viewModel.suppliers.collectAsState()
     val isServerRunning by viewModel.isServerRunning.collectAsState()
     val googleAccount by viewModel.googleAccount.collectAsState()
     val outboxPendingCount by viewModel.outboxPendingCount.collectAsState()
 
     var showCustomerDialog by remember { mutableStateOf(false) }
+    var showSuppliersDialog by remember { mutableStateOf(false) }
     var showShiftReportDialog by remember { mutableStateOf(false) }
     var showPrinterDialog by remember { mutableStateOf(false) }
     var showServerDialog by remember { mutableStateOf(false) }
@@ -211,6 +214,14 @@ fun FeaturesHomeScreen(
                         badgeText = if (debtorsCount > 0) "$debtorsCount ဦး" else null,
                         badgeColor = Color(0xFFB91C1C),
                         onClick = { showCustomerDialog = true },
+                    ),
+                    AimFeatureTile(
+                        id = "feat_suppliers",
+                        title = "ကုန်သွင်းသူများ (Suppliers)",
+                        subtitle = "${suppliers.size} ဦး စာရင်းသွင်းထား",
+                        icon = Icons.Default.LocalShipping,
+                        iconBgColor = Color(0xFF0284C7),
+                        onClick = { showSuppliersDialog = true },
                     ),
                 )
             ),
@@ -383,6 +394,16 @@ fun FeaturesHomeScreen(
         CustomerManagementDialog(
             viewModel = viewModel,
             onDismiss = { showCustomerDialog = false }
+        )
+    }
+
+    if (showSuppliersDialog) {
+        SuppliersManagementDialog(
+            viewModel = viewModel,
+            onDismiss = { showSuppliersDialog = false },
+            onNavigateToStockInForSupplier = {
+                showStockInDialog = true
+            }
         )
     }
 

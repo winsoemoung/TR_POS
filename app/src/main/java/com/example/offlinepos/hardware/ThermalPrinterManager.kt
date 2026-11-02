@@ -4,6 +4,7 @@ import android.bluetooth.BluetoothAdapter
 import android.content.Context
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
+import com.example.offlinepos.data.local.ReceiptTemplateEntity
 import com.example.offlinepos.ui.ReceiptData
 import com.example.offlinepos.ui.StoreProfile
 import kotlinx.coroutines.Dispatchers
@@ -283,5 +284,65 @@ object ThermalPrinterManager {
                 Pair(false, "စမ်းသပ်ပရင့်ထုတ်ရန် Bluetooth သို့မဟုတ် USB Printer တစ်ခုခုကို အရင်ရွေးချယ်ပါ")
             }
         }
+    }
+
+    /**
+     * Print raw ESC/POS bytes over active Bluetooth or USB connection.
+     */
+    suspend fun printRawBytes(
+        context: Context,
+        bytes: ByteArray,
+    ): Pair<Boolean, String> = withContext(Dispatchers.IO) {
+        val connType = getConnectionType(context)
+        when (connType) {
+            PrinterConnectionType.USB -> {
+                val usbDevice = getSavedUsbDevice(context)
+                    ?: return@withContext Pair(false, "USB Thermal Printer ချိတ်ဆက်မထားပါ")
+                if (!UsbPrinterHelper.hasPermission(context, usbDevice)) {
+                    return@withContext Pair(false, "USB Printer Permission ခွင့်ပြုချက် လိုအပ်ပါသည်")
+                }
+                UsbPrinterHelper.printRawBytes(context, usbDevice, bytes)
+            }
+            PrinterConnectionType.BLUETOOTH -> {
+                val address = getSavedBluetoothAddress(context)
+                    ?: return@withContext Pair(false, "Bluetooth Printer ရွေးချယ်မထားပါ")
+                val adapter = BluetoothAdapter.getDefaultAdapter()
+                    ?: return@withContext Pair(false, "Bluetooth မရှိပါ")
+                val device = adapter.getRemoteDevice(address)
+                BluetoothPrinterHelper.printRawBytes(device, bytes)
+            }
+            PrinterConnectionType.NONE -> {
+                Pair(false, "Printer ချိတ်ဆက်ထားခြင်း မရှိပါ။ Bluetooth သို့မဟုတ် USB Printer ချိတ်ဆက်ပေးပါ။")
+            }
+        }
+    }
+
+    /**
+     * Print receipt using a custom layout template (Slots 1 to 5).
+     */
+    suspend fun printCustomReceipt(
+        context: Context,
+        receipt: ReceiptData,
+        profile: StoreProfile,
+        template: ReceiptTemplateEntity,
+    ): Pair<Boolean, String> = withContext(Dispatchers.IO) {
+        val paperWidth = getPaperWidth(context).dots
+        val kickDrawer = isKickDrawerEnabled(context)
+        val copies = getNumCopies(context).coerceAtLeast(1)
+
+        val escPosBytes = CustomReceiptEscPosGenerator.generateEscPosForTemplate(
+            template = template,
+            receipt = receipt,
+            profile = profile,
+            paperWidthDots = paperWidth,
+            kickDrawer = kickDrawer
+        )
+
+        var lastResult = Pair(false, "")
+        repeat(copies) {
+            lastResult = printRawBytes(context, escPosBytes)
+            if (!lastResult.first) return@withContext lastResult
+        }
+        lastResult
     }
 }

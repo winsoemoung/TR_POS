@@ -2,7 +2,11 @@ package com.example.offlinepos.ai
 
 import com.example.offlinepos.data.local.CustomerEntity
 import com.example.offlinepos.data.local.ProductEntity
+import com.example.offlinepos.data.local.PurchaseEntity
+import com.example.offlinepos.data.local.ReturnTransactionEntity
 import com.example.offlinepos.data.local.SaleEntity
+import com.example.offlinepos.data.local.SaleItemEntity
+import com.example.offlinepos.data.local.SupplierEntity
 import com.example.offlinepos.ui.StoreProfile
 
 enum class MessageSender {
@@ -129,4 +133,10 @@ data class PosDatabaseContext(
     val lowStockProducts: List<ProductEntity> = emptyList(),
     val debtors: List<CustomerEntity> = emptyList(),
     val totalDebtAmount: Long = 0L,
+    val purchases: List<PurchaseEntity> = emptyList(),
+    val returnTransactions: List<ReturnTransactionEntity> = emptyList(),
+    val saleItems: List<SaleItemEntity> = emptyList(),
+    val suppliers: List<SupplierEntity> = emptyList(),
+    val biMonthlyReport: BusinessIntelligenceEngine.BiMonthlyReport? = null,
+    val seasonalPredictions: List<BusinessIntelligenceEngine.MonthlySeasonalInsight>? = null,
 )

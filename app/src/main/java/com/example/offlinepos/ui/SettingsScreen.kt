@@ -547,25 +547,68 @@ private fun ModernSettingsDashboard(
                     accentColor = Color(0xFF4F46E5)
                 )
 
-                // Dark / Light Mode Segmented Toggle (Persisted in SharedPreferences)
-                SettingRowItem(
-                    icon = Icons.Default.Brightness4,
-                    iconTint = Color(0xFF4F46E5),
-                    iconBgColor = Color(0xFFE0E7FF),
-                    title = "အလင်း / အမှောင် ဒီဇိုင်း (Dark/Light Theme)",
-                    subtitle = "လက်ရှိ ရွေးချယ်ထားမှု: ${themeMode.label}",
-                    actionWidget = {
-                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            StoreConfig.ThemeMode.values().forEach { mode ->
-                                FilterChip(
-                                    selected = themeMode == mode,
-                                    onClick = { viewModel.setThemeMode(mode) },
-                                    label = { Text(mode.icon, fontSize = 13.sp) }
-                                )
+                // Theme Engine Selector (Material 3 & Apple Cupertino iOS)
+                Column(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(Color(0xFFE0E7FF)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Default.Brightness4, contentDescription = null, tint = Color(0xFF4F46E5), modifier = Modifier.size(18.dp))
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column {
+                                Text("အသွင်အပြင် ဒီဇိုင်းပုံစံ (Theme Engine)", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                                Text("လက်ရှိ: ${themeMode.label}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
                     }
-                )
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        items(StoreConfig.ThemeMode.values()) { mode ->
+                            val isSelected = themeMode == mode
+                            Surface(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .clickable { viewModel.setThemeMode(mode) }
+                                    .border(
+                                        width = if (isSelected) 2.dp else 1.dp,
+                                        color = if (isSelected) MaterialTheme.colorScheme.primary else Color.LightGray.copy(alpha = 0.5f),
+                                        shape = RoundedCornerShape(12.dp)
+                                    )
+                                    .testTag("theme_selector_${mode.name}"),
+                                color = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(mode.icon, fontSize = 14.sp)
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = mode.label,
+                                        fontSize = 11.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                        color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
 
                 SettingDivider()
 

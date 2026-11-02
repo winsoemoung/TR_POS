@@ -34,6 +34,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -74,8 +75,12 @@ fun ReceiptDialog(
 ) {
     val context = LocalContext.current
     val storeProfile by viewModel.storeProfile.collectAsState()
+    val templates by viewModel.receiptTemplates.collectAsState()
+    val defaultTemplate by viewModel.defaultReceiptTemplate.collectAsState()
 
+    var selectedTemplateId by remember(defaultTemplate) { mutableStateOf(defaultTemplate?.templateId ?: 1) }
     var showPrinterDialog by remember { mutableStateOf(false) }
+    var showTemplateBuilder by remember { mutableStateOf(false) }
     var printStatus by remember { mutableStateOf<String?>(null) }
     var isPrinting by remember { mutableStateOf(false) }
 
@@ -405,7 +410,54 @@ fun ReceiptDialog(
                     )
                 }
 
-                Spacer(modifier = Modifier.height(12.dp))
+                // Receipt Template Selector (Slots 1 to 5)
+                if (templates.isNotEmpty()) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "🎨 ပြေစာ ပုံစံရွေးချယ်ရန် (Template)",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            TextButton(
+                                onClick = { showTemplateBuilder = true },
+                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 6.dp, vertical = 0.dp)
+                            ) {
+                                Text("📐 ဒီဇိုင်းပြင်မည်", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+                        androidx.compose.foundation.lazy.LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            items(templates) { tmpl ->
+                                val isSelected = tmpl.templateId == selectedTemplateId
+                                androidx.compose.material3.FilterChip(
+                                    selected = isSelected,
+                                    onClick = { selectedTemplateId = tmpl.templateId },
+                                    label = {
+                                        Text(
+                                            text = if (tmpl.isDefault) "⭐ ${tmpl.name}" else tmpl.name,
+                                            fontSize = 11.sp,
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                        )
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
 
                 // Actions: PDF Share, Thermal Print, Settings & Dismiss
                 Row(
@@ -432,9 +484,17 @@ fun ReceiptDialog(
                             } else {
                                 isPrinting = true
                                 printStatus = "Printer သို့ ဒေတာ ပို့နေပါသည်..."
-                                viewModel.printReceiptUnified(receipt) { success, msg ->
-                                    isPrinting = false
-                                    printStatus = msg
+                                val chosenTmpl = templates.find { it.templateId == selectedTemplateId }
+                                if (chosenTmpl != null) {
+                                    viewModel.printCustomReceiptUnified(receipt, chosenTmpl) { success, msg ->
+                                        isPrinting = false
+                                        printStatus = msg
+                                    }
+                                } else {
+                                    viewModel.printReceiptUnified(receipt) { success, msg ->
+                                        isPrinting = false
+                                        printStatus = msg
+                                    }
                                 }
                             }
                         },
@@ -482,11 +542,17 @@ fun ReceiptDialog(
         }
     }
 
-    // Thermal Printer Chooser & Config Dialog
     if (showPrinterDialog) {
         ThermalPrinterDialog(
             viewModel = viewModel,
             onDismiss = { showPrinterDialog = false }
+        )
+    }
+
+    if (showTemplateBuilder) {
+        ReceiptTemplateBuilderDialog(
+            viewModel = viewModel,
+            onDismiss = { showTemplateBuilder = false }
         )
     }
 }

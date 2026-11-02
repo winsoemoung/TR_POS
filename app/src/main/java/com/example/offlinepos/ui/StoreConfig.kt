@@ -234,16 +234,39 @@ class StoreConfig(context: Context) {
         prefs.edit().putString("staff_client_name", name).apply()
     }
 
-    // App Appearance: Dark/Light Mode Preference (Persisted in SharedPreferences)
+    // App Appearance: Theme Mode Preferences (Material 3 & Apple Cupertino iOS)
     enum class ThemeMode(val label: String, val icon: String) {
         SYSTEM("စနစ်အတိုင်း (System)", "📱"),
-        LIGHT("အလင်း (Light)", "☀️"),
-        DARK("အမှောင် (Dark)", "🌙"),
+        MATERIAL_LIGHT("Material 3 Light", "☀️"),
+        MATERIAL_DARK("Material 3 Dark", "🌙"),
+        IOS_LIGHT("Apple iOS Light", "🍏"),
+        IOS_DARK("Apple iOS Dark", "🍎");
+
+        val isCupertino: Boolean
+            get() = this == IOS_LIGHT || this == IOS_DARK
+
+        val isDark: Boolean
+            get() = this == MATERIAL_DARK || this == IOS_DARK
+
+        companion object {
+            fun parse(raw: String?): ThemeMode {
+                if (raw.isNullOrBlank()) return SYSTEM
+                return when (raw.uppercase()) {
+                    "LIGHT" -> MATERIAL_LIGHT
+                    "DARK" -> MATERIAL_DARK
+                    "MATERIAL_LIGHT" -> MATERIAL_LIGHT
+                    "MATERIAL_DARK" -> MATERIAL_DARK
+                    "IOS_LIGHT" -> IOS_LIGHT
+                    "IOS_DARK" -> IOS_DARK
+                    else -> runCatching { ThemeMode.valueOf(raw) }.getOrDefault(SYSTEM)
+                }
+            }
+        }
     }
 
     fun getThemeMode(): ThemeMode {
         val raw = prefs.getString("app_theme_mode", ThemeMode.SYSTEM.name) ?: ThemeMode.SYSTEM.name
-        return runCatching { ThemeMode.valueOf(raw) }.getOrDefault(ThemeMode.SYSTEM)
+        return ThemeMode.parse(raw)
     }
 
     fun setThemeMode(mode: ThemeMode) {

@@ -22,8 +22,10 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         ReturnTransactionEntity::class,
         OutboxEntity::class,
         SyncTombstoneEntity::class,
+        SupplierEntity::class,
+        ReceiptTemplateEntity::class,
     ],
-    version = 12,
+    version = 13,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -32,6 +34,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun customerDao(): CustomerDao
     abstract fun operationsDao(): OperationsDao
     abstract fun outboxDao(): OutboxDao
+    abstract fun supplierDao(): SupplierDao
+    abstract fun receiptTemplateDao(): ReceiptTemplateDao
 
     companion object {
         private const val DB_NAME = "offline_pos.db"
@@ -236,6 +240,102 @@ abstract class AppDatabase : RoomDatabase() {
 
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_customers_phone` ON `customers` (`phone`)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_customers_currentDebtMinor` ON `customers` (`currentDebtMinor`)")
+
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `suppliers` (
+                        `supplierId` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `name` TEXT NOT NULL,
+                        `shopName` TEXT NOT NULL DEFAULT '',
+                        `phone` TEXT NOT NULL DEFAULT '',
+                        `email` TEXT NOT NULL DEFAULT '',
+                        `address` TEXT NOT NULL DEFAULT '',
+                        `taxNumber` TEXT NOT NULL DEFAULT '',
+                        `note` TEXT NOT NULL DEFAULT '',
+                        `createdAtEpochMs` INTEGER NOT NULL
+                    )
+                """)
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_suppliers_name` ON `suppliers` (`name`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_suppliers_shopName` ON `suppliers` (`shopName`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_suppliers_phone` ON `suppliers` (`phone`)")
+
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `receipt_templates` (
+                        `templateId` INTEGER PRIMARY KEY NOT NULL,
+                        `name` TEXT NOT NULL,
+                        `isDefault` INTEGER NOT NULL DEFAULT 0,
+                        `showLogo` INTEGER NOT NULL DEFAULT 1,
+                        `storeNameFontSize` TEXT NOT NULL DEFAULT 'LARGE',
+                        `storeNameAlign` TEXT NOT NULL DEFAULT 'CENTER',
+                        `showAddress` INTEGER NOT NULL DEFAULT 1,
+                        `showPhone` INTEGER NOT NULL DEFAULT 1,
+                        `showHeaderNote` INTEGER NOT NULL DEFAULT 1,
+                        `customHeaderNote` TEXT NOT NULL DEFAULT '',
+                        `showCashierInfo` INTEGER NOT NULL DEFAULT 1,
+                        `showVoucherNumber` INTEGER NOT NULL DEFAULT 1,
+                        `showCustomerInfo` INTEGER NOT NULL DEFAULT 1,
+                        `itemNameWidthWeight` REAL NOT NULL DEFAULT 0.42,
+                        `qtyWidthWeight` REAL NOT NULL DEFAULT 0.16,
+                        `priceWidthWeight` REAL NOT NULL DEFAULT 0.20,
+                        `amountWidthWeight` REAL NOT NULL DEFAULT 0.22,
+                        `rowPaddingDp` INTEGER NOT NULL DEFAULT 4,
+                        `gridLineStyle` TEXT NOT NULL DEFAULT 'DASHED',
+                        `bodyFontSize` TEXT NOT NULL DEFAULT 'MEDIUM',
+                        `itemNameAlign` TEXT NOT NULL DEFAULT 'LEFT',
+                        `qtyAlign` TEXT NOT NULL DEFAULT 'CENTER',
+                        `priceAlign` TEXT NOT NULL DEFAULT 'RIGHT',
+                        `amountAlign` TEXT NOT NULL DEFAULT 'RIGHT',
+                        `showTotalsBreakdown` INTEGER NOT NULL DEFAULT 1,
+                        `showPaymentMethod` INTEGER NOT NULL DEFAULT 1,
+                        `showBarcodeOrQr` INTEGER NOT NULL DEFAULT 1,
+                        `footerMessage` TEXT NOT NULL DEFAULT '',
+                        `returnPolicyText` TEXT NOT NULL DEFAULT '',
+                        `footerAlign` TEXT NOT NULL DEFAULT 'CENTER',
+                        `footerFontSize` TEXT NOT NULL DEFAULT 'SMALL',
+                        `updatedAtEpochMs` INTEGER NOT NULL
+                    )
+                """)
+
+                // Ensure initial 5 receipt template slots exist
+                runCatching {
+                    val countCursor = db.query("SELECT COUNT(*) FROM `receipt_templates`")
+                    var count = 0
+                    if (countCursor.moveToFirst()) count = countCursor.getInt(0)
+                    countCursor.close()
+                    if (count == 0) {
+                        db.execSQL("""
+                            INSERT INTO `receipt_templates` (
+                                templateId, name, isDefault, showLogo, storeNameFontSize, storeNameAlign,
+                                showAddress, showPhone, showHeaderNote, customHeaderNote, showCashierInfo,
+                                showVoucherNumber, showCustomerInfo, itemNameWidthWeight, qtyWidthWeight,
+                                priceWidthWeight, amountWidthWeight, rowPaddingDp, gridLineStyle, bodyFontSize,
+                                itemNameAlign, qtyAlign, priceAlign, amountAlign, showTotalsBreakdown,
+                                showPaymentMethod, showBarcodeOrQr, footerMessage, returnPolicyText,
+                                footerAlign, footerFontSize, updatedAtEpochMs
+                            ) VALUES
+                            (1, 'Template 1 - ပုံမှန် စံပြေစာ (Standard)', 1, 1, 'LARGE', 'CENTER', 1, 1, 1, '', 1, 1, 1, 0.42, 0.16, 0.20, 0.22, 4, 'DASHED', 'MEDIUM', 'LEFT', 'CENTER', 'RIGHT', 'RIGHT', 1, 1, 1, 'ဝယ်ယူအားပေးမှုကို အထူးကျေးဇူးတင်ပါသည်\nပစ္စည်းမှန်၊ စျေးနှုန်းမှန်၊ အချိန်မှန်', 'ပစ္စည်း ပြန်လဲပါက (၃) ရက်အတွင်း ဘောင်ချာ ယူဆောင်လာပါရန်', 'CENTER', 'SMALL', ${System.currentTimeMillis()}),
+                            (2, 'Template 2 - အသေးစိတ် ဇယားကွက် (Detailed Grid)', 0, 1, 'LARGE', 'CENTER', 1, 1, 1, 'တရားဝင် အရောင်းပြေစာ', 1, 1, 1, 0.40, 0.15, 0.20, 0.25, 6, 'SOLID', 'MEDIUM', 'LEFT', 'CENTER', 'RIGHT', 'RIGHT', 1, 1, 1, 'ကျေးဇူးတင်ပါသည်', 'ဝယ်ယူပြီးပစ္စည်း ပြန်မလဲပေးပါ', 'CENTER', 'SMALL', ${System.currentTimeMillis()}),
+                            (3, 'Template 3 - အရွယ်သေး ကျစ်လျစ် (Compact 58mm)', 0, 0, 'MEDIUM', 'LEFT', 1, 1, 0, '', 1, 1, 0, 0.45, 0.15, 0.18, 0.22, 2, 'DASHED', 'SMALL', 'LEFT', 'CENTER', 'RIGHT', 'RIGHT', 1, 1, 0, 'Thank you!', '', 'CENTER', 'SMALL', ${System.currentTimeMillis()}),
+                            (4, 'Template 4 - ပို့ဆောင်ရေး/ဂိုဒေါင် (Delivery Voucher)', 0, 1, 'XLARGE', 'CENTER', 1, 1, 1, 'ပစ္စည်း ပို့ဆောင်ရေး ပြေစာ', 1, 1, 1, 0.50, 0.20, 0.00, 0.30, 6, 'DOUBLE', 'LARGE', 'LEFT', 'CENTER', 'RIGHT', 'RIGHT', 1, 1, 1, 'ပစ္စည်း လက်ခံရရှိကြောင်း လက်မှတ်ရေးထိုးပါ', 'ဂိုဒေါင်ထုတ်စလစ်', 'CENTER', 'MEDIUM', ${System.currentTimeMillis()}),
+                            (5, 'Template 5 - လက်ကား အထူးပြေစာ (Wholesale Invoice)', 0, 1, 'LARGE', 'CENTER', 1, 1, 1, 'လက်ကား သီးသန့် ရှင်းတမ်း', 1, 1, 1, 0.38, 0.18, 0.20, 0.24, 4, 'SOLID', 'MEDIUM', 'LEFT', 'CENTER', 'RIGHT', 'RIGHT', 1, 1, 1, 'လက်ကား ဝယ်ယူမှုအတွက် ကျေးဇူးတင်ပါသည်', 'ငွေလွှဲပြေစာအား ထိန်းသိမ်းထားပါ', 'CENTER', 'SMALL', ${System.currentTimeMillis()})
+                        """)
+                    }
+                }
+
+                // Ensure initial default suppliers if empty
+                runCatching {
+                    val supCursor = db.query("SELECT COUNT(*) FROM `suppliers`")
+                    var sCount = 0
+                    if (supCursor.moveToFirst()) sCount = supCursor.getInt(0)
+                    supCursor.close()
+                    if (sCount == 0) {
+                        db.execSQL("""
+                            INSERT INTO `suppliers` (name, shopName, phone, email, address, note, createdAtEpochMs) VALUES
+                            ('ဦးမောင်မောင်', 'ရွှေမြန်မာ ကုန်မာလက်ကား', '09-450011223', 'shwemyanmar@pos.com', 'အမှတ် (၁၂)၊ ဘုရင့်နောင်လမ်း၊ ရန်ကုန်', 'အိမ်ဆောက်ပစ္စည်းနှင့် ကုန်မာလက်ကား', ${System.currentTimeMillis()}),
+                            ('ဒေါ်နီနီ', 'အောင်သမာဓိ ဖြန့်ချိရေး', '09-790033445', 'aungtharmardi@pos.com', 'အမှတ် (၈၈)၊ စက်မှုဇုန် (၁)၊ မန္တလေး', 'ဘိလပ်မြေနှင့် သံချောင်း တိုက်ရိုက်ကိုယ်စားလှယ်', ${System.currentTimeMillis()}),
+                            ('ကိုကျော်စွာ', 'Asia General Distribution', '09-250066778', 'asia_dist@pos.com', 'အမှတ် (၄၅)၊ လမ်းမတော်၊ ရန်ကုန်', 'လျှပ်စစ်နှင့် ရေပိုက်ပစ္စည်းများ', ${System.currentTimeMillis()})
+                        """)
+                    }
+                }
 
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_purchases_createdAtEpochMs` ON `purchases` (`createdAtEpochMs`)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_purchases_supplierName` ON `purchases` (`supplierName`)")

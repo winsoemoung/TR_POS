@@ -39,6 +39,10 @@ import com.example.offlinepos.data.local.SaleEntity
 import com.example.offlinepos.data.local.SaleItemEntity
 import com.example.offlinepos.data.local.ShiftReportEntity
 import com.example.offlinepos.data.local.StockMovementEntity
+import com.example.offlinepos.data.local.SupplierEntity
+import com.example.offlinepos.data.local.ReceiptTemplateEntity
+import com.example.offlinepos.data.local.ReturnTransactionEntity
+import kotlinx.coroutines.flow.map
 import com.example.offlinepos.hardware.PdfReceiptHelper
 import org.json.JSONArray
 import org.json.JSONObject
@@ -212,6 +216,53 @@ class PosViewModel(private val context: Context) : ViewModel() {
     val outboxPendingCount: StateFlow<Int> = db.outboxDao().observePendingCount()
         .catch { emit(0) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+
+    // Suppliers Flow
+    val suppliers: StateFlow<List<SupplierEntity>> = db.supplierDao().getAllSuppliers()
+        .catch { emit(emptyList()) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    // Receipt Templates Flow
+    val receiptTemplates: StateFlow<List<ReceiptTemplateEntity>> = db.receiptTemplateDao().getAllTemplates()
+        .catch { emit(emptyList()) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    // Default Receipt Template Flow
+    val defaultReceiptTemplate: StateFlow<ReceiptTemplateEntity?> = db.receiptTemplateDao().getDefaultTemplate()
+        .catch { emit(null) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    // Return Transactions Flow
+    val returnTransactions: StateFlow<List<ReturnTransactionEntity>> = db.checkoutDao().observeAllReturnTransactions()
+        .catch { emit(emptyList()) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    // 1st and 15th BI Reports Flow
+    val biMonthlyReport: StateFlow<com.example.offlinepos.ai.BusinessIntelligenceEngine.BiMonthlyReport?> = kotlinx.coroutines.flow.combine(
+        allProducts,
+        salesHistory,
+        allSaleItems,
+        purchases,
+        suppliers
+    ) { prods, sales, items, purch, sups ->
+        com.example.offlinepos.ai.BusinessIntelligenceEngine.generateBiMonthlyReport(
+            products = prods,
+            sales = sales,
+            saleItems = items,
+            purchases = purch,
+            returns = returnTransactions.value,
+            suppliers = sups
+        ) as com.example.offlinepos.ai.BusinessIntelligenceEngine.BiMonthlyReport?
+    }.catch { emit(null) }
+    .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    // 12-Month Annual Seasonal Predictions Flow
+    val seasonalPredictions: StateFlow<List<com.example.offlinepos.ai.BusinessIntelligenceEngine.MonthlySeasonalInsight>> = allProducts
+        .map { prods: List<ProductEntity> ->
+            com.example.offlinepos.ai.BusinessIntelligenceEngine.generate12MonthSeasonalPredictions(prods)
+        }
+        .catch { emit(emptyList()) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     // Single-user shop mode; no role/PIN switching.
     private val _currentRole = MutableStateFlow("CASHIER")
@@ -671,6 +722,12 @@ class PosViewModel(private val context: Context) : ViewModel() {
                     lowStockProducts = lowStockList,
                     debtors = debtors,
                     totalDebtAmount = totalDebt,
+                    purchases = purchases.value,
+                    returnTransactions = returnTransactions.value,
+                    saleItems = allSaleItems.value,
+                    suppliers = suppliers.value,
+                    biMonthlyReport = biMonthlyReport.value,
+                    seasonalPredictions = seasonalPredictions.value,
                 )
 
                 val (responseText, action) = aiEngine.processUserCommand(
@@ -1876,6 +1933,75 @@ class PosViewModel(private val context: Context) : ViewModel() {
         }
     }
 
+    // Supplier Management Functions
+    fun saveSupplier(supplier: SupplierEntity, onResult: (Boolean, String) -> Unit = { _, _ -> }) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                if (supplier.supplierId == 0L) {
+                    db.supplierDao().insertSupplier(supplier)
+                    withContext(Dispatchers.Main) {
+                        onResult(true, "ကုန်သွင်းသူ '${supplier.name}' အား စာရင်းသွင်းပြီးပါပြီ")
+                    }
+                } else {
+                    db.supplierDao().updateSupplier(supplier)
+                    withContext(Dispatchers.Main) {
+                        onResult(true, "ကုန်သွင်းသူ '${supplier.name}' အချက်အလက်များ အပ်ဒိတ်လုပ်ပြီးပါပြီ")
+                    }
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    onResult(false, "အမှား: ${e.message}")
+                }
+            }
+        }
+    }
+
+    fun deleteSupplier(supplierId: Long, onResult: (Boolean, String) -> Unit = { _, _ -> }) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                db.supplierDao().deleteSupplierById(supplierId)
+                withContext(Dispatchers.Main) {
+                    onResult(true, "ကုန်သွင်းသူအား စာရင်းမှ ပယ်ဖျက်ပြီးပါပြီ")
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    onResult(false, "အမှား: ${e.message}")
+                }
+            }
+        }
+    }
+
+    // Receipt Template Builder Functions
+    fun saveReceiptTemplate(template: ReceiptTemplateEntity, onResult: (Boolean, String) -> Unit = { _, _ -> }) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                db.receiptTemplateDao().insertOrUpdate(template)
+                withContext(Dispatchers.Main) {
+                    onResult(true, "ပြေစာပုံစံ '${template.name}' အား အောင်မြင်စွာ သိမ်းဆည်းပြီးပါပြီ")
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    onResult(false, "အမှား: ${e.message}")
+                }
+            }
+        }
+    }
+
+    fun setDefaultReceiptTemplate(templateId: Int, onResult: (Boolean, String) -> Unit = { _, _ -> }) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                db.receiptTemplateDao().setDefaultTemplate(templateId)
+                withContext(Dispatchers.Main) {
+                    onResult(true, "Template #$templateId အား Default အဖြစ် သတ်မှတ်ပြီးပါပြီ")
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    onResult(false, "အမှား: ${e.message}")
+                }
+            }
+        }
+    }
+
     fun exportProductsCsv(uri: Uri) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
@@ -2402,7 +2528,22 @@ class PosViewModel(private val context: Context) : ViewModel() {
      */
     fun printReceiptUnified(receipt: ReceiptData, onResult: (Boolean, String) -> Unit) {
         viewModelScope.launch {
-            val result = ThermalPrinterManager.printReceipt(context, receipt, _storeProfile.value)
+            val defaultTmpl = defaultReceiptTemplate.value
+            val result = if (defaultTmpl != null) {
+                ThermalPrinterManager.printCustomReceipt(context, receipt, _storeProfile.value, defaultTmpl)
+            } else {
+                ThermalPrinterManager.printReceipt(context, receipt, _storeProfile.value)
+            }
+            onResult(result.first, result.second)
+        }
+    }
+
+    /**
+     * Print receipt using a specific custom layout template (Slots 1 to 5)
+     */
+    fun printCustomReceiptUnified(receipt: ReceiptData, template: ReceiptTemplateEntity, onResult: (Boolean, String) -> Unit) {
+        viewModelScope.launch {
+            val result = ThermalPrinterManager.printCustomReceipt(context, receipt, _storeProfile.value, template)
             onResult(result.first, result.second)
         }
     }

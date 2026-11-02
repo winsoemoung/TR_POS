@@ -506,4 +506,29 @@ object BluetoothPrinterHelper {
             try { socket?.close() } catch (_: Exception) {}
         }
     }
+
+    /**
+     * Print raw ESC/POS bytes over Bluetooth.
+     */
+    @SuppressLint("MissingPermission")
+    suspend fun printRawBytes(
+        device: BluetoothDevice,
+        bytes: ByteArray,
+    ): Pair<Boolean, String> = withContext(Dispatchers.IO) {
+        var socket: BluetoothSocket? = null
+        var outputStream: OutputStream? = null
+        try {
+            socket = connectWithRetry(device)
+            outputStream = socket.outputStream
+            outputStream.write(bytes)
+            outputStream.flush()
+            val devName = try { device.name ?: "Bluetooth Printer" } catch (_: SecurityException) { "Bluetooth Printer" }
+            Pair(true, "ဘေလ်ပြေစာကို $devName သို့ အောင်မြင်စွာ ပရင့်ထုတ်ပြီးပါပြီ")
+        } catch (e: Exception) {
+            Pair(false, "Bluetooth Printer ချိတ်ဆက်မှု မအောင်မြင်ပါ: ${e.message}")
+        } finally {
+            try { outputStream?.close() } catch (_: Exception) {}
+            try { socket?.close() } catch (_: Exception) {}
+        }
+    }
 }

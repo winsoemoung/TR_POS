@@ -168,6 +168,21 @@ class AiPosEngine(private val context: Context) {
             - Top Debtors:
             $debtorSummary
 
+            Suppliers & Purchasing:
+            - Registered Suppliers: ${dbContext.suppliers.size} (Names: ${dbContext.suppliers.take(4).joinToString { it.name }})
+            - Total Purchases Recorded: ${dbContext.purchases.size} (${"%,d".format(dbContext.purchases.sumOf { it.totalCostMinor })} Ks)
+
+            Returns & Damaged Stock:
+            - Recorded Damage/Returns: ${dbContext.returnTransactions.size} (${"%,d".format(dbContext.returnTransactions.sumOf { it.returnedAmountMinor })} Ks)
+
+            Bi-Monthly Business Insights (1st & 15th):
+            - Period: ${dbContext.biMonthlyReport?.reportPeriod ?: "၁ ရက် ~ ၁၅ ရက်"}
+            - Top Selling Items: ${dbContext.biMonthlyReport?.topSellingItems?.take(3)?.joinToString { "${it.productName} (${it.quantitySold} sold)" } ?: "N/A"}
+            - Restock Urgencies: ${dbContext.biMonthlyReport?.restockRecommendations?.take(3)?.joinToString { "${it.productName} (order +${it.suggestedOrderQty})" } ?: "None"}
+
+            Annual 12-Month Seasonal Demand:
+            - Peak Categories: Cement/Steel in Dry season (Nov-Jan), Roofing/Sealant in Pre-monsoon (Apr-May), Paint in Festival season (Sep-Oct).
+
             Active Promo Codes: $promoSummary
 
             Sample Product Catalog:
@@ -413,6 +428,71 @@ class AiPosEngine(private val context: Context) {
         val sales = dbContext.sales
         val storeProfile = dbContext.storeProfile
         val lower = prompt.lowercase()
+
+        // BI-1. 1st and 15th of month Business Intelligence report
+        if (lower.contains("၁ ရက်") || lower.contains("၁၅ ရက်") || lower.contains("bi") || lower.contains("စီးပွားရေး သုံးသပ်") || lower.contains("သုံးသပ်ချက် အစီရင်ခံစာ") || lower.contains("insights")) {
+            val report = dbContext.biMonthlyReport ?: BusinessIntelligenceEngine.generateBiMonthlyReport(
+                products = products,
+                sales = sales,
+                saleItems = dbContext.saleItems,
+                purchases = dbContext.purchases,
+                returns = dbContext.returnTransactions,
+                suppliers = dbContext.suppliers
+            )
+            val markdown = BusinessIntelligenceEngine.formatBiMonthlyReportToMarkdown(report)
+            return Pair(markdown, null)
+        }
+
+        // BI-2. 12-Month Annual Seasonal Prediction & Stocking Volumes
+        if (lower.contains("၁၂ လ") || lower.contains("ရာသီ") || lower.contains("seasonal") || lower.contains("လှောင်") || lower.contains("ဝယ်ယူလှောင်") || lower.contains("annual") || lower.contains("တစ်နှစ်တာ")) {
+            val predictions = dbContext.seasonalPredictions ?: BusinessIntelligenceEngine.generate12MonthSeasonalPredictions(products)
+            val markdown = BusinessIntelligenceEngine.format12MonthPredictionToMarkdown(predictions)
+            return Pair(markdown, null)
+        }
+
+        // BI-3. Suppliers & Purchasing Details
+        if (lower.contains("ကုန်သွင်း") || lower.contains("supplier") || (lower.contains("ပစ္စည်း") && lower.contains("ဝယ်ယူမှု"))) {
+            val sups = dbContext.suppliers
+            val purch = dbContext.purchases
+            val totalPurchCost = purch.sumOf { it.totalCostMinor }
+            val supStr = if (sups.isNotEmpty()) {
+                sups.joinToString("\n") { s ->
+                    "• **${s.name}** (${s.shopName.ifBlank { "ဆိုင်ခွဲ" }}) - ဖုန်း: ${s.phone.ifBlank { "မရှိ" }} | လိပ်စာ: ${s.address.ifBlank { "-" }}"
+                }
+            } else "လက်ရှိ မှတ်ပုံတင်ထားသော ကုန်သွင်းသူ မရှိသေးပါ"
+
+            return Pair(
+                """
+                🏢 **787 POS ကုန်သွင်းသူများနှင့် ဝယ်ယူမှု အကျဉ်းချုပ် (Suppliers & Purchasing):**
+                • စုစုပေါင်း ကုန်သွင်းသူ: ${sups.size} ဦး/ဆိုင်
+                • စုစုပေါင်း ကုန်ပစ္စည်းဝယ်ယူဖြည့်တင်းမှု: ${purch.size} ကြိမ် (ကျသင့်ငွေ: ${"%,d".format(totalPurchCost)} Ks)
+                
+                📋 **ကုန်သွင်းသူများ စာရင်း:**
+                $supStr
+                
+                💡 'ကုန်သွင်းသူများ (Suppliers)' ခလုတ်တွင် ကုန်သွင်းသူ အသစ်ထည့်ခြင်းနှင့် ဝယ်ယူမှုမှတ်တမ်းများကို အသေးစိတ် ကြည့်ရှုနိုင်ပါသည်။
+                """.trimIndent(),
+                null
+            )
+        }
+
+        // BI-4. Damaged Items & Returns
+        if (lower.contains("ပျက်စီး") || lower.contains("ပြန်သွင်း") || lower.contains("damage") || lower.contains("error return")) {
+            val rets = dbContext.returnTransactions
+            val damages = rets.filter { it.reason?.contains("ပျက်စီး", ignoreCase = true) == true }
+            val refunds = rets.filter { it.reason?.contains("ပျက်စီး", ignoreCase = true) != true }
+            return Pair(
+                """
+                📉 **787 POS ပျက်စီးဆုံးရှုံးမှုနှင့် ပြန်သွင်းပစ္စည်းများ စာရင်း (Damages & Returns):**
+                • ပျက်စီးဆုံးရှုံးမှု မှတ်တမ်း: ${damages.size} ကြိမ် (တန်ဖိုး: ${"%,d".format(damages.sumOf { it.returnedAmountMinor })} Ks)
+                • Customer ပစ္စည်းပြန်သွင်း/ပြန်အမ်း: ${refunds.size} ကြိမ် (ငွေပမာဏ: ${"%,d".format(refunds.sumOf { it.returnedAmountMinor })} Ks)
+                • စုစုပေါင်း အကျိုးသက်ရောက်မှု: ${"%,d".format(rets.sumOf { it.returnedAmountMinor })} Ks
+                
+                💡 ပျက်စီးဆုံးရှုံးမှု အများဆုံး ပစ္စည်းများကို သိုလှောင်ရုံ စစ်ဆေးမှုပြုလုပ်၍ ထိခိုက်မှုနည်းပါးစေရန် စီမံခန့်ခွဲသင့်ပါသည်။
+                """.trimIndent(),
+                null
+            )
+        }
 
         // 1. Promo Code Addition (e.g. "promo code ထည့်", "ကူပွန် code ထည့်", "code 787VIP ၁၀% ထည့်")
         if (lower.contains("promo") || lower.contains("ကူပွန်") || (lower.contains("code") && lower.contains("လျှော့")) || (lower.contains("ကုဒ်") && lower.contains("လျှော့"))) {

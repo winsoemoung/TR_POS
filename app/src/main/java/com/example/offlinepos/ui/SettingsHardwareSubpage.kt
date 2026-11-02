@@ -70,6 +70,7 @@ fun SettingsHardwareSubpage(
     val scrollState = rememberScrollState()
 
     var showPrinterModal by remember { mutableStateOf(false) }
+    var showTemplateBuilderModal by remember { mutableStateOf(false) }
     var autoPrintReceipt by remember { mutableStateOf(ThermalPrinterManager.isAutoPrintEnabled(context)) }
     var selectedPaperWidth by remember { mutableStateOf(ThermalPrinterManager.getPaperWidth(context)) }
     var isTestingPrint by remember { mutableStateOf(false) }
@@ -394,6 +395,56 @@ fun SettingsHardwareSubpage(
             }
         }
 
+        // ── Custom Receipt Templates Section ─────────────────────────────
+        Card(
+            shape = RoundedCornerShape(14.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("📐 စိတ်ကြိုက် ပြေစာဒီဇိုင်း ၅ မျိုး (Receipt Templates)", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                }
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "ESC/POS Thermal Printer အတွက် Header, Excel ကဲ့သို့ Grid Table ဇယား နှင့် Footer ကို စိတ်ကြိုက် ပြင်ဆင်သိမ်းဆည်းနိုင်သော Template Slot ၅ ခု ထောက်ပံ့ထားပါသည်",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+
+                val defaultTmpl by viewModel.defaultReceiptTemplate.collectAsState()
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(10.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text("လက်ရှိ သုံးနေသော ပုံစံ:", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(
+                                text = defaultTmpl?.name ?: "Template 1 (ပုံမှန်)",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                        Button(
+                            onClick = { showTemplateBuilderModal = true },
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text("✏️ ဒီဇိုင်းပြင်မည်", fontSize = 12.sp)
+                        }
+                    }
+                }
+            }
+        }
+
         Spacer(modifier = Modifier.height(48.dp))
     }
 
@@ -404,6 +455,13 @@ fun SettingsHardwareSubpage(
                 showPrinterModal = false
                 refreshBluetoothPrinters()
             }
+        )
+    }
+
+    if (showTemplateBuilderModal) {
+        ReceiptTemplateBuilderDialog(
+            viewModel = viewModel,
+            onDismiss = { showTemplateBuilderModal = false }
         )
     }
 }

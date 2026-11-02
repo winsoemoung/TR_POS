@@ -254,18 +254,19 @@ fun AiCopilotScreen(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // Dynamic Category / Suggestion Chips (Both Gemini General AI & POS Copilot)
+                // Dynamic Category / Suggestion Chips (Both Gemini General AI, BI Insights & POS Copilot)
                 val promptSuggestions = listOf(
-                    "✨ မေးချင်ရာမေးပါ",
+                    "📊 ၁ ရက် & ၁၅ ရက် သုံးသပ်ချက် (BI Report)",
+                    "📅 ၁၂ လ ရာသီအလိုက် ကြိုတင်လှောင်ရန် စတော့",
+                    "🏆 ရောင်းအကောင်းဆုံး ပစ္စည်းများ",
+                    "⚠️ ရောင်းမထွက် / Dead Stock",
+                    "📦 ပစ္စည်း ပြန်လည်မှာယူရန် (Restock)",
+                    "🏢 ကုန်သွင်းသူများ စာရင်း",
+                    "📉 ပျက်စီး/ပြန်သွင်း ပစ္စည်းများ",
                     "💡 အရောင်းတိုးမည့် နည်းလမ်းများ",
-                    "📝 ကြော်ငြာစာသား ရေးပေးပါ",
-                    "📊 အရောင်းရဆုံး ပစ္စည်းများ",
-                    "⚠️ လက်ကျန်နည်း ပစ္စည်းများ",
                     "💰 စုစုပေါင်း အရောင်းရငွေ",
-                    "📈 ဒီနေ့ အရောင်းစာရင်း",
                     "👥 အကြွေးကျန် Customer များ",
-                    "📦 စတော့လက်ကျန် စစ်ဆေးရန်",
-                    "🏷️ သံချောင်း ဈေးနှုန်း ပြင်ပါ",
+                    "✨ မေးချင်ရာမေးပါ",
                 )
 
                 LazyRow(
@@ -276,9 +277,15 @@ fun AiCopilotScreen(
                             selected = false,
                             onClick = { 
                                 val actualPrompt = when (prompt) {
+                                    "📊 ၁ ရက် & ၁၅ ရက် သုံးသပ်ချက် (BI Report)" -> "၁ ရက် နှင့် ၁၅ ရက် စီးပွားရေး သုံးသပ်ချက် အစီရင်ခံစာ (BI Report) ထုတ်ပေးပါ။ ရောင်းအကောင်းဆုံး၊ ရောင်းမထွက်သော စတော့နှင့် ပြန်လည်မှာယူရမည့် စာရင်းများကို တွက်ချက်ပြပေးပါ။"
+                                    "📅 ၁၂ လ ရာသီအလိုက် ကြိုတင်လှောင်ရန် စတော့" -> "၁၂ လ ရာသီအလိုက် ရောင်းအားနှင့် ကြိုတင်လှောင်ထားသင့်သည့် စတော့ပမာဏ (Annual Demand & Purchase Volume Forecast) ကို လအလိုက် အသေးစိတ် ရှင်းပြပေးပါ။"
+                                    "🏆 ရောင်းအကောင်းဆုံး ပစ္စည်းများ" -> "ဆိုင်တွင် ရောင်းအကောင်းဆုံး ပစ္စည်းများနှင့် ရရှိသောအမြတ်ငွေများကို တွက်ချက်ပြပေးပါ။"
+                                    "⚠️ ရောင်းမထွက် / Dead Stock" -> "ဆိုင်တွင် အရောင်းထိုင်းနေသော သို့မဟုတ် ရောင်းမထွက်ဘဲ စတော့မိနေသော Dead Stock ပစ္စည်းများကို ဖော်ထုတ်ပေးပြီး ငွေဖော်နည်း အကြံပေးပါ။"
+                                    "📦 ပစ္စည်း ပြန်လည်မှာယူရန် (Restock)" -> "စတော့လက်ကျန် နည်းနေသော ပစ္စည်းများကို မည်သည့် ပမာဏ ပြန်လည်မှာယူသင့်သည်နှင့် ကုန်သွင်းသူများကို အကြံပေးပါ။"
+                                    "🏢 ကုန်သွင်းသူများ စာရင်း" -> "ကျွန်ုပ် ဆိုင်သို့ ကုန်ပစ္စည်းပေးသွင်းသော ကုန်သွင်းသူများ (Suppliers) စာရင်းနှင့် ဝယ်ယူမှုများကို ဖော်ပြပေးပါ။"
+                                    "📉 ပျက်စီး/ပြန်သွင်း ပစ္စည်းများ" -> "ပျက်စီးဆုံးရှုံးမှုများနှင့် Customer ပစ္စည်းပြန်သွင်း/ပြန်အမ်းငွေ မှတ်တမ်းများကို သုံးသပ်ပြပေးပါ။"
                                     "✨ မေးချင်ရာမေးပါ" -> "မင်္ဂလာပါ Gemini! မင်း ဘာတွေ လုပ်ပေးနိုင်သလဲ ရှင်းပြပေးပါ။"
                                     "💡 အရောင်းတိုးမည့် နည်းလမ်းများ" -> "ကျွန်တော့်ဆိုင် အရောင်းတိုးစေဖို့ လက်တွေ့ကျတဲ့ စီးပွားရေးနဲ့ ဈေးရောင်း နည်းလမ်းကောင်းတွေ အကြံပေးပါ။"
-                                    "📝 ကြော်ငြာစာသား ရေးပေးပါ" -> "ဆိုင်ရဲ့ ပစ္စည်းအသစ်တွေ လူသိများစေဖို့ Facebook မှာ တင်မယ့် ဆွဲဆောင်မှုရှိတဲ့ ကြော်ငြာစာသား ရေးပေးပါ။"
                                     else -> prompt
                                 }
                                 viewModel.sendAiCommand(actualPrompt) 
@@ -286,6 +293,45 @@ fun AiCopilotScreen(
                             label = { Text(prompt, fontSize = 12.sp) },
                             modifier = Modifier.testTag("category_chip_$prompt"),
                         )
+                    }
+                }
+            }
+
+            // Automated 1st & 15th BI Insights Banner
+            Surface(
+                shape = RoundedCornerShape(10.dp),
+                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 4.dp)
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "📊 ၁ ရက် & ၁၅ ရက် စီးပွားရေးဆန်းစစ်ချက် (BI Insights)",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                        Text(
+                            text = "ရောင်းအားအကောင်းဆုံး၊ Dead Stock နှင့် ၁၂ လ ရာသီအလိုက် လှောင်ရမည့် စာရင်း အဆင်သင့်ရှိပါသည်",
+                            fontSize = 10.sp,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                        )
+                    }
+                    Button(
+                        onClick = {
+                            viewModel.sendAiCommand("၁ ရက် နှင့် ၁၅ ရက် စီးပွားရေး သုံးသပ်ချက် အစီရင်ခံစာ (BI Report) ထုတ်ပေးပါ။")
+                        },
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                        modifier = Modifier.height(30.dp)
+                    ) {
+                        Text("ထုတ်ယူမည်", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     }
                 }
             }

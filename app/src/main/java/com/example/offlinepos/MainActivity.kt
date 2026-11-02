@@ -12,6 +12,7 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import com.example.offlinepos.Sync.WeeklyRecommendationWorker
 import com.example.offlinepos.Sync.GoogleDriveSyncWorker
+import com.example.offlinepos.Sync.BiMonthlyAiReportWorker
 import java.util.concurrent.TimeUnit
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Box
@@ -105,6 +106,7 @@ class MainActivity : ComponentActivity() {
                     .setConstraints(GoogleDriveSyncWorker.constraints())
                     .build(),
             )
+            BiMonthlyAiReportWorker.schedule(applicationContext)
         }.onFailure { err ->
             android.util.Log.w("MainActivity", "WorkManager initialization/scheduling bypassed", err)
         }
@@ -112,11 +114,14 @@ class MainActivity : ComponentActivity() {
         setContent {
             val themeMode by viewModel.themeMode.collectAsState()
             val isDark = when (themeMode) {
-                com.example.offlinepos.ui.StoreConfig.ThemeMode.DARK -> true
-                com.example.offlinepos.ui.StoreConfig.ThemeMode.LIGHT -> false
+                com.example.offlinepos.ui.StoreConfig.ThemeMode.MATERIAL_DARK,
+                com.example.offlinepos.ui.StoreConfig.ThemeMode.IOS_DARK -> true
+                com.example.offlinepos.ui.StoreConfig.ThemeMode.MATERIAL_LIGHT,
+                com.example.offlinepos.ui.StoreConfig.ThemeMode.IOS_LIGHT -> false
                 com.example.offlinepos.ui.StoreConfig.ThemeMode.SYSTEM -> androidx.compose.foundation.isSystemInDarkTheme()
             }
-            OfflinePOSTheme(darkTheme = isDark) {
+            val isCupertino = themeMode.isCupertino
+            OfflinePOSTheme(darkTheme = isDark, isCupertino = isCupertino) {
                 MainApp(viewModel = viewModel)
             }
         }

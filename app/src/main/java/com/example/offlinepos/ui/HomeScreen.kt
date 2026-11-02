@@ -1,7 +1,9 @@
 package com.example.offlinepos.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -129,6 +131,7 @@ fun HomeScreen(
     val totals by viewModel.totals.collectAsState()
     val customers by viewModel.customers.collectAsState()
     val purchases by viewModel.purchases.collectAsState()
+    val storeProfile by viewModel.storeProfile.collectAsState()
 
     // Dialog state variables
     var showVoucherRegister by remember { mutableStateOf(false) }
@@ -164,16 +167,43 @@ fun HomeScreen(
             .background(ScreenBg)
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
-            // 1. Top App Bar (☰ AIMS POS  💡 ? 👤)
+            // 1. Top App Bar (☰ Store Name & Logo  💡 ? 👤)
             TopAppBar(
                 title = {
-                    Text(
-                        text = "TR-POS",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 20.sp,
-                        color = TextDark,
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.testTag("app_title")
-                    )
+                    ) {
+                        StoreLogoAvatar(
+                            customLogoPath = storeProfile.customLogoPath,
+                            contentDescription = "Store Logo",
+                            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                            modifier = Modifier
+                                .size(34.dp)
+                                .clip(androidx.compose.foundation.shape.CircleShape)
+                                .border(1.dp, MaterialTheme.colorScheme.primary, androidx.compose.foundation.shape.CircleShape)
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column {
+                            Text(
+                                text = storeProfile.storeName.ifBlank { "TR-POS" },
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 16.sp,
+                                color = TextDark,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            if (storeProfile.phone.isNotBlank()) {
+                                Text(
+                                    text = storeProfile.phone,
+                                    fontSize = 10.sp,
+                                    color = TextMuted,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                    }
                 },
                 navigationIcon = {
                     IconButton(
@@ -716,9 +746,12 @@ fun HomeScreen(
 
     // Suppliers Dialog
     if (showSuppliersDialog) {
-        SuppliersManagerDialog(
-            purchases = purchases,
-            onDismiss = { showSuppliersDialog = false }
+        SuppliersManagementDialog(
+            viewModel = viewModel,
+            onDismiss = { showSuppliersDialog = false },
+            onNavigateToStockInForSupplier = {
+                showStockInDialog = true
+            }
         )
     }
 
