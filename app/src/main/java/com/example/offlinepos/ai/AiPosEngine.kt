@@ -193,7 +193,7 @@ class AiPosEngine(private val context: Context) {
             - When the user asks you to perform an actionable store change (e.g., add new product, update price, modify SKU/barcode, adjust stock, set tax rate, add promo code, replace category, or run a database script), write a clear explanation in Myanmar AND append a JSON action block enclosed in ```json and ``` at the end:
             ```json
             {
-              "action": "ADD_PRODUCT" | "REPLACE_PRODUCT_CODE" | "UPDATE_SKU" | "UPDATE_BARCODE" | "BATCH_REPLACE_PREFIX" | "UPDATE_PRICE" | "ADJUST_STOCK" | "SET_TAX_RATE" | "ADD_PROMO_CODE" | "REPLACE_PROMO_CODE" | "EXECUTE_DYNAMIC_CODE" | "UPDATE_STORE_PROFILE" | "BATCH_REPLACE_CATEGORY",
+              "action": "ADD_PRODUCT" | "REPLACE_PRODUCT_CODE" | "UPDATE_SKU" | "UPDATE_BARCODE" | "BATCH_REPLACE_PREFIX" | "UPDATE_PRICE" | "BATCH_ADJUST_PRICE_PERCENT" | "ADJUST_STOCK" | "SET_TAX_RATE" | "ADD_PROMO_CODE" | "REPLACE_PROMO_CODE" | "EXECUTE_DYNAMIC_CODE" | "UPDATE_STORE_PROFILE" | "BATCH_REPLACE_CATEGORY",
               "summary": "Short summary of the action in Burmese",
               "data": {
                 // For ADD_PRODUCT: "name": "...", "sku": "...", "barcode": "...", "category": "...", "sellPrice": 15000, "costPrice": 12000, "stock": 50
@@ -202,6 +202,7 @@ class AiPosEngine(private val context: Context) {
                 // For UPDATE_BARCODE: "productId": 123, "productName": "...", "newBarcode": "..."
                 // For BATCH_REPLACE_PREFIX: "oldPrefix": "...", "newPrefix": "787-"
                 // For UPDATE_PRICE: "productId": 123, "productName": "...", "newPrice": 16000
+                // For BATCH_ADJUST_PRICE_PERCENT: "categoryOrKeyword": "pvc", "percentIncrease": 5.0
                 // For ADJUST_STOCK: "productId": 123, "productName": "...", "adjustment": 20
                 // For SET_TAX_RATE: "taxRate": 7.0
                 // For ADD_PROMO_CODE: "code": "787VIP", "discountPercent": 10.0, "description": "..."
@@ -347,6 +348,25 @@ class AiPosEngine(private val context: Context) {
                             )
                         } else null
                     }
+                    "BATCH_ADJUST_PRICE_PERCENT" -> {
+                        val keyword = data.optString("categoryOrKeyword", data.optString("keyword", "pvc")).trim()
+                        val percent = data.optDouble("percentIncrease", 5.0)
+                        val matched = products.filter { p ->
+                            keyword.isBlank() || keyword.equals("all", ignoreCase = true) || keyword.equals("အားလုံး", ignoreCase = true) ||
+                            p.name.contains(keyword, ignoreCase = true) || p.category.contains(keyword, ignoreCase = true)
+                        }
+                        val samples = matched.take(5).map { p ->
+                            val newP = (p.sellPriceMinor * (1.0 + percent / 100.0)).toLong()
+                            "• ${p.name}: %,d Ks ➔ %,d Ks (+%.1f%%)".format(p.sellPriceMinor, newP, percent)
+                        }
+                        AiActionType.BatchAdjustPriceByPercent(
+                            targetKeywordOrCategory = keyword.ifBlank { "ပစ္စည်းများ" },
+                            percentIncrease = percent,
+                            matchedProductCount = matched.size,
+                            affectedProductIds = matched.map { it.productId },
+                            sampleAdjustments = samples,
+                        )
+                    }
                     "ADJUST_STOCK" -> {
                         val pId = data.optLong("productId", 0L)
                         val pName = data.optString("productName", "")
@@ -420,7 +440,7 @@ class AiPosEngine(private val context: Context) {
         return Pair(fullText, null)
     }
 
-    private fun processOfflineNlpCommand(
+    internal fun processOfflineNlpCommand(
         prompt: String,
         dbContext: PosDatabaseContext,
     ): Pair<String, AiAction?> {
@@ -492,6 +512,82 @@ class AiPosEngine(private val context: Context) {
                 """.trimIndent(),
                 null
             )
+        }
+
+        // BBB. Batch Price Percent Increase (e.g. "pvc များအားလုံး 5% စျေးပေါင်းထည့်ရန်", "pvc 5% စျေးတက်ပါ", "ဘိလပ်မြေ 10% စျေးတိုးမည်")
+        val percentRegex = "([0-9]+(?:\\.[0-9]+)?)\\s*(?:%|ရာခိုင်နှုန်း|percent)".toRegex()
+        val percentMatch = percentRegex.find(prompt)
+        val isPriceIncreaseIntent = (lower.contains("စျေးပေါင်း") || lower.contains("ဈေးပေါင်း") ||
+                lower.contains("စျေးတက်") || lower.contains("ဈေးတက်") ||
+                lower.contains("စျေးတိုး") || lower.contains("ဈေးတိုး") ||
+                lower.contains("စျေးတင်") || lower.contains("ဈေးတင်") ||
+                lower.contains("စျေးနှုန်း တိုး") || lower.contains("ဈေးနှုန်း တိုး") ||
+                lower.contains("price increase") || lower.contains("add price") ||
+                (lower.contains("စျေး") && lower.contains("ပေါင်း")) ||
+                (lower.contains("ဈေး") && lower.contains("ပေါင်း")))
+
+        if (percentMatch != null && isPriceIncreaseIntent) {
+            val percentIncrease = percentMatch.groupValues[1].toDoubleOrNull() ?: 5.0
+
+            val possibleKeywords = listOf(
+                "pvc", "ပိုက်", "ဘိလပ်မြေ", "သွပ်ပြား", "သံချောင်း", "ဆေးသုတ်", "သံမှို", "ကွန်ကရစ်မှို", "အိမ်သုတ်ဆေး",
+                "မိုးကာစ", "သံကြိုး", "သံပိုက်", "ရေပိုက်", "ဘိလပ်မြေဖြူ"
+            )
+            var targetKeyword = possibleKeywords.firstOrNull { lower.contains(it) } ?: ""
+
+            if (targetKeyword.isBlank()) {
+                val catMatch = dbContext.categories.firstOrNull { lower.contains(it.lowercase()) }
+                if (catMatch != null) {
+                    targetKeyword = catMatch
+                } else {
+                    val wordBeforeMyar = "([a-zA-Z0-9က-အ]+)\\s*(?:များ|အားလုံး)".toRegex().find(prompt)
+                    targetKeyword = wordBeforeMyar?.groupValues?.get(1)?.trim() ?: "အားလုံး"
+                }
+            }
+
+            val matchedProducts = products.filter { p ->
+                targetKeyword.isBlank() || targetKeyword == "အားလုံး" || targetKeyword.equals("all", ignoreCase = true) ||
+                p.name.contains(targetKeyword, ignoreCase = true) || p.category.contains(targetKeyword, ignoreCase = true)
+            }
+
+            if (matchedProducts.isNotEmpty()) {
+                val samples = matchedProducts.take(5).map { p ->
+                    val newPrice = kotlin.math.round((p.sellPriceMinor * (1.0 + percentIncrease / 100.0))).toLong()
+                    "• ${p.name}: %,d Ks ➔ %,d Ks (+%.1f%%)".format(p.sellPriceMinor, newPrice, percentIncrease)
+                }
+
+                val action = AiAction(
+                    id = UUID.randomUUID().toString(),
+                    summary = "'$targetKeyword' ပစ္စည်း ${matchedProducts.size} မျိုးအား +${percentIncrease}% စျေးနှုန်း ပေါင်းထည့်ပြင်ဆင်ခြင်း",
+                    type = AiActionType.BatchAdjustPriceByPercent(
+                        targetKeywordOrCategory = targetKeyword,
+                        percentIncrease = percentIncrease,
+                        matchedProductCount = matchedProducts.size,
+                        affectedProductIds = matchedProducts.map { it.productId },
+                        sampleAdjustments = samples,
+                    ),
+                    privilegeLevel = "AI_SUPERUSER",
+                )
+
+                val responseMessage = buildString {
+                    appendLine("📈 **AI စနစ်မှ '$targetKeyword' နှင့် သက်ဆိုင်သော ကုန်ပစ္စည်း ${matchedProducts.size} မျိုးအတွက် +${percentIncrease}% စျေးနှုန်း ပေါင်းထည့်ပြင်ဆင်ပေးရန် အတည်ပြုချက် ထုတ်ပေးထားပါသည်:**")
+                    appendLine()
+                    appendLine("🔍 **စျေးနှုန်း ပြင်ဆင်မည့် နမူနာများ:**")
+                    samples.forEach { appendLine(it) }
+                    if (matchedProducts.size > 5) {
+                        appendLine("• နှင့် အခြား သက်ဆိုင်ရာပစ္စည်း ${matchedProducts.size - 5} မျိုး...")
+                    }
+                    appendLine()
+                    appendLine("💡 အောက်ပါ **'အမိန့်ကို လုပ်ဆောင်မည်'** ခလုတ်ကို နှိပ်လိုက်ပါက စနစ်အတွင်းရှိ အဆိုပါ ပစ္စည်းများ အားလုံး၏ မူရင်းရောင်းစျေးပေါ်တွင် နောက်ထပ် ${percentIncrease}% အလိုအလျောက် ပေါင်းထည့်ပေးမည် ဖြစ်ပါသည်။")
+                }
+
+                return Pair(responseMessage.trim(), action)
+            } else {
+                return Pair(
+                    "တောင်းပန်ပါသည်၊ စနစ်အတွင်း '$targetKeyword' နှင့် ကိုက်ညီသော ကုန်ပစ္စည်း ရှာမတွေ့ပါ။ ပစ္စည်းအမည် သို့မဟုတ် အမျိုးအစား မှန်ကန်မှု ရှိမရှိ စစ်ဆေးပေးပါ (ဥပမာ- pvc, ဘိလပ်မြေ, သံချောင်း)။",
+                    null
+                )
+            }
         }
 
         // 1. Promo Code Addition (e.g. "promo code ထည့်", "ကူပွန် code ထည့်", "code 787VIP ၁၀% ထည့်")

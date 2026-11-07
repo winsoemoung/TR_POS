@@ -4,6 +4,7 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -47,6 +48,8 @@ import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Sell
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -499,6 +502,7 @@ fun InventoryScreen(
     if (showAddDialog) {
         AddProductDialog(
             categories = categories,
+            existingProducts = products,
             onSaveImage = { uri -> viewModel.saveImageFromGalleryUri(uri) },
             onDismiss = { showAddDialog = false },
             onAdd = { draft, sku ->
@@ -728,6 +732,7 @@ fun AimsProductGridCard(
 @Composable
 private fun AddProductDialog(
     categories: List<String>,
+    existingProducts: List<ProductEntity>,
     onSaveImage: (Uri) -> String?,
     onDismiss: () -> Unit,
     onAdd: (draft: ProductDraft, sku: String) -> Unit,
@@ -750,6 +755,22 @@ private fun AddProductDialog(
     var wholesaleMinQty by remember { mutableStateOf("1") }
     var pickedImageUri by remember { mutableStateOf<String?>(null) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    var showDuplicateWarningDialog by remember { mutableStateOf(false) }
+    var pendingSubmission by remember { mutableStateOf<Pair<ProductDraft, String>?>(null) }
+
+    val trimmedName = name.trim()
+    val duplicateByName = remember(trimmedName, existingProducts) {
+        if (trimmedName.isNotBlank()) {
+            existingProducts.firstOrNull { it.isActive && it.name.trim().equals(trimmedName, ignoreCase = true) }
+        } else null
+    }
+
+    val trimmedSku = sku.trim()
+    val duplicateBySku = remember(trimmedSku, existingProducts) {
+        if (trimmedSku.isNotBlank()) {
+            existingProducts.firstOrNull { it.isActive && it.sku.trim().equals(trimmedSku, ignoreCase = true) }
+        } else null
+    }
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
@@ -876,6 +897,35 @@ private fun AddProductDialog(
                     modifier = Modifier.fillMaxWidth().testTag("product_name_input"),
                 )
 
+                if (duplicateByName != null) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = Color(0xFFFEF3C7),
+                        border = BorderStroke(1.dp, Color(0xFFF59E0B)),
+                        modifier = Modifier.fillMaxWidth().testTag("duplicate_name_warning")
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                Icons.Default.Warning,
+                                contentDescription = "Warning",
+                                tint = Color(0xFFD97706),
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "⚠️ သတိပေးချက်: ဤကုန်ပစ္စည်းအမည် '${duplicateByName.name}' သည် စာရင်းထဲတွင် ရှိပြီးသားဖြစ်နေပါသည် (SKU: ${duplicateByName.sku}, စျေး: %,d Ks, လက်ကျန်: ${duplicateByName.stockQuantity} ခု)။".format(duplicateByName.sellPriceMinor),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color(0xFF92400E),
+                                fontSize = 11.5.sp
+                            )
+                        }
+                    }
+                }
+
                 Spacer(modifier = Modifier.height(8.dp))
 
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -894,6 +944,35 @@ private fun AddProductDialog(
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         modifier = Modifier.weight(1f).testTag("product_barcode_input"),
                     )
+                }
+
+                if (duplicateBySku != null) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = Color(0xFFFEF3C7),
+                        border = BorderStroke(1.dp, Color(0xFFF59E0B)),
+                        modifier = Modifier.fillMaxWidth().testTag("duplicate_sku_warning")
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                Icons.Default.Warning,
+                                contentDescription = "Warning",
+                                tint = Color(0xFFD97706),
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "⚠️ သတိပေးချက်: ဤ SKU/ကုဒ် '${duplicateBySku.sku}' သည် '${duplicateBySku.name}' တွင် အသုံးပြုထားပြီး ဖြစ်နေပါသည်!",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color(0xFF92400E),
+                                fontSize = 11.5.sp
+                            )
+                        }
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(8.dp))
@@ -1043,6 +1122,9 @@ private fun AddProductDialog(
                             val errors = draft.validate()
                             if (errors.isNotEmpty()) {
                                 errorMessage = errors.first()
+                            } else if (duplicateByName != null || duplicateBySku != null) {
+                                pendingSubmission = Pair(draft, sku.trim())
+                                showDuplicateWarningDialog = true
                             } else {
                                 onAdd(draft, sku.trim())
                             }
@@ -1054,5 +1136,115 @@ private fun AddProductDialog(
                 }
             }
         }
+    }
+
+    if (showDuplicateWarningDialog && pendingSubmission != null) {
+        AlertDialog(
+            onDismissRequest = {
+                showDuplicateWarningDialog = false
+                pendingSubmission = null
+            },
+            icon = {
+                Icon(
+                    Icons.Default.Warning,
+                    contentDescription = "Duplicate Warning",
+                    tint = Color(0xFFD97706),
+                    modifier = Modifier.size(32.dp)
+                )
+            },
+            title = {
+                Text(
+                    text = "⚠️ ထပ်တူညီမှု သတိပေးချက်",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 17.sp,
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(
+                        text = "ထည့်သွင်းမည့် အချက်အလက်များသည် စာရင်းဟောင်းရှိ ကုန်ပစ္စည်းနှင့် တူညီနေပါသည် -",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    duplicateByName?.let { dup ->
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = Color(0xFFFEF3C7),
+                            border = BorderStroke(1.dp, Color(0xFFF59E0B)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(8.dp)) {
+                                Text(
+                                    text = "• နာမည်တူ ပစ္စည်း: ${dup.name}",
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF92400E),
+                                    fontSize = 12.sp
+                                )
+                                Text(
+                                    text = "  SKU: ${dup.sku} | စျေး: %,d Ks | လက်ကျန်: ${dup.stockQuantity} ခု".format(dup.sellPriceMinor),
+                                    color = Color(0xFFB45309),
+                                    fontSize = 11.sp
+                                )
+                            }
+                        }
+                    }
+                    duplicateBySku?.let { dup ->
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = Color(0xFFFEF3C7),
+                            border = BorderStroke(1.dp, Color(0xFFF59E0B)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(8.dp)) {
+                                Text(
+                                    text = "• SKU တူ ပစ္စည်း: ${dup.sku}",
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF92400E),
+                                    fontSize = 12.sp
+                                )
+                                Text(
+                                    text = "  ပစ္စည်းအမည်: ${dup.name} | စျေး: %,d Ks".format(dup.sellPriceMinor),
+                                    color = Color(0xFFB45309),
+                                    fontSize = 11.sp
+                                )
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "အမည်တူ (သို့မဟုတ်) SKU တူ အတိုင်း ဆက်လက် သိမ်းဆည်းလိုပါသလား?",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val sub = pendingSubmission
+                        showDuplicateWarningDialog = false
+                        pendingSubmission = null
+                        if (sub != null) {
+                            onAdd(sub.first, sub.second)
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD97706)),
+                    modifier = Modifier.testTag("confirm_duplicate_add_button")
+                ) {
+                    Text("ဆက်လက်ထည့်မည်")
+                }
+            },
+            dismissButton = {
+                OutlinedButton(
+                    onClick = {
+                        showDuplicateWarningDialog = false
+                        pendingSubmission = null
+                    },
+                    modifier = Modifier.testTag("cancel_duplicate_add_button")
+                ) {
+                    Text("ပြန်လည်ပြင်ဆင်မည်")
+                }
+            }
+        )
     }
 }

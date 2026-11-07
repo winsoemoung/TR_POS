@@ -815,6 +815,23 @@ class PosViewModel(private val context: Context) : ViewModel() {
                     is AiActionType.UpdatePrice -> {
                         db.productDao().updatePrice(type.productId, type.newSellPriceMinor, now)
                     }
+                    is AiActionType.BatchAdjustPriceByPercent -> {
+                        val active = activeProducts.value
+                        val keyword = type.targetKeywordOrCategory.trim()
+                        val matched = active.filter { p ->
+                            if (type.affectedProductIds.isNotEmpty()) {
+                                type.affectedProductIds.contains(p.productId)
+                            } else {
+                                keyword.isBlank() || keyword.equals("all", ignoreCase = true) || keyword.equals("အားလုံး", ignoreCase = true) ||
+                                p.name.contains(keyword, ignoreCase = true) || p.category.contains(keyword, ignoreCase = true)
+                            }
+                        }
+                        val multiplier = 1.0 + (type.percentIncrease / 100.0)
+                        matched.forEach { p ->
+                            val newSellPrice = kotlin.math.round(p.sellPriceMinor * multiplier).toLong()
+                            db.productDao().updatePrice(p.productId, newSellPrice, now)
+                        }
+                    }
                     is AiActionType.UpdateSku -> {
                         db.productDao().updateSku(type.productId, type.newSku, now)
                     }

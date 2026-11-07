@@ -102,6 +102,14 @@ sealed class AiActionType {
         val promoCode: String,
         val discountPercent: Double,
     ) : AiActionType()
+
+    data class BatchAdjustPriceByPercent(
+        val targetKeywordOrCategory: String,
+        val percentIncrease: Double,
+        val matchedProductCount: Int,
+        val affectedProductIds: List<Long> = emptyList(),
+        val sampleAdjustments: List<String> = emptyList(),
+    ) : AiActionType()
 }
 
 data class AiAction(

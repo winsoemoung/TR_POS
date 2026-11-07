@@ -256,6 +256,7 @@ fun AiCopilotScreen(
 
                 // Dynamic Category / Suggestion Chips (Both Gemini General AI, BI Insights & POS Copilot)
                 val promptSuggestions = listOf(
+                    "📈 PVC များ 5% စျေးပေါင်းထည့်ပါ",
                     "📊 ၁ ရက် & ၁၅ ရက် သုံးသပ်ချက် (BI Report)",
                     "📅 ၁၂ လ ရာသီအလိုက် ကြိုတင်လှောင်ရန် စတော့",
                     "🏆 ရောင်းအကောင်းဆုံး ပစ္စည်းများ",
@@ -277,6 +278,7 @@ fun AiCopilotScreen(
                             selected = false,
                             onClick = { 
                                 val actualPrompt = when (prompt) {
+                                    "📈 PVC များ 5% စျေးပေါင်းထည့်ပါ" -> "pvc များအားလုံး 5% စျေးပေါင်းထည့်ရန်"
                                     "📊 ၁ ရက် & ၁၅ ရက် သုံးသပ်ချက် (BI Report)" -> "၁ ရက် နှင့် ၁၅ ရက် စီးပွားရေး သုံးသပ်ချက် အစီရင်ခံစာ (BI Report) ထုတ်ပေးပါ။ ရောင်းအကောင်းဆုံး၊ ရောင်းမထွက်သော စတော့နှင့် ပြန်လည်မှာယူရမည့် စာရင်းများကို တွက်ချက်ပြပေးပါ။"
                                     "📅 ၁၂ လ ရာသီအလိုက် ကြိုတင်လှောင်ရန် စတော့" -> "၁၂ လ ရာသီအလိုက် ရောင်းအားနှင့် ကြိုတင်လှောင်ထားသင့်သည့် စတော့ပမာဏ (Annual Demand & Purchase Volume Forecast) ကို လအလိုက် အသေးစိတ် ရှင်းပြပေးပါ။"
                                     "🏆 ရောင်းအကောင်းဆုံး ပစ္စည်းများ" -> "ဆိုင်တွင် ရောင်းအကောင်းဆုံး ပစ္စည်းများနှင့် ရရှိသောအမြတ်ငွေများကို တွက်ချက်ပြပေးပါ။"
@@ -675,6 +677,15 @@ fun ChatMessageItem(
                         is AiActionType.BatchReplaceCategory -> {
                             Text(
                                 text = "• ကုန်ပစ္စည်းအမျိုးအစား အစားထိုးခြင်း: '${type.oldCategory}' ➔ '${type.newCategory}'",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        is AiActionType.BatchAdjustPriceByPercent -> {
+                            Text(
+                                text = "• ပစ်မှတ် ကုန်ပစ္စည်း/အမျိုးအစား: '${type.targetKeywordOrCategory}' (${type.matchedProductCount} မျိုး)\n" +
+                                       "• စျေးနှုန်း တိုးမြှင့်မည့်နှုန်း: +${type.percentIncrease}%\n" +
+                                       (if (type.sampleAdjustments.isNotEmpty()) "• စျေးနှုန်းနမူနာများ:\n  " + type.sampleAdjustments.joinToString("\n  ") else ""),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
