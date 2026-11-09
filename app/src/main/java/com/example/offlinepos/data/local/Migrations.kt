@@ -231,6 +231,21 @@ val MIGRATION_12_13 = object : Migration(12, 13) {
     }
 }
 
+val MIGRATION_13_14 = object : Migration(13, 14) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE `receipt_templates` ADD COLUMN `paperWidthDots` INTEGER NOT NULL DEFAULT 384")
+        db.execSQL("ALTER TABLE `receipt_templates` ADD COLUMN `itemLayoutStyle` TEXT NOT NULL DEFAULT 'STANDARD_2LINE'")
+        db.execSQL("ALTER TABLE `receipt_templates` ADD COLUMN `customStoreName` TEXT NOT NULL DEFAULT ''")
+        db.execSQL("ALTER TABLE `receipt_templates` ADD COLUMN `customSubtitle` TEXT NOT NULL DEFAULT ''")
+        db.execSQL("ALTER TABLE `receipt_templates` ADD COLUMN `customOwnerOrContact` TEXT NOT NULL DEFAULT ''")
+        db.execSQL("ALTER TABLE `receipt_templates` ADD COLUMN `customPhone` TEXT NOT NULL DEFAULT ''")
+        db.execSQL("ALTER TABLE `receipt_templates` ADD COLUMN `customAddress` TEXT NOT NULL DEFAULT ''")
+        db.execSQL("ALTER TABLE `receipt_templates` ADD COLUMN `customerLabel` TEXT NOT NULL DEFAULT 'ဈေးဝယ်သူ'")
+        db.execSQL("ALTER TABLE `receipt_templates` ADD COLUMN `extraNoticeText` TEXT NOT NULL DEFAULT ''")
+        db.execSQL("ALTER TABLE `receipt_templates` ADD COLUMN `showPrintTime` INTEGER NOT NULL DEFAULT 1")
+    }
+}
+
 val ALL_MIGRATIONS: Array<Migration> = arrayOf(
     MIGRATION_1_2,
     MIGRATION_2_3,
@@ -244,4 +259,6 @@ val ALL_MIGRATIONS: Array<Migration> = arrayOf(
     MIGRATION_10_11,
     MIGRATION_11_12,
     MIGRATION_12_13,
+    MIGRATION_13_14,
 )
+

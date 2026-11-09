@@ -5,10 +5,8 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
-import android.graphics.Rect
 import android.graphics.Typeface
 import com.example.offlinepos.data.local.ReceiptTemplateEntity
-import com.example.offlinepos.domain.CartTotals
 import com.example.offlinepos.ui.ReceiptData
 import com.example.offlinepos.ui.StoreProfile
 import java.io.ByteArrayOutputStream
@@ -28,13 +26,14 @@ object CustomReceiptEscPosGenerator {
         template: ReceiptTemplateEntity,
         receipt: ReceiptData,
         storeProfile: StoreProfile,
-        paperWidth: PaperWidth = PaperWidth.WIDTH_80MM,
+        paperWidth: PaperWidth = PaperWidth.WIDTH_58MM,
     ): ByteArray {
+        val widthDots = if (template.paperWidthDots > 0) template.paperWidthDots else paperWidth.dots
         val bitmap = renderReceiptBitmap(
             template = template,
             receipt = receipt,
             storeProfile = storeProfile,
-            targetWidthDots = paperWidth.dots
+            targetWidthDots = widthDots
         )
         return bitmapToEscPosRaster(bitmap)
     }
@@ -43,14 +42,15 @@ object CustomReceiptEscPosGenerator {
         template: ReceiptTemplateEntity,
         receipt: ReceiptData,
         profile: StoreProfile,
-        paperWidthDots: Int = 576,
+        paperWidthDots: Int = 384,
         kickDrawer: Boolean = false,
     ): ByteArray {
+        val widthDots = if (template.paperWidthDots > 0) template.paperWidthDots else paperWidthDots
         val bitmap = renderReceiptBitmap(
             template = template,
             receipt = receipt,
             storeProfile = profile,
-            targetWidthDots = paperWidthDots
+            targetWidthDots = widthDots
         )
         val raster = bitmapToEscPosRaster(bitmap)
         return if (kickDrawer) {
@@ -68,12 +68,14 @@ object CustomReceiptEscPosGenerator {
         template: ReceiptTemplateEntity,
         receipt: ReceiptData,
         storeProfile: StoreProfile,
-        targetWidthDots: Int = 576, // 576 dots for 80mm, 384 dots for 58mm
+        targetWidthDots: Int = 384, // 384 dots for standard 58mm, 576 dots for 80mm
     ): Bitmap {
-        val width = targetWidthDots
+        val width = if (template.paperWidthDots > 0) template.paperWidthDots else targetWidthDots
+        val is58mm = width <= 420
+
         // Pre-measure height
-        val estimatedLines = 25 + (receipt.items.size * 3)
-        val estimatedHeight = (estimatedLines * 30) + 300
+        val estimatedLines = 35 + (receipt.items.size * 3)
+        val estimatedHeight = (estimatedLines * (if (is58mm) 24 else 28)) + 350
         val tempBitmap = Bitmap.createBitmap(width, estimatedHeight, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(tempBitmap)
         canvas.drawColor(Color.WHITE)
@@ -90,32 +92,35 @@ object CustomReceiptEscPosGenerator {
 
         val linePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.BLACK
-            strokeWidth = 1.5f
+            strokeWidth = 1.4f
         }
 
-        var currentY = 24f
+        var currentY = if (is58mm) 20f else 24f
 
         fun drawDivider(style: String = template.gridLineStyle) {
             when (style.uppercase()) {
                 "DASHED" -> {
                     var x = 10f
-                    while (x < width - 10) {
-                        canvas.drawLine(x, currentY, x + 8f, currentY, linePaint)
-                        x += 14f
+                    val dashLen = if (is58mm) 5.5f else 7f
+                    val spaceLen = if (is58mm) 4f else 5f
+                    while (x < width - 10f) {
+                        canvas.drawLine(x, currentY, minOf(x + dashLen, width - 10f), currentY, linePaint)
+                        x += (dashLen + spaceLen)
                     }
-                    currentY += 12f
+                    currentY += if (is58mm) 12f else 14f
                 }
                 "SOLID" -> {
                     canvas.drawLine(10f, currentY, width - 10f, currentY, linePaint)
-                    currentY += 12f
+                    currentY += if (is58mm) 10f else 12f
                 }
                 "DOUBLE" -> {
                     canvas.drawLine(10f, currentY, width - 10f, currentY, linePaint)
-                    canvas.drawLine(10f, currentY + 4f, width - 10f, currentY + 4f, linePaint)
-                    currentY += 16f
+                    canvas.drawLine(10f, currentY + 3.5f, width - 10f, currentY + 3.5f, linePaint)
+                    currentY += if (is58mm) 13f else 15f
                 }
                 else -> {
-                    currentY += 8f
+                    // NONE: No row/column lines drawn at all
+                    currentY += if (is58mm) 4f else 6f
                 }
             }
         }
@@ -123,12 +128,15 @@ object CustomReceiptEscPosGenerator {
         // ==========================================
         // 1. HEADER SECTION
         // ==========================================
-        // Store Name
+        val storeNameText = template.customStoreName.ifBlank {
+            storeProfile.storeName.ifBlank { "ဆန်းသစ်" }
+        }
+
         val storeNameSize = when (template.storeNameFontSize.uppercase()) {
-            "XLARGE" -> 36f
-            "LARGE" -> 30f
-            "SMALL" -> 22f
-            else -> 26f
+            "XLARGE" -> if (is58mm) 28f else 36f
+            "LARGE" -> if (is58mm) 25f else 30f
+            "SMALL" -> if (is58mm) 19f else 22f
+            else -> if (is58mm) 22f else 26f
         }
         boldPaint.textSize = storeNameSize
         boldPaint.textAlign = when (template.storeNameAlign.uppercase()) {
@@ -137,255 +145,332 @@ object CustomReceiptEscPosGenerator {
             else -> Paint.Align.CENTER
         }
         val headerX = when (template.storeNameAlign.uppercase()) {
-            "LEFT" -> 16f
-            "RIGHT" -> width - 16f
+            "LEFT" -> 14f
+            "RIGHT" -> width - 14f
             else -> width / 2f
         }
-        canvas.drawText(storeProfile.storeName.ifBlank { "TR-POS" }, headerX, currentY, boldPaint)
+        canvas.drawText(storeNameText, headerX, currentY, boldPaint)
         currentY += storeNameSize + 6f
 
-        // Custom Header Note / Subtitle
-        if (template.showHeaderNote) {
-            val note = template.customHeaderNote.ifBlank { storeProfile.headerNote }
-            if (note.isNotBlank()) {
-                textPaint.textSize = 20f
-                textPaint.textAlign = Paint.Align.CENTER
-                canvas.drawText(note, width / 2f, currentY, textPaint)
-                currentY += 24f
-            }
-        }
-
-        // Address & Phone
-        textPaint.textSize = 19f
-        textPaint.textAlign = Paint.Align.CENTER
-        if (template.showAddress && storeProfile.address.isNotBlank()) {
-            canvas.drawText(storeProfile.address, width / 2f, currentY, textPaint)
-            currentY += 24f
-        }
-        if (template.showPhone && storeProfile.phone.isNotBlank()) {
-            canvas.drawText("ဖုန်း: ${storeProfile.phone}", width / 2f, currentY, textPaint)
-            currentY += 24f
-        }
-
-        drawDivider("SOLID")
-
-        // Metadata: Voucher Number, Date, Cashier, Customer
-        textPaint.textSize = 18f
-        if (template.showVoucherNumber) {
-            boldPaint.textSize = 20f
-            boldPaint.textAlign = Paint.Align.LEFT
-            canvas.drawText("ဘောင်ချာအမှတ်: ${receipt.displayVoucherNumber}", 14f, currentY, boldPaint)
-            textPaint.textAlign = Paint.Align.RIGHT
-            canvas.drawText("Ref: #${receipt.saleId.take(8).uppercase()}", width - 14f, currentY, textPaint)
-            currentY += 24f
-        }
-
-        textPaint.textAlign = Paint.Align.LEFT
-        canvas.drawText("နေ့စွဲ: ${receipt.businessDate}", 14f, currentY, textPaint)
-        if (template.showCashierInfo) {
-            textPaint.textAlign = Paint.Align.RIGHT
-            canvas.drawText("တာဝန်ခံ: ${receipt.cashierId}", width - 14f, currentY, textPaint)
-        }
-        currentY += 24f
-
-        if (template.showCustomerInfo && !receipt.customerName.isNullOrBlank()) {
-            boldPaint.textSize = 18f
-            boldPaint.textAlign = Paint.Align.LEFT
-            canvas.drawText("ဝယ်သူအမည်: ${receipt.customerName}", 14f, currentY, boldPaint)
-            currentY += 24f
-        }
-
-        // ==========================================
-        // 2. BODY SECTION (Excel-like Grid Table)
-        // ==========================================
-        drawDivider("SOLID")
-
-        val pad = template.rowPaddingDp.toFloat()
-        val bodySize = when (template.bodyFontSize.uppercase()) {
-            "LARGE" -> 22f
-            "SMALL" -> 16f
-            else -> 19f
-        }
-        boldPaint.textSize = bodySize
-        textPaint.textSize = bodySize
-
-        // Calculate Column Widths from weights
-        val contentWidth = width - 28f
-        val colNameW = contentWidth * template.itemNameWidthWeight
-        val colQtyW = contentWidth * template.qtyWidthWeight
-        val colPriceW = contentWidth * template.priceWidthWeight
-        val colAmountW = contentWidth * template.amountWidthWeight
-
-        val x0 = 14f
-        val x1 = x0 + colNameW
-        val x2 = x1 + colQtyW
-        val x3 = x2 + colPriceW
-        val xEnd = x3 + colAmountW
-
-        // Table Header
-        boldPaint.textAlign = Paint.Align.LEFT
-        canvas.drawText("ပစ္စည်းအမည်", x0, currentY, boldPaint)
-        boldPaint.textAlign = Paint.Align.CENTER
-        canvas.drawText("ဦးရေ", x1 + (colQtyW / 2f), currentY, boldPaint)
-        boldPaint.textAlign = Paint.Align.RIGHT
-        canvas.drawText("နှုန်း", x2 + colPriceW, currentY, boldPaint)
-        canvas.drawText("သင့်ငွေ", xEnd, currentY, boldPaint)
-        currentY += bodySize + 8f
-
-        drawDivider(template.gridLineStyle)
-
-        // Item Rows
-        receipt.items.forEach { line ->
-            currentY += pad
-
-            // Item Name (handles text wrap if needed)
-            textPaint.textAlign = when (template.itemNameAlign.uppercase()) {
-                "CENTER" -> Paint.Align.CENTER
-                "RIGHT" -> Paint.Align.RIGHT
-                else -> Paint.Align.LEFT
-            }
-            val nameX = when (template.itemNameAlign.uppercase()) {
-                "CENTER" -> x0 + (colNameW / 2f)
-                "RIGHT" -> x1 - 4f
-                else -> x0
-            }
-            val maxChars = (colNameW / (bodySize * 0.6f)).toInt().coerceAtLeast(8)
-            val displayName = if (line.productNameSnapshot.length > maxChars) line.productNameSnapshot.take(maxChars - 1) + "…" else line.productNameSnapshot
-            canvas.drawText(displayName, nameX, currentY, textPaint)
-
-            // Qty
-            textPaint.textAlign = when (template.qtyAlign.uppercase()) {
-                "LEFT" -> Paint.Align.LEFT
-                "RIGHT" -> Paint.Align.RIGHT
-                else -> Paint.Align.CENTER
-            }
-            val qtyX = when (template.qtyAlign.uppercase()) {
-                "LEFT" -> x1 + 4f
-                "RIGHT" -> x2 - 4f
-                else -> x1 + (colQtyW / 2f)
-            }
-            canvas.drawText(line.quantity.toString(), qtyX, currentY, textPaint)
-
-            // Unit Price
-            textPaint.textAlign = Paint.Align.RIGHT
-            canvas.drawText("%,d".format(line.unitPriceMinor), x2 + colPriceW, currentY, textPaint)
-
-            // Line Total
-            boldPaint.textAlign = Paint.Align.RIGHT
-            canvas.drawText("%,d".format(line.lineTotalMinor), xEnd, currentY, boldPaint)
-
-            currentY += bodySize + pad + 4f
-        }
-
-        drawDivider("SOLID")
-
-        // ==========================================
-        // 3. FOOTER SECTION
-        // ==========================================
-        if (template.showTotalsBreakdown) {
-            textPaint.textSize = 19f
-            boldPaint.textSize = 21f
-
-            // Subtotal
-            textPaint.textAlign = Paint.Align.LEFT
-            canvas.drawText("စုစုပေါင်းကျသင့်ငွေ:", 14f, currentY, textPaint)
-            textPaint.textAlign = Paint.Align.RIGHT
-            canvas.drawText("%,d Ks".format(receipt.subtotalMinor), width - 14f, currentY, textPaint)
-            currentY += 24f
-
-            if (receipt.discountMinor > 0) {
-                textPaint.textAlign = Paint.Align.LEFT
-                canvas.drawText("လျှော့ငွေ (Discount):", 14f, currentY, textPaint)
-                textPaint.textAlign = Paint.Align.RIGHT
-                canvas.drawText("-%,d Ks".format(receipt.discountMinor), width - 14f, currentY, textPaint)
-                currentY += 24f
-            }
-
-            if (receipt.deliveryFeeMinor > 0) {
-                textPaint.textAlign = Paint.Align.LEFT
-                canvas.drawText("ပို့ဆောင်ခ (Delivery):", 14f, currentY, textPaint)
-                textPaint.textAlign = Paint.Align.RIGHT
-                canvas.drawText("%,d Ks".format(receipt.deliveryFeeMinor), width - 14f, currentY, textPaint)
-                currentY += 24f
-            }
-
-            drawDivider("DASHED")
-
-            // Grand Total
-            boldPaint.textSize = 24f
-            boldPaint.textAlign = Paint.Align.LEFT
-            canvas.drawText("အသားတင် စုစုပေါင်း (TOTAL):", 14f, currentY, boldPaint)
-            boldPaint.textAlign = Paint.Align.RIGHT
-            canvas.drawText("%,d Ks".format(receipt.totalMinor), width - 14f, currentY, boldPaint)
-            currentY += 30f
-
-            if (template.showPaymentMethod) {
-                textPaint.textSize = 18f
-                textPaint.textAlign = Paint.Align.LEFT
-                canvas.drawText("ပေးချေမှုပုံစံ (${receipt.paymentMethod}):", 14f, currentY, textPaint)
-                textPaint.textAlign = Paint.Align.RIGHT
-                canvas.drawText("%,d Ks".format(receipt.tenderedMinor), width - 14f, currentY, textPaint)
-                currentY += 22f
-
-                if (receipt.changeMinor > 0) {
-                    textPaint.textAlign = Paint.Align.LEFT
-                    canvas.drawText("ပြန်အမ်းငွေ (Change):", 14f, currentY, textPaint)
-                    textPaint.textAlign = Paint.Align.RIGHT
-                    canvas.drawText("%,d Ks".format(receipt.changeMinor), width - 14f, currentY, textPaint)
-                    currentY += 22f
+        // Custom Subtitle (e.g. "အိမ်ဆောက်ပစ္စည်း အရောင်းဆိုင်")
+        if (template.customSubtitle.isNotBlank()) {
+            boldPaint.textSize = if (is58mm) 17f else 21f
+            boldPaint.textAlign = Paint.Align.CENTER
+            template.customSubtitle.split("\n").forEach { sub ->
+                if (sub.isNotBlank()) {
+                    canvas.drawText(sub.trim(), width / 2f, currentY, boldPaint)
+                    currentY += if (is58mm) 20f else 24f
                 }
             }
         }
 
-        // Pending pickup status if applicable
-        if (receipt.pickupStatus == "PENDING_PICKUP") {
-            currentY += 6f
-            boldPaint.textSize = 19f
-            boldPaint.textAlign = Paint.Align.CENTER
-            canvas.drawText("📦 [ပစ္စည်း မယူရသေးပါ - PENDING PICKUP]", width / 2f, currentY, boldPaint)
-            currentY += 22f
-            textPaint.textSize = 17f
-            canvas.drawText("ထုတ်ယူမည့်ရက်စွဲ: ${receipt.expectedPickupDate ?: "မသိရသေးပါ"}", width / 2f, currentY, textPaint)
-            currentY += 22f
+        // Custom Owner or Contact Info (e.g. "ကိုပါပီး+မသီရိကလျာ")
+        if (template.customOwnerOrContact.isNotBlank()) {
+            textPaint.textSize = if (is58mm) 15.5f else 18.5f
+            textPaint.textAlign = Paint.Align.CENTER
+            template.customOwnerOrContact.split("\n").forEach { line ->
+                if (line.isNotBlank()) {
+                    canvas.drawText(line.trim(), width / 2f, currentY, textPaint)
+                    currentY += if (is58mm) 18.5f else 22f
+                }
+            }
         }
 
-        drawDivider("SOLID")
+        // Phone Numbers
+        if (template.showPhone) {
+            val phoneText = template.customPhone.ifBlank { storeProfile.phone }
+            if (phoneText.isNotBlank()) {
+                textPaint.textSize = if (is58mm) 14.5f else 18f
+                textPaint.textAlign = Paint.Align.CENTER
+                phoneText.split("\n").forEach { pLine ->
+                    if (pLine.isNotBlank()) {
+                        canvas.drawText(pLine.trim(), width / 2f, currentY, textPaint)
+                        currentY += if (is58mm) 18f else 22f
+                    }
+                }
+            }
+        }
 
-        // Footer Thank-You & Return Policy
+        // Address
+        if (template.showAddress) {
+            val addressText = template.customAddress.ifBlank { storeProfile.address }
+            if (addressText.isNotBlank()) {
+                textPaint.textSize = if (is58mm) 14f else 17.5f
+                textPaint.textAlign = Paint.Align.CENTER
+                addressText.split("\n").forEach { aLine ->
+                    if (aLine.isNotBlank()) {
+                        canvas.drawText(aLine.trim(), width / 2f, currentY, textPaint)
+                        currentY += if (is58mm) 17.5f else 21f
+                    }
+                }
+            }
+        }
+
+        // Header Note (Optional)
+        if (template.showHeaderNote) {
+            val note = template.customHeaderNote.ifBlank { storeProfile.headerNote }
+            if (note.isNotBlank()) {
+                textPaint.textSize = if (is58mm) 15f else 19f
+                textPaint.textAlign = Paint.Align.CENTER
+                canvas.drawText(note, width / 2f, currentY, textPaint)
+                currentY += if (is58mm) 18f else 22f
+            }
+        }
+
+        // Metadata: Date, Customer, Cashier
+        val metaSize = if (is58mm) 15f else 18f
+        textPaint.textSize = metaSize
+        boldPaint.textSize = metaSize
+
+        // Date
+        textPaint.textAlign = Paint.Align.LEFT
+        canvas.drawText("ရက်စွဲ: ${receipt.businessDate}", 14f, currentY, textPaint)
+        if (template.showCashierInfo) {
+            textPaint.textAlign = Paint.Align.RIGHT
+            canvas.drawText("တာဝန်ခံ: ${receipt.cashierId}", width - 14f, currentY, textPaint)
+        }
+        currentY += metaSize + 5f
+
+        // Customer
+        if (template.showCustomerInfo) {
+            val cLabel = template.customerLabel.ifBlank { "ဈေးဝယ်သူ" }
+            val cName = receipt.customerName?.ifBlank { null } ?: "MK store"
+            boldPaint.textAlign = Paint.Align.LEFT
+            canvas.drawText("$cLabel: $cName", 14f, currentY, boldPaint)
+            currentY += metaSize + 6f
+        }
+
+        // Divider before Items (Uses dashed line style for Template 1, none for Template 2)
+        drawDivider(template.gridLineStyle)
+
+        // ==========================================
+        // 2. BODY SECTION
+        // ==========================================
+        val pad = template.rowPaddingDp.toFloat()
+        val bodySize = when (template.bodyFontSize.uppercase()) {
+            "LARGE" -> if (is58mm) 18f else 22f
+            "SMALL" -> if (is58mm) 14f else 16.5f
+            else -> if (is58mm) 16f else 19f
+        }
+        boldPaint.textSize = bodySize
+        textPaint.textSize = bodySize
+
+        if (template.itemLayoutStyle == "COLUMNS_4") {
+            // 4-Column Layout (Template 2)
+            val contentWidth = width - 28f
+            val colNameW = contentWidth * template.itemNameWidthWeight
+            val colQtyW = contentWidth * template.qtyWidthWeight
+            val colPriceW = contentWidth * template.priceWidthWeight
+            val colAmountW = contentWidth * template.amountWidthWeight
+
+            val x0 = 14f
+            val x1 = x0 + colNameW
+            val x2 = x1 + colQtyW
+            val x3 = x2 + colPriceW
+            val xEnd = x3 + colAmountW
+
+            // Table Header: နာမည်၊ ဦးရေ၊ နှုန်း၊ သင့်ငွေ
+            boldPaint.textAlign = Paint.Align.LEFT
+            canvas.drawText("နာမည်", x0, currentY, boldPaint)
+            boldPaint.textAlign = Paint.Align.CENTER
+            canvas.drawText("ဦးရေ", x1 + (colQtyW / 2f), currentY, boldPaint)
+            boldPaint.textAlign = Paint.Align.RIGHT
+            canvas.drawText("နှုန်း", x2 + colPriceW, currentY, boldPaint)
+            canvas.drawText("သင့်ငွေ", xEnd, currentY, boldPaint)
+            currentY += bodySize + 7f
+
+            // In Template 2, gridLineStyle is NONE -> No lines between rows/columns!
+            if (template.gridLineStyle != "NONE") {
+                drawDivider(template.gridLineStyle)
+            }
+
+            receipt.items.forEach { line ->
+                currentY += pad
+
+                // Name
+                textPaint.textAlign = Paint.Align.LEFT
+                val maxChars = (colNameW / (bodySize * 0.62f)).toInt().coerceAtLeast(8)
+                val displayName = if (line.productNameSnapshot.length > maxChars) {
+                    line.productNameSnapshot.take(maxChars - 1) + "…"
+                } else {
+                    line.productNameSnapshot
+                }
+                canvas.drawText(displayName, x0, currentY, textPaint)
+
+                // Qty
+                textPaint.textAlign = Paint.Align.CENTER
+                canvas.drawText(line.quantity.toString(), x1 + (colQtyW / 2f), currentY, textPaint)
+
+                // Unit Price
+                textPaint.textAlign = Paint.Align.RIGHT
+                canvas.drawText("%,d".format(line.unitPriceMinor), x2 + colPriceW, currentY, textPaint)
+
+                // Total
+                boldPaint.textAlign = Paint.Align.RIGHT
+                canvas.drawText("%,d".format(line.lineTotalMinor), xEnd, currentY, boldPaint)
+
+                currentY += bodySize + pad + 3f
+                // NO grid line between rows!
+            }
+        } else {
+            // STANDARD_2LINE Layout (Template 1 - Uploaded Sample Style)
+            // No column header table! Each item has Line 1 (Name & Amount) + Line 2 (Qty x Price)
+            receipt.items.forEach { line ->
+                // Line 1: Product Name on left, Line Total on right
+                boldPaint.textSize = if (is58mm) 16f else 19f
+                boldPaint.textAlign = Paint.Align.LEFT
+                val maxNameChars = if (is58mm) 18 else 26
+                val displayName = if (line.productNameSnapshot.length > maxNameChars) {
+                    line.productNameSnapshot.take(maxNameChars - 1) + "…"
+                } else {
+                    line.productNameSnapshot
+                }
+                canvas.drawText(displayName, 14f, currentY, boldPaint)
+
+                boldPaint.textAlign = Paint.Align.RIGHT
+                canvas.drawText("%,d Ks".format(line.lineTotalMinor), width - 14f, currentY, boldPaint)
+                currentY += if (is58mm) 18f else 22f
+
+                // Line 2: e.g. "1 အိတ် x 31,000 Ks"
+                textPaint.textSize = if (is58mm) 14.5f else 17f
+                textPaint.textAlign = Paint.Align.LEFT
+                val unitStr = line.unitName.ifBlank { "ခု" }
+                val subDetail = "${line.quantity} $unitStr x %,d Ks".format(line.unitPriceMinor)
+                canvas.drawText(subDetail, 14f, currentY, textPaint)
+                currentY += if (is58mm) 19f else 23f
+
+                // Spacing between items (no row border lines!)
+                currentY += 4f
+            }
+        }
+
+        // Divider after Items
+        drawDivider(template.gridLineStyle)
+
+        // ==========================================
+        // 3. TOTALS & SUMMARY SECTION
+        // ==========================================
+        val totalLabelSize = if (is58mm) 16f else 19f
+        textPaint.textSize = totalLabelSize
+        boldPaint.textSize = totalLabelSize + 2f
+
+        // Subtotal (ကျသင့်ငွေ)
+        textPaint.textAlign = Paint.Align.LEFT
+        canvas.drawText("ကျသင့်ငွေ", 14f, currentY, textPaint)
+        textPaint.textAlign = Paint.Align.RIGHT
+        canvas.drawText("%,d Ks".format(receipt.subtotalMinor), width - 14f, currentY, textPaint)
+        currentY += totalLabelSize + 6f
+
+        // Discount if any
+        if (receipt.discountMinor > 0) {
+            textPaint.textAlign = Paint.Align.LEFT
+            canvas.drawText("လျှော့ငွေ (Discount)", 14f, currentY, textPaint)
+            textPaint.textAlign = Paint.Align.RIGHT
+            canvas.drawText("-%,d Ks".format(receipt.discountMinor), width - 14f, currentY, textPaint)
+            currentY += totalLabelSize + 6f
+        }
+
+        // Delivery fee if any
+        if (receipt.deliveryFeeMinor > 0) {
+            textPaint.textAlign = Paint.Align.LEFT
+            canvas.drawText("ပို့ဆောင်ခ (Delivery)", 14f, currentY, textPaint)
+            textPaint.textAlign = Paint.Align.RIGHT
+            canvas.drawText("%,d Ks".format(receipt.deliveryFeeMinor), width - 14f, currentY, textPaint)
+            currentY += totalLabelSize + 6f
+        }
+
+        // Grand Total (စုစုပေါင်း)
+        boldPaint.textAlign = Paint.Align.LEFT
+        canvas.drawText("စုစုပေါင်း", 14f, currentY, boldPaint)
+        boldPaint.textAlign = Paint.Align.RIGHT
+        canvas.drawText("%,d Ks".format(receipt.totalMinor), width - 14f, currentY, boldPaint)
+        currentY += totalLabelSize + 8f
+
+        // Payment Details (Optional)
+        if (template.showPaymentMethod) {
+            textPaint.textSize = if (is58mm) 14.5f else 17f
+            textPaint.textAlign = Paint.Align.LEFT
+            canvas.drawText("ပေးချေမှု (${receipt.paymentMethod}):", 14f, currentY, textPaint)
+            textPaint.textAlign = Paint.Align.RIGHT
+            canvas.drawText("%,d Ks".format(receipt.tenderedMinor), width - 14f, currentY, textPaint)
+            currentY += 19f
+
+            if (receipt.changeMinor > 0) {
+                textPaint.textAlign = Paint.Align.LEFT
+                canvas.drawText("ပြန်အမ်းငွေ:", 14f, currentY, textPaint)
+                textPaint.textAlign = Paint.Align.RIGHT
+                canvas.drawText("%,d Ks".format(receipt.changeMinor), width - 14f, currentY, textPaint)
+                currentY += 19f
+            }
+        }
+
+        // Divider after Totals
+        drawDivider(template.gridLineStyle)
+
+        // Voucher Number (ပြေစာအမှတ်: A261107-37416692)
+        if (template.showVoucherNumber) {
+            textPaint.textSize = if (is58mm) 15f else 18f
+            textPaint.textAlign = Paint.Align.LEFT
+            canvas.drawText("ပြေစာအမှတ်: ${receipt.displayVoucherNumber}", 14f, currentY, textPaint)
+            currentY += if (is58mm) 20f else 23f
+        }
+
+        // ==========================================
+        // 4. FOOTER NOTICES & POLICIES
+        // ==========================================
+        val footerSize = when (template.footerFontSize.uppercase()) {
+            "MEDIUM" -> if (is58mm) 16f else 19f
+            "LARGE" -> if (is58mm) 18f else 22f
+            else -> if (is58mm) 14.5f else 17f
+        }
+        textPaint.textSize = footerSize
+        textPaint.textAlign = Paint.Align.CENTER
+
+        // Return Policy Text (e.g. "ဝယ်ယူပြီး ပစ္စည်း များကို ပြန်လဲမပေးပါ")
+        if (template.returnPolicyText.isNotBlank()) {
+            template.returnPolicyText.split("\n").forEach { line ->
+                if (line.isNotBlank()) {
+                    canvas.drawText(line.trim(), width / 2f, currentY, textPaint)
+                    currentY += footerSize + 5f
+                }
+            }
+        }
+
+        // Footer Message (e.g. "ဝယ်ယူအားပေးမှုကိုကျေးဇူးအထူးတင်ရှိပါသည်")
         val footerMsg = template.footerMessage.ifBlank { storeProfile.footerMessage }
         if (footerMsg.isNotBlank()) {
-            val footerSize = when (template.footerFontSize.uppercase()) {
-                "MEDIUM" -> 19f
-                "LARGE" -> 22f
-                else -> 17f
-            }
-            textPaint.textSize = footerSize
-            textPaint.textAlign = when (template.footerAlign.uppercase()) {
-                "LEFT" -> Paint.Align.LEFT
-                "RIGHT" -> Paint.Align.RIGHT
-                else -> Paint.Align.CENTER
-            }
-            val footX = when (template.footerAlign.uppercase()) {
-                "LEFT" -> 14f
-                "RIGHT" -> width - 14f
-                else -> width / 2f
-            }
             footerMsg.split("\n").forEach { line ->
-                canvas.drawText(line, footX, currentY, textPaint)
-                currentY += footerSize + 4f
+                if (line.isNotBlank()) {
+                    canvas.drawText(line.trim(), width / 2f, currentY, textPaint)
+                    currentY += footerSize + 5f
+                }
             }
         }
 
-        if (template.returnPolicyText.isNotBlank()) {
-            textPaint.textSize = 15f
-            textPaint.textAlign = Paint.Align.CENTER
-            canvas.drawText(template.returnPolicyText, width / 2f, currentY, textPaint)
-            currentY += 20f
+        // Extra Notices (e.g. "သုံးမူး၊ ငါးမူး၊ ခြောက်မူး သံပင် များ ၊\nသွပ် အစားထိုး polystar များ ရပါသည် ။")
+        if (template.extraNoticeText.isNotBlank()) {
+            boldPaint.textSize = footerSize + 1f
+            boldPaint.textAlign = Paint.Align.CENTER
+            template.extraNoticeText.split("\n").forEach { noticeLine ->
+                if (noticeLine.isNotBlank()) {
+                    canvas.drawText(noticeLine.trim(), width / 2f, currentY, boldPaint)
+                    currentY += footerSize + 6f
+                }
+            }
         }
 
-        currentY += 20f
+        // Print Time (e.g. "Print Time: 07/11/2026 10:24AM")
+        if (template.showPrintTime) {
+            val printTimeStr = "Print Time: ${SimpleDateFormat("dd/MM/yyyy hh:mma", Locale.ENGLISH).format(Date(receipt.timestampEpochMs))}"
+            textPaint.textSize = if (is58mm) 13f else 15f
+            textPaint.textAlign = Paint.Align.CENTER
+            canvas.drawText(printTimeStr, width / 2f, currentY, textPaint)
+            currentY += 18f
+        }
 
-        // Trim bitmap to actual content height
+        currentY += 18f
+
+        // Crop bitmap to content height
         val finalHeight = currentY.toInt().coerceAtLeast(100)
         return Bitmap.createBitmap(tempBitmap, 0, 0, width, finalHeight)
     }

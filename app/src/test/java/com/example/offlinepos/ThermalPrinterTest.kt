@@ -73,4 +73,62 @@ class ThermalPrinterTest {
         assertTrue(types.contains(PrinterConnectionType.USB))
         assertTrue(types.contains(PrinterConnectionType.NONE))
     }
+
+    @Test
+    fun template1_sample58mmLayout_hasCorrectSpecs() {
+        val tmpl1 = com.example.offlinepos.data.local.ReceiptTemplateEntity(
+            templateId = 1,
+            name = "Template 1 - နမူနာပြေစာ စံပုံစံ (58mm Sample Style)",
+            isDefault = true,
+            paperWidthDots = 384,
+            itemLayoutStyle = "STANDARD_2LINE",
+            showLogo = false,
+            customStoreName = "ဆန်းသစ်",
+            customSubtitle = "အိမ်ဆောက်ပစ္စည်း အရောင်းဆိုင်",
+            customOwnerOrContact = "ကိုပါပီး+မသီရိကလျာ",
+            customPhone = "09678473426/09943070451/09442387883/\n09400511789",
+            customAddress = "3/3 ဗိုလ်ချုပ်လမ်း / စမ်းမြို့ရပ်ကွက် / ကလေးမြို့",
+            customerLabel = "ဈေးဝယ်သူ",
+            showCustomerInfo = true,
+            gridLineStyle = "DASHED",
+            returnPolicyText = "ဝယ်ယူပြီး ပစ္စည်း များကို ပြန်လဲမပေးပါ",
+            footerMessage = "ဝယ်ယူအားပေးမှုကိုကျေးဇူးအထူးတင်ရှိပါသည်",
+            extraNoticeText = "သုံးမူး၊ ငါးမူး၊ ခြောက်မူး သံပင် များ ၊\nသွပ် အစားထိုး polystar များ ရပါသည် ။",
+            showPrintTime = true
+        )
+
+        assertEquals(384, tmpl1.paperWidthDots)
+        assertEquals("STANDARD_2LINE", tmpl1.itemLayoutStyle)
+        assertEquals("DASHED", tmpl1.gridLineStyle)
+        assertEquals("ဆန်းသစ်", tmpl1.customStoreName)
+        assertEquals("ဈေးဝယ်သူ", tmpl1.customerLabel)
+        assertTrue(tmpl1.extraNoticeText.contains("polystar"))
+        assertTrue(tmpl1.showPrintTime)
+    }
+
+    @Test
+    fun template2_cleanBorderlessLayout_hasNoRowColumnLines() {
+        val tmpl2 = com.example.offlinepos.data.local.ReceiptTemplateEntity(
+            templateId = 2,
+            name = "Template 2 - မျဉ်းမပါ သန့်ရှင်းသော ပုံစံ (Clean Borderless)",
+            isDefault = false,
+            paperWidthDots = 384,
+            itemLayoutStyle = "COLUMNS_4",
+            showLogo = true,
+            customStoreName = "",
+            customPhone = "",
+            customAddress = "",
+            customerLabel = "ဝယ်သူအမည်",
+            showCustomerInfo = true,
+            gridLineStyle = "NONE", // No row/column lines
+            footerMessage = "ကျေးဇူးတင်ပါသည်",
+            returnPolicyText = "ဝယ်ယူပြီးပစ္စည်း ပြန်မလဲပေးပါ"
+        )
+
+        assertEquals("COLUMNS_4", tmpl2.itemLayoutStyle)
+        assertEquals("NONE", tmpl2.gridLineStyle) // Verified: NO row/column lines!
+        assertEquals("ကျေးဇူးတင်ပါသည်", tmpl2.footerMessage)
+        assertTrue(tmpl2.showCustomerInfo)
+    }
 }
+

@@ -66,6 +66,9 @@ import com.example.offlinepos.hardware.ThermalPrinterManager
 import com.example.offlinepos.hardware.PrinterConnectionType
 import com.example.offlinepos.hardware.UsbPrinterHelper
 import androidx.compose.ui.window.Dialog
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 @Composable
 fun ReceiptDialog(
@@ -128,215 +131,256 @@ fun ReceiptDialog(
                     border = CardDefaults.outlinedCardBorder(),
                     shape = RoundedCornerShape(8.dp),
                 ) {
+                    val currentTemplate = templates.find { it.templateId == selectedTemplateId } ?: defaultTemplate
+
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(16.dp),
+                            .padding(14.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
-                        StoreLogoAvatar(
-                            customLogoPath = storeProfile.customLogoPath,
-                            contentDescription = "Store Owner Logo",
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier
-                                .size(56.dp)
-                                .clip(CircleShape)
-                                .border(1.5.dp, MaterialTheme.colorScheme.primary, CircleShape),
-                        )
-                        Spacer(modifier = Modifier.height(6.dp))
+                        if (currentTemplate?.showLogo == true) {
+                            StoreLogoAvatar(
+                                customLogoPath = storeProfile.customLogoPath,
+                                contentDescription = "Store Owner Logo",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier
+                                    .size(52.dp)
+                                    .clip(CircleShape)
+                                    .border(1.5.dp, MaterialTheme.colorScheme.primary, CircleShape),
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                        }
+
+                        // Store Name
+                        val activeStoreName = currentTemplate?.customStoreName?.ifBlank {
+                            storeProfile.storeName.ifBlank { "ဆန်းသစ်" }
+                        } ?: storeProfile.storeName.ifBlank { "ဆန်းသစ်" }
+
                         Text(
-                            text = storeProfile.storeName,
+                            text = activeStoreName,
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.ExtraBold,
                             color = Color(0xFF0F172A),
                             modifier = Modifier.fillMaxWidth(),
                             textAlign = TextAlign.Center,
                         )
-                        if (storeProfile.headerNote.isNotBlank()) {
+
+                        // Subtitle
+                        val activeSubtitle = currentTemplate?.customSubtitle.orEmpty()
+                        if (activeSubtitle.isNotBlank()) {
                             Text(
-                                text = storeProfile.headerNote,
+                                text = activeSubtitle,
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF1E293B),
+                                modifier = Modifier.fillMaxWidth(),
+                                textAlign = TextAlign.Center,
+                            )
+                        }
+
+                        // Owner / Contact
+                        val activeOwner = currentTemplate?.customOwnerOrContact.orEmpty()
+                        if (activeOwner.isNotBlank()) {
+                            Text(
+                                text = activeOwner,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color(0xFF334155),
+                                modifier = Modifier.fillMaxWidth(),
+                                textAlign = TextAlign.Center,
+                            )
+                        }
+
+                        // Phone Numbers
+                        val activePhone = if (currentTemplate?.showPhone != false) {
+                            currentTemplate?.customPhone?.ifBlank { storeProfile.phone } ?: storeProfile.phone
+                        } else ""
+                        if (activePhone.isNotBlank()) {
+                            Text(
+                                text = activePhone,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color(0xFF475569),
+                                modifier = Modifier.fillMaxWidth(),
+                                textAlign = TextAlign.Center,
+                            )
+                        }
+
+                        // Address
+                        val activeAddress = if (currentTemplate?.showAddress != false) {
+                            currentTemplate?.customAddress?.ifBlank { storeProfile.address } ?: storeProfile.address
+                        } else ""
+                        if (activeAddress.isNotBlank()) {
+                            Text(
+                                text = activeAddress,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color(0xFF64748B),
+                                modifier = Modifier.fillMaxWidth(),
+                                textAlign = TextAlign.Center,
+                            )
+                        }
+
+                        // Header Note
+                        val activeNote = currentTemplate?.customHeaderNote?.ifBlank { storeProfile.headerNote }.orEmpty()
+                        if (currentTemplate?.showHeaderNote == true && activeNote.isNotBlank()) {
+                            Text(
+                                text = activeNote,
                                 style = MaterialTheme.typography.bodySmall,
                                 color = Color(0xFF475569),
                                 modifier = Modifier.fillMaxWidth(),
                                 textAlign = TextAlign.Center,
                             )
                         }
-                        if (storeProfile.address.isNotBlank()) {
-                            Text(
-                                text = storeProfile.address,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = Color(0xFF64748B),
-                                modifier = Modifier.fillMaxWidth(),
-                                textAlign = TextAlign.Center,
-                            )
-                        }
-                        if (storeProfile.phone.isNotBlank()) {
-                            Text(
-                                text = "ဖုန်း: ${storeProfile.phone}",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = Color(0xFF64748B),
-                                modifier = Modifier.fillMaxWidth(),
-                                textAlign = TextAlign.Center,
-                            )
-                        }
 
-                        Spacer(modifier = Modifier.height(8.dp))
-                        HorizontalDivider(color = Color(0xFFCBD5E1))
                         Spacer(modifier = Modifier.height(6.dp))
 
-                        // Voucher Number badge
-                        Surface(
-                            shape = RoundedCornerShape(6.dp),
-                            color = Color(0xFFEFF6FF),
-                            border = BorderStroke(1.dp, Color(0xFFBFDBFE)),
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                        val gridStyle = currentTemplate?.gridLineStyle ?: "DASHED"
+                        when (gridStyle) {
+                            "DASHED" -> Text("- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -", color = Color(0xFF94A3B8), fontFamily = FontFamily.Monospace, fontSize = 11.sp)
+                            "SOLID" -> HorizontalDivider(color = Color(0xFFCBD5E1))
+                            "DOUBLE" -> {
+                                HorizontalDivider(color = Color(0xFF94A3B8), thickness = 1.dp)
+                                Spacer(modifier = Modifier.height(2.dp))
+                                HorizontalDivider(color = Color(0xFF94A3B8), thickness = 1.dp)
+                            }
+                            else -> Spacer(modifier = Modifier.height(2.dp))
+                        }
+
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        // Metadata: Date & Cashier
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column {
-                                    Text(
-                                        text = "ဘောင်ချာအမှတ်",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = Color(0xFF1E40AF),
-                                        fontWeight = FontWeight.Medium
-                                    )
-                                    Text(
-                                        text = receipt.displayVoucherNumber,
-                                        style = MaterialTheme.typography.titleMedium,
-                                        color = Color(0xFF1E3A8A),
-                                        fontWeight = FontWeight.Bold,
-                                        fontFamily = FontFamily.Monospace
-                                    )
-                                }
-                                Column(horizontalAlignment = Alignment.End) {
-                                    Text(
-                                        text = "Ref Code",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = Color(0xFF64748B)
-                                    )
-                                    Text(
-                                        text = "#${receipt.saleId.take(8).uppercase()}",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = Color(0xFF475569),
-                                        fontFamily = FontFamily.Monospace
-                                    )
-                                }
-                            }
-                        }
-
-                        Text(
-                            text = "နေ့စွဲ: ${receipt.businessDate}",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = Color(0xFF64748B),
-                            fontFamily = FontFamily.Monospace,
-                        )
-                        Text(
-                            text = "အရောင်းတာဝန်ခံ: ${receipt.cashierId}",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = Color(0xFF64748B),
-                        )
-                        if (!receipt.customerName.isNullOrBlank()) {
                             Text(
-                                text = "ဝယ်သူအမည်: ${receipt.customerName}",
+                                text = "ရက်စွဲ: ${receipt.businessDate}",
                                 style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFF1E3A8A),
+                                color = Color(0xFF475569),
+                                fontFamily = FontFamily.Monospace,
                             )
-                        }
-
-                        if (receipt.pickupStatus == com.example.offlinepos.data.local.PickupStatus.PENDING_PICKUP) {
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Surface(
-                                shape = RoundedCornerShape(6.dp),
-                                color = Color(0xFFEFF6FF),
-                                border = BorderStroke(1.dp, Color(0xFF3B82F6)),
-                                modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)
-                            ) {
-                                Column(modifier = Modifier.padding(8.dp)) {
-                                    Text(
-                                        text = "📦 ပစ္စည်း မယူရသေးပါ (PENDING PICKUP)",
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = Color(0xFF1D4ED8)
-                                    )
-                                    Text(
-                                        text = "ထုတ်ယူမည့် ရက်စွဲ: ${receipt.expectedPickupDate ?: "မသိရသေးပါ"}",
-                                        fontSize = 10.sp,
-                                        color = Color(0xFF1E40AF)
-                                    )
-                                    if (!receipt.pickupNote.isNullOrBlank()) {
-                                        Text(
-                                            text = "မှတ်ချက်: ${receipt.pickupNote}",
-                                            fontSize = 10.sp,
-                                            color = Color.DarkGray
-                                        )
-                                    }
-                                }
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(8.dp))
-                        HorizontalDivider(color = Color(0xFFCBD5E1))
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        // Items
-                        receipt.items.forEach { line ->
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 3.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = line.productNameSnapshot,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = Color(0xFF0F172A),
-                                    )
-                                    Text(
-                                        text = "${line.quantity} ခု/ချပ် × %,d Ks".format(line.unitPriceMinor),
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = Color(0xFF64748B),
-                                        fontFamily = FontFamily.Monospace,
-                                    )
-                                }
+                            if (currentTemplate?.showCashierInfo == true) {
                                 Text(
-                                    text = "%,d Ks".format(line.lineTotalMinor),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color(0xFF0F172A),
-                                    fontFamily = FontFamily.Monospace,
+                                    text = "တာဝန်ခံ: ${receipt.cashierId}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Color(0xFF64748B),
                                 )
                             }
                         }
 
-                        Spacer(modifier = Modifier.height(8.dp))
-                        HorizontalDivider(color = Color(0xFFCBD5E1))
-                        Spacer(modifier = Modifier.height(8.dp))
+                        // Customer Line
+                        if (currentTemplate?.showCustomerInfo != false) {
+                            val cLabel = currentTemplate?.customerLabel?.ifBlank { "ဈေးဝယ်သူ" } ?: "ဈေးဝယ်သူ"
+                            val cName = receipt.customerName?.ifBlank { null } ?: "MK store"
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
+                                horizontalArrangement = Arrangement.Start
+                            ) {
+                                Text(
+                                    text = "$cLabel: $cName",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF0F172A),
+                                )
+                            }
+                        }
 
-                        // Breakdown
-                        ReceiptRow("ကျသင့်ငွေ (Subtotal)", "%,d Ks".format(receipt.totals.subtotalMinor))
+                        Spacer(modifier = Modifier.height(6.dp))
+                        when (gridStyle) {
+                            "DASHED" -> Text("- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -", color = Color(0xFF94A3B8), fontFamily = FontFamily.Monospace, fontSize = 11.sp)
+                            "SOLID" -> HorizontalDivider(color = Color(0xFFCBD5E1))
+                            "DOUBLE" -> {
+                                HorizontalDivider(color = Color(0xFF94A3B8), thickness = 1.dp)
+                                Spacer(modifier = Modifier.height(2.dp))
+                                HorizontalDivider(color = Color(0xFF94A3B8), thickness = 1.dp)
+                            }
+                            else -> Spacer(modifier = Modifier.height(2.dp))
+                        }
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        // Body Items
+                        if (currentTemplate?.itemLayoutStyle == "COLUMNS_4") {
+                            // 4-Column Table (Template 2)
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text("နာမည်", modifier = Modifier.weight(0.42f), fontWeight = FontWeight.Bold, fontSize = 11.5.sp)
+                                Text("ဦးရေ", modifier = Modifier.weight(0.16f), textAlign = TextAlign.Center, fontWeight = FontWeight.Bold, fontSize = 11.5.sp)
+                                Text("နှုန်း", modifier = Modifier.weight(0.20f), textAlign = TextAlign.End, fontWeight = FontWeight.Bold, fontSize = 11.5.sp)
+                                Text("သင့်ငွေ", modifier = Modifier.weight(0.22f), textAlign = TextAlign.End, fontWeight = FontWeight.Bold, fontSize = 11.5.sp)
+                            }
+                            receipt.items.forEach { line ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(line.productNameSnapshot, modifier = Modifier.weight(0.42f), fontSize = 11.sp)
+                                    Text(line.quantity.toString(), modifier = Modifier.weight(0.16f), textAlign = TextAlign.Center, fontSize = 11.sp)
+                                    Text("%,d".format(line.unitPriceMinor), modifier = Modifier.weight(0.20f), textAlign = TextAlign.End, fontSize = 11.sp)
+                                    Text("%,d".format(line.lineTotalMinor), modifier = Modifier.weight(0.22f), textAlign = TextAlign.End, fontWeight = FontWeight.SemiBold, fontSize = 11.sp)
+                                }
+                            }
+                        } else {
+                            // 2-Line Sample Layout (Template 1)
+                            receipt.items.forEach { line ->
+                                Column(modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Text(
+                                            text = line.productNameSnapshot,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color(0xFF0F172A),
+                                        )
+                                        Text(
+                                            text = "%,d Ks".format(line.lineTotalMinor),
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color(0xFF0F172A),
+                                            fontFamily = FontFamily.Monospace,
+                                        )
+                                    }
+                                    Text(
+                                        text = "${line.quantity} ${line.unitName.ifBlank { "ခု" }} x %,d Ks".format(line.unitPriceMinor),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = Color(0xFF475569),
+                                        fontFamily = FontFamily.Monospace,
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(6.dp))
+                        when (gridStyle) {
+                            "DASHED" -> Text("- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -", color = Color(0xFF94A3B8), fontFamily = FontFamily.Monospace, fontSize = 11.sp)
+                            "SOLID" -> HorizontalDivider(color = Color(0xFFCBD5E1))
+                            "DOUBLE" -> {
+                                HorizontalDivider(color = Color(0xFF94A3B8), thickness = 1.dp)
+                                Spacer(modifier = Modifier.height(2.dp))
+                                HorizontalDivider(color = Color(0xFF94A3B8), thickness = 1.dp)
+                            }
+                            else -> Spacer(modifier = Modifier.height(2.dp))
+                        }
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        // Totals Breakdown
+                        ReceiptRow("ကျသင့်ငွေ", "%,d Ks".format(receipt.totals.subtotalMinor))
                         if (receipt.totals.discountMinor > 0) {
-                            ReceiptRow("လျှော့စျေး (Discount)", "-%,d Ks".format(receipt.totals.discountMinor), isNegative = true)
+                            ReceiptRow("လျှော့ငွေ (Discount)", "-%,d Ks".format(receipt.totals.discountMinor), isNegative = true)
                         }
                         if (receipt.deliveryFeeMinor > 0) {
-                            ReceiptRow("သယ်ယူ ပို့ဆောင်ခ", "%,d Ks".format(receipt.deliveryFeeMinor))
+                            ReceiptRow("ပို့ဆောင်ခ (Delivery)", "%,d Ks".format(receipt.deliveryFeeMinor))
                         }
 
-                        Spacer(modifier = Modifier.height(4.dp))
-                        HorizontalDivider(color = Color(0xFF94A3B8), thickness = 1.5.dp)
-                        Spacer(modifier = Modifier.height(4.dp))
-
                         Row(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
                             horizontalArrangement = Arrangement.SpaceBetween,
                         ) {
                             Text(
-                                text = "စုစုပေါင်း (TOTAL)",
+                                text = "စုစုပေါင်း",
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
                                 color = Color(0xFF0F172A),
@@ -350,36 +394,102 @@ fun ReceiptDialog(
                             )
                         }
 
-                        Spacer(modifier = Modifier.height(8.dp))
-                        val methodText = when (receipt.paymentMethod) {
-                            "CASH" -> "ငွေသား (Cash)"
-                            "KPAY" -> "📱 KPay"
-                            "WAVEPAY" -> "🟡 WavePay"
-                            "CREDIT" -> "📝 အကြွေး (Credit)"
-                            "SPLIT" -> "⚡ Split (ငွေသား + Digital)"
-                            else -> receipt.paymentMethod
-                        }
-                        ReceiptRow("ပေးချေမှုပုံစံ", methodText)
-                        if (receipt.paymentMethod == "SPLIT") {
-                            ReceiptRow("• ငွေသား (Cash):", "%,d Ks".format(receipt.splitCashMinor))
-                            ReceiptRow("• ဒစ်ဂျစ်တယ် (Digital):", "%,d Ks".format(receipt.splitDigitalMinor))
-                        } else if (receipt.paymentMethod == "CASH") {
-                            ReceiptRow("ပေးငွေ (Tendered)", "%,d Ks".format(receipt.tenderedMinor))
-                            ReceiptRow("ပြန်အမ်းငွေ (Change)", "%,d Ks".format(receipt.changeMinor), isHighlight = true)
-                        } else if (receipt.paymentMethod == "CREDIT") {
-                            ReceiptRow("အကြွေးမှတ်တမ်းတင်ငွေ", "%,d Ks".format(receipt.totals.totalMinor), isHighlight = true)
+                        if (currentTemplate?.showPaymentMethod == true) {
+                            val methodText = when (receipt.paymentMethod) {
+                                "CASH" -> "ငွေသား (Cash)"
+                                "KPAY" -> "📱 KPay"
+                                "WAVEPAY" -> "🟡 WavePay"
+                                "CREDIT" -> "📝 အကြွေး (Credit)"
+                                "SPLIT" -> "⚡ Split (ငွေသား + Digital)"
+                                else -> receipt.paymentMethod
+                            }
+                            ReceiptRow("ပေးချေမှုပုံစံ", methodText)
+                            if (receipt.paymentMethod == "CASH") {
+                                ReceiptRow("ပေးငွေ", "%,d Ks".format(receipt.tenderedMinor))
+                                if (receipt.changeMinor > 0) {
+                                    ReceiptRow("ပြန်အမ်းငွေ", "%,d Ks".format(receipt.changeMinor), isHighlight = true)
+                                }
+                            }
                         }
 
-                        // QR code removed as requested
+                        Spacer(modifier = Modifier.height(6.dp))
+                        when (gridStyle) {
+                            "DASHED" -> Text("- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -", color = Color(0xFF94A3B8), fontFamily = FontFamily.Monospace, fontSize = 11.sp)
+                            "SOLID" -> HorizontalDivider(color = Color(0xFFCBD5E1))
+                            "DOUBLE" -> {
+                                HorizontalDivider(color = Color(0xFF94A3B8), thickness = 1.dp)
+                                Spacer(modifier = Modifier.height(2.dp))
+                                HorizontalDivider(color = Color(0xFF94A3B8), thickness = 1.dp)
+                            }
+                            else -> Spacer(modifier = Modifier.height(2.dp))
+                        }
+                        Spacer(modifier = Modifier.height(6.dp))
 
-                        Spacer(modifier = Modifier.height(10.dp))
-                        Text(
-                            text = storeProfile.footerMessage.ifBlank { "ဝယ်ယူအားပေးမှုကို အထူးပင် ကျေးဇူးတင်ရှိပါသည်" },
-                            style = MaterialTheme.typography.labelSmall,
-                            color = Color(0xFF475569),
-                            modifier = Modifier.fillMaxWidth(),
-                            textAlign = TextAlign.Center,
-                        )
+                        // Voucher Number
+                        if (currentTemplate?.showVoucherNumber != false) {
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Start) {
+                                Text(
+                                    text = "ပြေစာအမှတ်: ${receipt.displayVoucherNumber}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = Color(0xFF334155),
+                                    fontFamily = FontFamily.Monospace,
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
+                        }
+
+                        // Return Policy Text
+                        val activeReturnPolicy = currentTemplate?.returnPolicyText.orEmpty()
+                        if (activeReturnPolicy.isNotBlank()) {
+                            Text(
+                                text = activeReturnPolicy,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color(0xFF1E293B),
+                                modifier = Modifier.fillMaxWidth(),
+                                textAlign = TextAlign.Center,
+                            )
+                        }
+
+                        // Footer Thank You Message
+                        val activeFooterMsg = currentTemplate?.footerMessage?.ifBlank { storeProfile.footerMessage } ?: storeProfile.footerMessage
+                        if (activeFooterMsg.isNotBlank()) {
+                            Text(
+                                text = activeFooterMsg,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.Medium,
+                                color = Color(0xFF0F172A),
+                                modifier = Modifier.fillMaxWidth(),
+                                textAlign = TextAlign.Center,
+                            )
+                        }
+
+                        // Extra Notice Text
+                        val activeNotice = currentTemplate?.extraNoticeText.orEmpty()
+                        if (activeNotice.isNotBlank()) {
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = activeNotice,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF0F172A),
+                                modifier = Modifier.fillMaxWidth(),
+                                textAlign = TextAlign.Center,
+                            )
+                        }
+
+                        // Print Time
+                        if (currentTemplate?.showPrintTime != false) {
+                            Spacer(modifier = Modifier.height(4.dp))
+                            val printTimeStr = "Print Time: ${SimpleDateFormat("dd/MM/yyyy hh:mma", Locale.ENGLISH).format(Date(receipt.timestampEpochMs))}"
+                            Text(
+                                text = printTimeStr,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color(0xFF64748B),
+                                fontSize = 10.sp,
+                                modifier = Modifier.fillMaxWidth(),
+                                textAlign = TextAlign.Center,
+                            )
+                        }
                     }
                 }
 

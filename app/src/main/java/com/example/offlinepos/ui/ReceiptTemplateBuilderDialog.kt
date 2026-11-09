@@ -1,13 +1,9 @@
 package com.example.offlinepos.ui
 
 import android.graphics.Bitmap
-import kotlinx.coroutines.launch
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -20,10 +16,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.FormatAlignLeft
 import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Star
@@ -43,7 +36,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -69,14 +61,15 @@ import com.example.offlinepos.data.local.SaleItemEntity
 import com.example.offlinepos.domain.CartTotals
 import com.example.offlinepos.hardware.CustomReceiptEscPosGenerator
 import com.example.offlinepos.hardware.ThermalPrinterManager
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
 enum class BuilderTab(val label: String) {
-    HEADER("🏷️ ခေါင်းစဉ် (Header)"),
-    GRID_BODY("📊 ဇယားကွက် (Grid Body)"),
-    FOOTER("📜 အောက်ခြေ (Footer)"),
+    HEADER("🏷️ Header ခေါင်းစဉ်"),
+    GRID_BODY("📊 Body ကုန်ပစ္စည်း"),
+    FOOTER("📜 Footer အောက်ခြေ"),
     PREVIEW("👁️ Preview ပုံစံ"),
 }
 
@@ -91,7 +84,7 @@ fun ReceiptTemplateBuilderDialog(
     val storeProfile by viewModel.storeProfile.collectAsState()
 
     var selectedSlot by remember { mutableIntStateOf(1) }
-    var currentTab by remember { mutableStateOf(BuilderTab.GRID_BODY) }
+    var currentTab by remember { mutableStateOf(BuilderTab.PREVIEW) }
 
     // Active editing template
     val currentDbTemplate = templates.find { it.templateId == selectedSlot }
@@ -100,15 +93,26 @@ fun ReceiptTemplateBuilderDialog(
     // State bindings
     var name by remember(selectedSlot, currentDbTemplate) { mutableStateOf(currentDbTemplate.name) }
     var isDefault by remember(selectedSlot, currentDbTemplate) { mutableStateOf(currentDbTemplate.isDefault) }
+    var paperWidthDots by remember(selectedSlot, currentDbTemplate) { mutableIntStateOf(currentDbTemplate.paperWidthDots) }
+    var itemLayoutStyle by remember(selectedSlot, currentDbTemplate) { mutableStateOf(currentDbTemplate.itemLayoutStyle) }
 
     // Header States
     var showLogo by remember(selectedSlot, currentDbTemplate) { mutableStateOf(currentDbTemplate.showLogo) }
+    var customStoreName by remember(selectedSlot, currentDbTemplate) { mutableStateOf(currentDbTemplate.customStoreName) }
+    var customSubtitle by remember(selectedSlot, currentDbTemplate) { mutableStateOf(currentDbTemplate.customSubtitle) }
+    var customOwnerOrContact by remember(selectedSlot, currentDbTemplate) { mutableStateOf(currentDbTemplate.customOwnerOrContact) }
+    var customPhone by remember(selectedSlot, currentDbTemplate) { mutableStateOf(currentDbTemplate.customPhone) }
+    var customAddress by remember(selectedSlot, currentDbTemplate) { mutableStateOf(currentDbTemplate.customAddress) }
     var storeNameFontSize by remember(selectedSlot, currentDbTemplate) { mutableStateOf(currentDbTemplate.storeNameFontSize) }
     var storeNameAlign by remember(selectedSlot, currentDbTemplate) { mutableStateOf(currentDbTemplate.storeNameAlign) }
     var showAddress by remember(selectedSlot, currentDbTemplate) { mutableStateOf(currentDbTemplate.showAddress) }
     var showPhone by remember(selectedSlot, currentDbTemplate) { mutableStateOf(currentDbTemplate.showPhone) }
     var showHeaderNote by remember(selectedSlot, currentDbTemplate) { mutableStateOf(currentDbTemplate.showHeaderNote) }
     var customHeaderNote by remember(selectedSlot, currentDbTemplate) { mutableStateOf(currentDbTemplate.customHeaderNote) }
+    var showCashierInfo by remember(selectedSlot, currentDbTemplate) { mutableStateOf(currentDbTemplate.showCashierInfo) }
+    var showVoucherNumber by remember(selectedSlot, currentDbTemplate) { mutableStateOf(currentDbTemplate.showVoucherNumber) }
+    var showCustomerInfo by remember(selectedSlot, currentDbTemplate) { mutableStateOf(currentDbTemplate.showCustomerInfo) }
+    var customerLabel by remember(selectedSlot, currentDbTemplate) { mutableStateOf(currentDbTemplate.customerLabel) }
 
     // Body Grid States
     var nameWeight by remember(selectedSlot, currentDbTemplate) { mutableFloatStateOf(currentDbTemplate.itemNameWidthWeight) }
@@ -124,54 +128,78 @@ fun ReceiptTemplateBuilderDialog(
     var showPaymentMethod by remember(selectedSlot, currentDbTemplate) { mutableStateOf(currentDbTemplate.showPaymentMethod) }
     var footerMessage by remember(selectedSlot, currentDbTemplate) { mutableStateOf(currentDbTemplate.footerMessage) }
     var returnPolicyText by remember(selectedSlot, currentDbTemplate) { mutableStateOf(currentDbTemplate.returnPolicyText) }
+    var extraNoticeText by remember(selectedSlot, currentDbTemplate) { mutableStateOf(currentDbTemplate.extraNoticeText) }
+    var showPrintTime by remember(selectedSlot, currentDbTemplate) { mutableStateOf(currentDbTemplate.showPrintTime) }
     var footerAlign by remember(selectedSlot, currentDbTemplate) { mutableStateOf(currentDbTemplate.footerAlign) }
 
-    // Sample receipt for live preview
+    // Sample receipt for live preview matching real data
     val sampleReceipt = remember {
         ReceiptData(
-            saleId = "TR-SAMPLE-8899",
-            businessDate = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date()),
+            saleId = "TR-SAMPLE-37416692",
+            businessDate = "07/11/2026 10:23AM",
             items = listOf(
-                SaleItemEntity(lineId = 1, saleId = "TR-SAMPLE-8899", productId = 1, productNameSnapshot = "ဘိလပ်မြေ (ဆင်တံဆိပ်)", quantity = 5, unitPriceMinor = 14500L, lineDiscountMinor = 0L, lineTaxMinor = 0L, lineTotalMinor = 72500L),
-                SaleItemEntity(lineId = 2, saleId = "TR-SAMPLE-8899", productId = 2, productNameSnapshot = "သွပ်ပြား (အပြာရောင် 10 ပေ)", quantity = 10, unitPriceMinor = 8200L, lineDiscountMinor = 0L, lineTaxMinor = 0L, lineTotalMinor = 82000L),
-                SaleItemEntity(lineId = 3, saleId = "TR-SAMPLE-8899", productId = 3, productNameSnapshot = "သံပိုက် 1.5 လက်မ", quantity = 2, unitPriceMinor = 12000L, lineDiscountMinor = 0L, lineTaxMinor = 0L, lineTotalMinor = 24000L),
+                SaleItemEntity(
+                    lineId = 1,
+                    saleId = "TR-SAMPLE-37416692",
+                    productId = 1,
+                    productNameSnapshot = "ကြံ့နီ ဘိလပ်မြေ",
+                    quantity = 1,
+                    unitPriceMinor = 31000L,
+                    lineDiscountMinor = 0L,
+                    lineTaxMinor = 0L,
+                    lineTotalMinor = 31000L,
+                    unitName = "အိတ်"
+                ),
             ),
             totals = CartTotals(
-                subtotalMinor = 178500L,
-                discountMinor = 3500L,
+                subtotalMinor = 31000L,
+                discountMinor = 0L,
                 taxMinor = 0L,
-                totalMinor = 175000L,
+                totalMinor = 31000L,
                 deliveryFeeMinor = 0L
             ),
             paymentMethod = "CASH",
-            tenderedMinor = 180000L,
-            changeMinor = 5000L,
+            tenderedMinor = 31000L,
+            changeMinor = 0L,
             timestampEpochMs = System.currentTimeMillis(),
             cashierId = "Admin",
             deviceId = "Device-01",
-            customerName = "ဦးကျော်သူ (09-4500123)",
-            voucherNo = "TR-261101-0001"
+            customerName = "MK store",
+            voucherNo = "A261107-37416692"
         )
     }
 
-    // Dynamic Live Preview Bitmap
+    // Dynamic Live Preview Template Entity
     val previewTemplate = remember(
-        name, isDefault, showLogo, storeNameFontSize, storeNameAlign, showAddress, showPhone,
-        showHeaderNote, customHeaderNote, nameWeight, qtyWeight, priceWeight, amountWeight,
+        name, isDefault, paperWidthDots, itemLayoutStyle, showLogo, customStoreName, customSubtitle,
+        customOwnerOrContact, customPhone, customAddress, storeNameFontSize, storeNameAlign,
+        showAddress, showPhone, showHeaderNote, customHeaderNote, showCashierInfo, showVoucherNumber,
+        showCustomerInfo, customerLabel, nameWeight, qtyWeight, priceWeight, amountWeight,
         rowPaddingDp, gridLineStyle, bodyFontSize, showTotalsBreakdown, showPaymentMethod,
-        footerMessage, returnPolicyText, footerAlign
+        footerMessage, returnPolicyText, extraNoticeText, showPrintTime, footerAlign
     ) {
         ReceiptTemplateEntity(
             templateId = selectedSlot,
             name = name,
             isDefault = isDefault,
+            paperWidthDots = paperWidthDots,
+            itemLayoutStyle = itemLayoutStyle,
             showLogo = showLogo,
+            customStoreName = customStoreName,
+            customSubtitle = customSubtitle,
+            customOwnerOrContact = customOwnerOrContact,
+            customPhone = customPhone,
+            customAddress = customAddress,
             storeNameFontSize = storeNameFontSize,
             storeNameAlign = storeNameAlign,
             showAddress = showAddress,
             showPhone = showPhone,
             showHeaderNote = showHeaderNote,
             customHeaderNote = customHeaderNote,
+            showCashierInfo = showCashierInfo,
+            showVoucherNumber = showVoucherNumber,
+            showCustomerInfo = showCustomerInfo,
+            customerLabel = customerLabel,
             itemNameWidthWeight = nameWeight,
             qtyWidthWeight = qtyWeight,
             priceWidthWeight = priceWeight,
@@ -183,6 +211,8 @@ fun ReceiptTemplateBuilderDialog(
             showPaymentMethod = showPaymentMethod,
             footerMessage = footerMessage,
             returnPolicyText = returnPolicyText,
+            extraNoticeText = extraNoticeText,
+            showPrintTime = showPrintTime,
             footerAlign = footerAlign
         )
     }
@@ -194,7 +224,7 @@ fun ReceiptTemplateBuilderDialog(
             template = previewTemplate,
             receipt = sampleReceipt,
             storeProfile = storeProfile,
-            targetWidthDots = 576
+            targetWidthDots = previewTemplate.paperWidthDots
         )
     }
 
@@ -220,12 +250,12 @@ fun ReceiptTemplateBuilderDialog(
                 ) {
                     Column {
                         Text(
-                            text = "ပြေစာပုံစံ ဖန်တီးခန်း (Receipt Template Builder)",
+                            text = "ပြေစာပုံစံ ဖန်တီးခန်း (Custom Template Builder)",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = "ပုံစံ ၅ မျိုးအထိ စိတ်ကြိုက် Slot ခွဲခြား သိမ်းဆည်းနိုင်ပါသည်",
+                            text = "Template 1 (နမူနာစံ) နှင့် Template 2 (မျဉ်းမပါ) စိတ်ကြိုက်ပြင်နိုင်ပါသည်",
                             fontSize = 11.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -238,7 +268,7 @@ fun ReceiptTemplateBuilderDialog(
                 Spacer(modifier = Modifier.height(10.dp))
 
                 // 5 Slots Selector Chips
-                Text("Template ရွေးချယ်ပါ (Slots 1 to 5):", fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                Text("ပြင်ဆင်မည့် Template ရွေးချယ်ပါ (Slots 1 to 5):", fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
                 Spacer(modifier = Modifier.height(6.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -305,13 +335,115 @@ fun ReceiptTemplateBuilderDialog(
                                 Text("🏷️ ခေါင်းစဉ်အပိုင်း ပြင်ဆင်ရန် (Header Section)", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                                 Spacer(modifier = Modifier.height(8.dp))
 
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Checkbox(checked = showLogo, onCheckedChange = { showLogo = it })
-                                    Text("ဆိုင်တံဆိပ် (Logo) ထည့်သွင်းမည်", fontSize = 12.sp)
+                                // Paper Size
+                                Text("စက္ကူအကျယ် အရွယ်အစား (Paper Width):", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    FilterChip(
+                                        selected = paperWidthDots <= 420,
+                                        onClick = { paperWidthDots = 384 },
+                                        label = { Text("58mm (ဘောပင်အရွယ် စံနှုန်း)", fontSize = 11.sp) }
+                                    )
+                                    FilterChip(
+                                        selected = paperWidthDots > 420,
+                                        onClick = { paperWidthDots = 576 },
+                                        label = { Text("80mm (အကျယ်ကြီး)", fontSize = 11.sp) }
+                                    )
                                 }
 
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text("ဆိုင်နာမည် စာလုံးအရွယ်အစား (Font Size):", fontSize = 11.sp)
+                                Spacer(modifier = Modifier.height(8.dp))
+
+                                // Custom Store Name
+                                OutlinedTextField(
+                                    value = customStoreName,
+                                    onValueChange = { customStoreName = it },
+                                    label = { Text("ဆိုင်နာမည် (ဥပမာ- ဆန်းသစ်)") },
+                                    placeholder = { Text(storeProfile.storeName.ifBlank { "ဆန်းသစ်" }) },
+                                    singleLine = true,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+
+                                Spacer(modifier = Modifier.height(6.dp))
+
+                                // Custom Subtitle
+                                OutlinedTextField(
+                                    value = customSubtitle,
+                                    onValueChange = { customSubtitle = it },
+                                    label = { Text("ဆိုင်အမျိုးအစား / ခေါင်းစဉ်ခွဲ (ဥပမာ- အိမ်ဆောက်ပစ္စည်း အရောင်းဆိုင်)") },
+                                    singleLine = true,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+
+                                Spacer(modifier = Modifier.height(6.dp))
+
+                                // Custom Owner / Contact
+                                OutlinedTextField(
+                                    value = customOwnerOrContact,
+                                    onValueChange = { customOwnerOrContact = it },
+                                    label = { Text("ပိုင်ရှင် / တာဝန်ခံ (ဥပမာ- ကိုပါပီး+မသီရိကလျာ)") },
+                                    singleLine = true,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+
+                                Spacer(modifier = Modifier.height(6.dp))
+
+                                // Custom Phone
+                                OutlinedTextField(
+                                    value = customPhone,
+                                    onValueChange = { customPhone = it },
+                                    label = { Text("ဖုန်းနံပါတ်များ (ဥပမာ- 09678473426/09943070451/...)") },
+                                    placeholder = { Text(storeProfile.phone) },
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+
+                                Spacer(modifier = Modifier.height(6.dp))
+
+                                // Custom Address
+                                OutlinedTextField(
+                                    value = customAddress,
+                                    onValueChange = { customAddress = it },
+                                    label = { Text("ဆိုင်လိပ်စာ (ဥပမာ- 3/3 ဗိုလ်ချုပ်လမ်း / စမ်းမြို့ရပ်ကွက် / ကလေးမြို့)") },
+                                    placeholder = { Text(storeProfile.address) },
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+
+                                Spacer(modifier = Modifier.height(8.dp))
+
+                                // Customer name inclusion & custom label
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Checkbox(checked = showCustomerInfo, onCheckedChange = { showCustomerInfo = it })
+                                    Text("ဈေးဝယ်သူအမည် ထည့်သွင်းဖော်ပြမည်", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                }
+
+                                if (showCustomerInfo) {
+                                    OutlinedTextField(
+                                        value = customerLabel,
+                                        onValueChange = { customerLabel = it },
+                                        label = { Text("ဈေးဝယ်သူ ခေါင်းစဉ်စာသား (ဥပမာ- ဈေးဝယ်သူ သို့မဟုတ် ဝယ်သူအမည်)") },
+                                        singleLine = true,
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                }
+
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Checkbox(checked = showAddress, onCheckedChange = { showAddress = it })
+                                    Text("ဆိုင်လိပ်စာ ဖော်ပြမည်", fontSize = 12.sp)
+                                }
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Checkbox(checked = showPhone, onCheckedChange = { showPhone = it })
+                                    Text("ဆိုင်ဖုန်းနံပါတ် ဖော်ပြမည်", fontSize = 12.sp)
+                                }
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Checkbox(checked = showVoucherNumber, onCheckedChange = { showVoucherNumber = it })
+                                    Text("ပြေစာအမှတ် ဖော်ပြမည်", fontSize = 12.sp)
+                                }
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Checkbox(checked = showCashierInfo, onCheckedChange = { showCashierInfo = it })
+                                    Text("အရောင်းတာဝန်ခံ ဖော်ပြမည်", fontSize = 12.sp)
+                                }
+
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text("ဆိုင်နာမည် စာလုံးအရွယ်အစား:", fontSize = 11.sp)
                                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                     listOf("SMALL" to "သေး", "MEDIUM" to "အလယ်", "LARGE" to "ကြီး", "XLARGE" to "အကြီးဆုံး").forEach { (sz, lbl) ->
                                         FilterChip(
@@ -322,7 +454,7 @@ fun ReceiptTemplateBuilderDialog(
                                     }
                                 }
 
-                                Spacer(modifier = Modifier.height(6.dp))
+                                Spacer(modifier = Modifier.height(4.dp))
                                 Text("ဆိုင်နာမည် ချိန်ညှိမှု (Alignment):", fontSize = 11.sp)
                                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                     listOf("LEFT" to "ဘယ်", "CENTER" to "အလယ်", "RIGHT" to "ညာ").forEach { (al, lbl) ->
@@ -333,25 +465,6 @@ fun ReceiptTemplateBuilderDialog(
                                         )
                                     }
                                 }
-
-                                Spacer(modifier = Modifier.height(8.dp))
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Checkbox(checked = showAddress, onCheckedChange = { showAddress = it })
-                                    Text("ဆိုင်လိပ်စာ ဖော်ပြမည်", fontSize = 12.sp)
-                                }
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Checkbox(checked = showPhone, onCheckedChange = { showPhone = it })
-                                    Text("ဆိုင်ဖုန်းနံပါတ် ဖော်ပြမည်", fontSize = 12.sp)
-                                }
-
-                                Spacer(modifier = Modifier.height(6.dp))
-                                OutlinedTextField(
-                                    value = customHeaderNote,
-                                    onValueChange = { customHeaderNote = it },
-                                    label = { Text("အပိုဆောင်း ခေါင်းစဉ်မှတ်ချက် (Optional Note)") },
-                                    singleLine = true,
-                                    modifier = Modifier.fillMaxWidth()
-                                )
                             }
                         }
                     }
@@ -363,50 +476,42 @@ fun ReceiptTemplateBuilderDialog(
                             shape = RoundedCornerShape(12.dp)
                         ) {
                             Column(modifier = Modifier.padding(14.dp)) {
-                                Text("📊 Excel ပုံစံ ဇယားကွက် သတ်မှတ်ချက် (Body Grid & Columns)", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                                Text("ကော်လံ အကျယ်အဝန်း အချိုးအစား (Column Width Weights):", fontSize = 11.sp, color = Color.DarkGray)
+                                Text("📊 Body ကုန်ပစ္စည်းပြသမှု ပုံစံ (Item Layout Style)", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                                 Spacer(modifier = Modifier.height(8.dp))
 
-                                // Item Name Width Slider
-                                Text("၁။ ပစ္စည်းအမည် အကျယ် (Name Column): ${(nameWeight * 100).toInt()}%", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                                Slider(
-                                    value = nameWeight,
-                                    onValueChange = {
-                                        nameWeight = it
-                                        val remaining = (1.0f - nameWeight).coerceAtLeast(0.2f)
-                                        qtyWeight = remaining * 0.28f
-                                        priceWeight = remaining * 0.34f
-                                        amountWeight = remaining * 0.38f
-                                    },
-                                    valueRange = 0.25f..0.60f
-                                )
-
-                                // Qty Width
-                                Text("၂။ အရေအတွက် အကျယ် (Qty Column): ${(qtyWeight * 100).toInt()}%", fontSize = 11.sp)
-                                // Price Width
-                                Text("၃။ နှုန်းထား အကျယ် (Price Column): ${(priceWeight * 100).toInt()}%", fontSize = 11.sp)
-                                // Amount Width
-                                Text("၄။ သင့်ငွေ အကျယ် (Amount Column): ${(amountWeight * 100).toInt()}%", fontSize = 11.sp)
-
-                                Spacer(modifier = Modifier.height(10.dp))
-                                HorizontalDivider()
-                                Spacer(modifier = Modifier.height(8.dp))
-
-                                Text("Row အကွာအဝေး (Padding / Height):", fontSize = 11.sp)
+                                // Item Layout Style: 2-Line Sample vs 4-Column Table
+                                Text("ပုံစံ အမျိုးအစား ရွေးချယ်ပါ:", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    listOf(2 to "ကျစ်လျစ် (Compact)", 4 to "ပုံမှန် (Normal)", 8 to "ကျယ်ပြန့် (Spacious)").forEach { (pad, lbl) ->
-                                        FilterChip(
-                                            selected = rowPaddingDp == pad,
-                                            onClick = { rowPaddingDp = pad },
-                                            label = { Text(lbl, fontSize = 11.sp) }
-                                        )
-                                    }
+                                    FilterChip(
+                                        selected = itemLayoutStyle == "STANDARD_2LINE",
+                                        onClick = {
+                                            itemLayoutStyle = "STANDARD_2LINE"
+                                            gridLineStyle = "DASHED"
+                                        },
+                                        label = { Text("နမူနာ ၂ ကြောင်းစံ (Template 1)", fontSize = 11.sp) }
+                                    )
+                                    FilterChip(
+                                        selected = itemLayoutStyle == "COLUMNS_4",
+                                        onClick = {
+                                            itemLayoutStyle = "COLUMNS_4"
+                                            gridLineStyle = "NONE"
+                                        },
+                                        label = { Text("၄ ကော်လံ ဇယား (Template 2)", fontSize = 11.sp) }
+                                    )
                                 }
 
                                 Spacer(modifier = Modifier.height(8.dp))
-                                Text("ဇယားကွက် မျဉ်းကြောင်းပုံစံ (Grid Divider Lines):", fontSize = 11.sp)
+                                HorizontalDivider()
+                                Spacer(modifier = Modifier.height(8.dp))
+
+                                Text("ဇယားကွက် မျဉ်းကြောင်းပုံစံ (Grid Line Style):", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    listOf("DASHED" to "ပြတ်မျဉ်း (- - -)", "SOLID" to "မျဉ်းဖြောင့် (───)", "DOUBLE" to "မျဉ်းနှစ်ထပ် (═══)", "NONE" to "မျဉ်းမပါ").forEach { (st, lbl) ->
+                                    listOf(
+                                        "NONE" to "မျဉ်းမပါ (Template 2)",
+                                        "DASHED" to "အစက်မျဉ်း (- - - Template 1)",
+                                        "SOLID" to "မျဉ်းဖြောင့် (───)",
+                                        "DOUBLE" to "မျဉ်းနှစ်ထပ် (═══)"
+                                    ).forEach { (st, lbl) ->
                                         FilterChip(
                                             selected = gridLineStyle == st,
                                             onClick = { gridLineStyle = st },
@@ -425,6 +530,24 @@ fun ReceiptTemplateBuilderDialog(
                                             label = { Text(lbl, fontSize = 11.sp) }
                                         )
                                     }
+                                }
+
+                                if (itemLayoutStyle == "COLUMNS_4") {
+                                    Spacer(modifier = Modifier.height(10.dp))
+                                    Text("၄ ကော်လံ အကျယ်အဝန်း အချိုးအစား (Column Widths):", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                    Text("၁။ ပစ္စည်းအမည် (Name): ${(nameWeight * 100).toInt()}%", fontSize = 11.sp)
+                                    Slider(
+                                        value = nameWeight,
+                                        onValueChange = {
+                                            nameWeight = it
+                                            val remaining = (1.0f - nameWeight).coerceAtLeast(0.2f)
+                                            qtyWeight = remaining * 0.28f
+                                            priceWeight = remaining * 0.34f
+                                            amountWeight = remaining * 0.38f
+                                        },
+                                        valueRange = 0.25f..0.60f
+                                    )
+                                    Text("၂။ အရေအတွက် (Qty): ${(qtyWeight * 100).toInt()}% | ၃။ နှုန်း: ${(priceWeight * 100).toInt()}% | ၄။ သင့်ငွေ: ${(amountWeight * 100).toInt()}%", fontSize = 11.sp, color = Color.DarkGray)
                                 }
                             }
                         }
@@ -448,34 +571,34 @@ fun ReceiptTemplateBuilderDialog(
                                     Checkbox(checked = showPaymentMethod, onCheckedChange = { showPaymentMethod = it })
                                     Text("ပေးငွေနှင့် ပြန်အမ်းငွေ ဖော်ပြမည်", fontSize = 12.sp)
                                 }
-
-                                Spacer(modifier = Modifier.height(6.dp))
-                                OutlinedTextField(
-                                    value = footerMessage,
-                                    onValueChange = { footerMessage = it },
-                                    label = { Text("နှုတ်ခွန်းဆက် စကား (Thank You Message)") },
-                                    modifier = Modifier.fillMaxWidth()
-                                )
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Checkbox(checked = showPrintTime, onCheckedChange = { showPrintTime = it })
+                                    Text("Print Time ထည့်သွင်းဖော်ပြမည်", fontSize = 12.sp)
+                                }
 
                                 Spacer(modifier = Modifier.height(6.dp))
                                 OutlinedTextField(
                                     value = returnPolicyText,
                                     onValueChange = { returnPolicyText = it },
-                                    label = { Text("ပစ္စည်း ပြန်လဲခြင်း စည်းကမ်းချက် (Return Policy)") },
+                                    label = { Text("ပစ္စည်း ပြန်လဲခြင်း စည်းကမ်းချက် (ဥပမာ- ဝယ်ယူပြီး ပစ္စည်း များကို ပြန်လဲမပေးပါ)") },
                                     modifier = Modifier.fillMaxWidth()
                                 )
 
                                 Spacer(modifier = Modifier.height(6.dp))
-                                Text("စာသား အထားအသို (Alignment):", fontSize = 11.sp)
-                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    listOf("LEFT" to "ဘယ်", "CENTER" to "အလယ်", "RIGHT" to "ညာ").forEach { (al, lbl) ->
-                                        FilterChip(
-                                            selected = footerAlign == al,
-                                            onClick = { footerAlign = al },
-                                            label = { Text(lbl, fontSize = 11.sp) }
-                                        )
-                                    }
-                                }
+                                OutlinedTextField(
+                                    value = footerMessage,
+                                    onValueChange = { footerMessage = it },
+                                    label = { Text("နှုတ်ခွန်းဆက် စကား (ဥပမာ- ဝယ်ယူအားပေးမှုကိုကျေးဇူးအထူးတင်ရှိပါသည် သို့မဟုတ် ကျေးဇူးတင်ပါသည်)") },
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+
+                                Spacer(modifier = Modifier.height(6.dp))
+                                OutlinedTextField(
+                                    value = extraNoticeText,
+                                    onValueChange = { extraNoticeText = it },
+                                    label = { Text("အပိုဆောင်း ကြော်ငြာ/အသိပေးချက် (ဥပမာ- သုံးမူး၊ ငါးမူး၊ ခြောက်မူး သံပင် များ ၊ ...)") },
+                                    modifier = Modifier.fillMaxWidth()
+                                )
                             }
                         }
                     }
@@ -494,6 +617,7 @@ fun ReceiptTemplateBuilderDialog(
                                 horizontalAlignment = Alignment.CenterHorizontally
                             ) {
                                 Text("🖨️ Thermal Paper Live Preview", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color(0xFF92400E))
+                                Text("စက္ကူအရွယ်: ${if (paperWidthDots <= 420) "58mm Compact" else "80mm Wide"} | ပုံစံ: ${if (itemLayoutStyle == "STANDARD_2LINE") "၂ ကြောင်းစံ" else "၄ ကော်လံ"}", fontSize = 10.5.sp, color = Color.Gray)
                                 Spacer(modifier = Modifier.height(8.dp))
 
                                 previewBitmap?.let { bmp ->
@@ -544,7 +668,8 @@ fun ReceiptTemplateBuilderDialog(
                             val bytes = CustomReceiptEscPosGenerator.generateEscPosForTemplate(
                                 template = previewTemplate,
                                 receipt = sampleReceipt,
-                                profile = storeProfile
+                                profile = storeProfile,
+                                paperWidthDots = previewTemplate.paperWidthDots
                             )
                             scope.launch {
                                 val result = ThermalPrinterManager.printRawBytes(context, bytes)
@@ -560,7 +685,7 @@ fun ReceiptTemplateBuilderDialog(
 
                     Button(
                         onClick = {
-                            viewModel.saveReceiptTemplate(previewTemplate) { success, msg ->
+                            viewModel.saveReceiptTemplate(previewTemplate) { success, _ ->
                                 if (success && isDefault) {
                                     viewModel.setDefaultReceiptTemplate(selectedSlot)
                                 }
