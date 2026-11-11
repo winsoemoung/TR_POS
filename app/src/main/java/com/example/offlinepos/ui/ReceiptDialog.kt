@@ -132,6 +132,8 @@ fun ReceiptDialog(
                     shape = RoundedCornerShape(8.dp),
                 ) {
                     val currentTemplate = templates.find { it.templateId == selectedTemplateId } ?: defaultTemplate
+                    val fontMultiplier = ((currentTemplate?.fontScalePercent ?: 100).coerceIn(60, 200) / 100f)
+                    val lineSpacingExtra = ((currentTemplate?.lineSpacingDp ?: 4).coerceIn(0, 24)).dp
 
                     Column(
                         modifier = Modifier
@@ -555,8 +557,9 @@ fun ReceiptDialog(
                                     selected = isSelected,
                                     onClick = { selectedTemplateId = tmpl.templateId },
                                     label = {
+                                        val pWidth = if (tmpl.paperWidthDots >= 500) "80mm" else "58mm"
                                         Text(
-                                            text = if (tmpl.isDefault) "⭐ ${tmpl.name}" else tmpl.name,
+                                            text = if (tmpl.isDefault) "⭐ ${tmpl.name} [$pWidth]" else "${tmpl.name} [$pWidth]",
                                             fontSize = 11.sp,
                                             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
                                         )

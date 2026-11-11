@@ -75,12 +75,30 @@ class ThermalPrinterTest {
     }
 
     @Test
-    fun template1_sample58mmLayout_hasCorrectSpecs() {
+    fun defaultReceiptTemplate_has80mmAndFontLineSpacing() {
+        val tmplDefault = com.example.offlinepos.data.local.ReceiptTemplateEntity(
+            templateId = 1,
+            name = "Template 1"
+        )
+        // Verified: All templates default to 80mm (576 dots)
+        assertEquals(576, tmplDefault.paperWidthDots)
+        assertEquals(100, tmplDefault.fontScalePercent)
+        assertEquals(4, tmplDefault.lineSpacingDp)
+        assertEquals("LARGE", tmplDefault.storeNameFontSize)
+        assertEquals("MEDIUM", tmplDefault.headerDetailsFontSize)
+        assertEquals("MEDIUM", tmplDefault.metaFontSize)
+        assertEquals("MEDIUM", tmplDefault.bodyFontSize)
+        assertEquals("MEDIUM", tmplDefault.totalsFontSize)
+        assertEquals("SMALL", tmplDefault.footerFontSize)
+    }
+
+    @Test
+    fun template1_sampleLayout_hasCorrectSpecsAnd80mmDefault() {
         val tmpl1 = com.example.offlinepos.data.local.ReceiptTemplateEntity(
             templateId = 1,
-            name = "Template 1 - နမူနာပြေစာ စံပုံစံ (58mm Sample Style)",
+            name = "Template 1 - နမူနာပြေစာ စံပုံစံ (80mm Sample Style)",
             isDefault = true,
-            paperWidthDots = 384,
+            paperWidthDots = 576,
             itemLayoutStyle = "STANDARD_2LINE",
             showLogo = false,
             customStoreName = "ဆန်းသစ်",
@@ -91,13 +109,17 @@ class ThermalPrinterTest {
             customerLabel = "ဈေးဝယ်သူ",
             showCustomerInfo = true,
             gridLineStyle = "DASHED",
+            fontScalePercent = 100,
+            lineSpacingDp = 4,
             returnPolicyText = "ဝယ်ယူပြီး ပစ္စည်း များကို ပြန်လဲမပေးပါ",
             footerMessage = "ဝယ်ယူအားပေးမှုကိုကျေးဇူးအထူးတင်ရှိပါသည်",
             extraNoticeText = "သုံးမူး၊ ငါးမူး၊ ခြောက်မူး သံပင် များ ၊\nသွပ် အစားထိုး polystar များ ရပါသည် ။",
             showPrintTime = true
         )
 
-        assertEquals(384, tmpl1.paperWidthDots)
+        assertEquals(576, tmpl1.paperWidthDots) // Default 80mm
+        assertEquals(100, tmpl1.fontScalePercent)
+        assertEquals(4, tmpl1.lineSpacingDp)
         assertEquals("STANDARD_2LINE", tmpl1.itemLayoutStyle)
         assertEquals("DASHED", tmpl1.gridLineStyle)
         assertEquals("ဆန်းသစ်", tmpl1.customStoreName)
@@ -107,12 +129,12 @@ class ThermalPrinterTest {
     }
 
     @Test
-    fun template2_cleanBorderlessLayout_hasNoRowColumnLines() {
+    fun template2_cleanBorderlessLayout_hasNoRowColumnLinesAnd80mm() {
         val tmpl2 = com.example.offlinepos.data.local.ReceiptTemplateEntity(
             templateId = 2,
-            name = "Template 2 - မျဉ်းမပါ သန့်ရှင်းသော ပုံစံ (Clean Borderless)",
+            name = "Template 2 - မျဉ်းမပါ သန့်ရှင်းသော ပုံစံ (Clean Borderless 80mm)",
             isDefault = false,
-            paperWidthDots = 384,
+            paperWidthDots = 576,
             itemLayoutStyle = "COLUMNS_4",
             showLogo = true,
             customStoreName = "",
@@ -121,10 +143,13 @@ class ThermalPrinterTest {
             customerLabel = "ဝယ်သူအမည်",
             showCustomerInfo = true,
             gridLineStyle = "NONE", // No row/column lines
+            fontScalePercent = 100,
+            lineSpacingDp = 4,
             footerMessage = "ကျေးဇူးတင်ပါသည်",
             returnPolicyText = "ဝယ်ယူပြီးပစ္စည်း ပြန်မလဲပေးပါ"
         )
 
+        assertEquals(576, tmpl2.paperWidthDots) // Default 80mm
         assertEquals("COLUMNS_4", tmpl2.itemLayoutStyle)
         assertEquals("NONE", tmpl2.gridLineStyle) // Verified: NO row/column lines!
         assertEquals("ကျေးဇူးတင်ပါသည်", tmpl2.footerMessage)

@@ -25,7 +25,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         SupplierEntity::class,
         ReceiptTemplateEntity::class,
     ],
-    version = 14,
+    version = 15,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -266,6 +266,7 @@ abstract class AppDatabase : RoomDatabase() {
                         `showLogo` INTEGER NOT NULL DEFAULT 1,
                         `storeNameFontSize` TEXT NOT NULL DEFAULT 'LARGE',
                         `storeNameAlign` TEXT NOT NULL DEFAULT 'CENTER',
+                        `headerDetailsFontSize` TEXT NOT NULL DEFAULT 'MEDIUM',
                         `showAddress` INTEGER NOT NULL DEFAULT 1,
                         `showPhone` INTEGER NOT NULL DEFAULT 1,
                         `showHeaderNote` INTEGER NOT NULL DEFAULT 1,
@@ -273,6 +274,8 @@ abstract class AppDatabase : RoomDatabase() {
                         `showCashierInfo` INTEGER NOT NULL DEFAULT 1,
                         `showVoucherNumber` INTEGER NOT NULL DEFAULT 1,
                         `showCustomerInfo` INTEGER NOT NULL DEFAULT 1,
+                        `customerLabel` TEXT NOT NULL DEFAULT 'ဈေးဝယ်သူ',
+                        `metaFontSize` TEXT NOT NULL DEFAULT 'MEDIUM',
                         `itemNameWidthWeight` REAL NOT NULL DEFAULT 0.42,
                         `qtyWidthWeight` REAL NOT NULL DEFAULT 0.16,
                         `priceWidthWeight` REAL NOT NULL DEFAULT 0.20,
@@ -284,16 +287,18 @@ abstract class AppDatabase : RoomDatabase() {
                         `qtyAlign` TEXT NOT NULL DEFAULT 'CENTER',
                         `priceAlign` TEXT NOT NULL DEFAULT 'RIGHT',
                         `amountAlign` TEXT NOT NULL DEFAULT 'RIGHT',
-                        `paperWidthDots` INTEGER NOT NULL DEFAULT 384,
+                        `totalsFontSize` TEXT NOT NULL DEFAULT 'MEDIUM',
+                        `paperWidthDots` INTEGER NOT NULL DEFAULT 576,
                         `itemLayoutStyle` TEXT NOT NULL DEFAULT 'STANDARD_2LINE',
                         `customStoreName` TEXT NOT NULL DEFAULT '',
                         `customSubtitle` TEXT NOT NULL DEFAULT '',
                         `customOwnerOrContact` TEXT NOT NULL DEFAULT '',
                         `customPhone` TEXT NOT NULL DEFAULT '',
                         `customAddress` TEXT NOT NULL DEFAULT '',
-                        `customerLabel` TEXT NOT NULL DEFAULT 'ဈေးဝယ်သူ',
                         `extraNoticeText` TEXT NOT NULL DEFAULT '',
                         `showPrintTime` INTEGER NOT NULL DEFAULT 1,
+                        `fontScalePercent` INTEGER NOT NULL DEFAULT 100,
+                        `lineSpacingDp` INTEGER NOT NULL DEFAULT 4,
                         `showTotalsBreakdown` INTEGER NOT NULL DEFAULT 1,
                         `showPaymentMethod` INTEGER NOT NULL DEFAULT 1,
                         `showBarcodeOrQr` INTEGER NOT NULL DEFAULT 1,
@@ -305,7 +310,7 @@ abstract class AppDatabase : RoomDatabase() {
                     )
                 """)
 
-                ensureColumnExists(db, "receipt_templates", "paperWidthDots", "INTEGER NOT NULL DEFAULT 384")
+                ensureColumnExists(db, "receipt_templates", "paperWidthDots", "INTEGER NOT NULL DEFAULT 576")
                 ensureColumnExists(db, "receipt_templates", "itemLayoutStyle", "TEXT NOT NULL DEFAULT 'STANDARD_2LINE'")
                 ensureColumnExists(db, "receipt_templates", "customStoreName", "TEXT NOT NULL DEFAULT ''")
                 ensureColumnExists(db, "receipt_templates", "customSubtitle", "TEXT NOT NULL DEFAULT ''")
@@ -315,6 +320,14 @@ abstract class AppDatabase : RoomDatabase() {
                 ensureColumnExists(db, "receipt_templates", "customerLabel", "TEXT NOT NULL DEFAULT 'ဈေးဝယ်သူ'")
                 ensureColumnExists(db, "receipt_templates", "extraNoticeText", "TEXT NOT NULL DEFAULT ''")
                 ensureColumnExists(db, "receipt_templates", "showPrintTime", "INTEGER NOT NULL DEFAULT 1")
+                ensureColumnExists(db, "receipt_templates", "headerDetailsFontSize", "TEXT NOT NULL DEFAULT 'MEDIUM'")
+                ensureColumnExists(db, "receipt_templates", "metaFontSize", "TEXT NOT NULL DEFAULT 'MEDIUM'")
+                ensureColumnExists(db, "receipt_templates", "totalsFontSize", "TEXT NOT NULL DEFAULT 'MEDIUM'")
+                ensureColumnExists(db, "receipt_templates", "fontScalePercent", "INTEGER NOT NULL DEFAULT 100")
+                ensureColumnExists(db, "receipt_templates", "lineSpacingDp", "INTEGER NOT NULL DEFAULT 4")
+
+                // Update all templates 1 to 5 to default to 80mm (576 dots)
+                db.execSQL("UPDATE `receipt_templates` SET `paperWidthDots` = 576 WHERE `paperWidthDots` = 384")
 
                 // Ensure initial 5 receipt template slots exist
                 runCatching {
@@ -327,79 +340,56 @@ abstract class AppDatabase : RoomDatabase() {
                             INSERT INTO `receipt_templates` (
                                 templateId, name, isDefault, paperWidthDots, itemLayoutStyle, showLogo,
                                 customStoreName, customSubtitle, customOwnerOrContact, customPhone, customAddress,
-                                storeNameFontSize, storeNameAlign, showAddress, showPhone, showHeaderNote,
-                                customHeaderNote, showCashierInfo, showVoucherNumber, showCustomerInfo, customerLabel,
+                                storeNameFontSize, storeNameAlign, headerDetailsFontSize, showAddress, showPhone, showHeaderNote,
+                                customHeaderNote, showCashierInfo, showVoucherNumber, showCustomerInfo, customerLabel, metaFontSize,
                                 itemNameWidthWeight, qtyWidthWeight, priceWidthWeight, amountWidthWeight,
                                 rowPaddingDp, gridLineStyle, bodyFontSize, itemNameAlign, qtyAlign, priceAlign, amountAlign,
+                                totalsFontSize, fontScalePercent, lineSpacingDp,
                                 showTotalsBreakdown, showPaymentMethod, showBarcodeOrQr, footerMessage, returnPolicyText,
                                 extraNoticeText, showPrintTime, footerAlign, footerFontSize, updatedAtEpochMs
                             ) VALUES
-                            (1, 'Template 1 - နမူနာပြေစာ စံပုံစံ (58mm Sample Style)', 1, 384, 'STANDARD_2LINE', 0,
+                            (1, 'Template 1 - နမူနာပြေစာ စံပုံစံ (80mm Sample Style)', 1, 576, 'STANDARD_2LINE', 0,
                              'ဆန်းသစ်', 'အိမ်ဆောက်ပစ္စည်း အရောင်းဆိုင်', 'ကိုပါပီး+မသီရိကလျာ',
                              '09678473426/09943070451/09442387883/' || char(10) || '09400511789',
                              '3/3 ဗိုလ်ချုပ်လမ်း / စမ်းမြို့ရပ်ကွက် / ကလေးမြို့',
-                             'LARGE', 'CENTER', 1, 1, 0, '', 0, 1, 1, 'ဈေးဝယ်သူ',
+                             'LARGE', 'CENTER', 'MEDIUM', 1, 1, 0, '', 0, 1, 1, 'ဈေးဝယ်သူ', 'MEDIUM',
                              0.42, 0.16, 0.20, 0.22, 4, 'DASHED', 'MEDIUM', 'LEFT', 'CENTER', 'RIGHT', 'RIGHT',
+                             'MEDIUM', 100, 4,
                              1, 0, 0, 'ဝယ်ယူအားပေးမှုကိုကျေးဇူးအထူးတင်ရှိပါသည်', 'ဝယ်ယူပြီး ပစ္စည်း များကို ပြန်လဲမပေးပါ',
                              'သုံးမူး၊ ငါးမူး၊ ခြောက်မူး သံပင် များ ၊' || char(10) || 'သွပ် အစားထိုး polystar များ ရပါသည် ။',
                              1, 'CENTER', 'SMALL', ${System.currentTimeMillis()}),
-                            (2, 'Template 2 - မျဉ်းမပါ သန့်ရှင်းသော ပုံစံ (Clean Borderless)', 0, 384, 'COLUMNS_4', 1,
+                            (2, 'Template 2 - မျဉ်းမပါ သန့်ရှင်းသော ပုံစံ (Clean Borderless 80mm)', 0, 576, 'COLUMNS_4', 1,
                              '', '', '', '', '',
-                             'LARGE', 'CENTER', 1, 1, 1, 'တရားဝင် အရောင်းပြေစာ', 1, 1, 1, 'ဝယ်သူအမည်',
+                             'LARGE', 'CENTER', 'MEDIUM', 1, 1, 1, 'တရားဝင် အရောင်းပြေစာ', 1, 1, 1, 'ဝယ်သူအမည်', 'MEDIUM',
                              0.40, 0.15, 0.20, 0.25, 4, 'NONE', 'MEDIUM', 'LEFT', 'CENTER', 'RIGHT', 'RIGHT',
+                             'MEDIUM', 100, 4,
                              1, 1, 0, 'ကျေးဇူးတင်ပါသည်', 'ဝယ်ယူပြီးပစ္စည်း ပြန်မလဲပေးပါ',
                              '', 0, 'CENTER', 'SMALL', ${System.currentTimeMillis()}),
-                            (3, 'Template 3 - အရွယ်သေး ကျစ်လျစ် (Compact 58mm)', 0, 384, 'COLUMNS_4', 0,
+                            (3, 'Template 3 - အရွယ်စံ ပုံမှန် (Standard 80mm)', 0, 576, 'COLUMNS_4', 0,
                              '', '', '', '', '',
-                             'MEDIUM', 'LEFT', 1, 1, 0, '', 1, 1, 0, 'ဝယ်သူ',
-                             0.45, 0.15, 0.18, 0.22, 2, 'DASHED', 'SMALL', 'LEFT', 'CENTER', 'RIGHT', 'RIGHT',
+                             'MEDIUM', 'LEFT', 'MEDIUM', 1, 1, 0, '', 1, 1, 0, 'ဝယ်သူ', 'MEDIUM',
+                             0.45, 0.15, 0.18, 0.22, 4, 'DASHED', 'MEDIUM', 'LEFT', 'CENTER', 'RIGHT', 'RIGHT',
+                             'MEDIUM', 100, 4,
                              1, 1, 0, 'Thank you!', '', '', 0, 'CENTER', 'SMALL', ${System.currentTimeMillis()}),
-                            (4, 'Template 4 - ပို့ဆောင်ရေး/ဂိုဒေါင် (Delivery Voucher)', 0, 576, 'COLUMNS_4', 1,
+                            (4, 'Template 4 - ပို့ဆောင်ရေး/ဂိုဒေါင် (Delivery Voucher 80mm)', 0, 576, 'COLUMNS_4', 1,
                              '', '', '', '', '',
-                             'XLARGE', 'CENTER', 1, 1, 1, 'ပစ္စည်း ပို့ဆောင်ရေး ပြေစာ', 1, 1, 1, 'လက်ခံသူအမည်',
+                             'XLARGE', 'CENTER', 'MEDIUM', 1, 1, 1, 'ပစ္စည်း ပို့ဆောင်ရေး ပြေစာ', 1, 1, 1, 'လက်ခံသူအမည်', 'MEDIUM',
                              0.50, 0.20, 0.00, 0.30, 6, 'DOUBLE', 'LARGE', 'LEFT', 'CENTER', 'RIGHT', 'RIGHT',
+                             'LARGE', 100, 5,
                              1, 1, 0, 'ပစ္စည်း လက်ခံရရှိကြောင်း လက်မှတ်ရေးထိုးပါ', 'ဂိုဒေါင်ထုတ်စလစ်', '', 1, 'CENTER', 'MEDIUM', ${System.currentTimeMillis()}),
-                            (5, 'Template 5 - လက်ကား အထူးပြေစာ (Wholesale Invoice)', 0, 576, 'COLUMNS_4', 1,
+                            (5, 'Template 5 - လက်ကား အထူးပြေစာ (Wholesale Invoice 80mm)', 0, 576, 'COLUMNS_4', 1,
                              '', '', '', '', '',
-                             'LARGE', 'CENTER', 1, 1, 1, 'လက်ကား သီးသန့် ရှင်းတမ်း', 1, 1, 1, 'ဆိုင်အမည်/ဝယ်သူ',
+                             'LARGE', 'CENTER', 'MEDIUM', 1, 1, 1, 'လက်ကား သီးသန့် ရှင်းတမ်း', 1, 1, 1, 'ဆိုင်အမည်/ဝယ်သူ', 'MEDIUM',
                              0.38, 0.18, 0.20, 0.24, 4, 'SOLID', 'MEDIUM', 'LEFT', 'CENTER', 'RIGHT', 'RIGHT',
+                             'MEDIUM', 100, 4,
                              1, 1, 0, 'လက်ကား ဝယ်ယူမှုအတွက် ကျေးဇူးတင်ပါသည်', 'ငွေလွှဲပြေစာအား ထိန်းသိမ်းထားပါ', '', 1, 'CENTER', 'SMALL', ${System.currentTimeMillis()})
                         """)
                     } else {
-                        // Apply user updates to Template 1 and Template 2 on upgrade
+                        // Apply default 80mm and user updates to all templates
                         db.execSQL("""
                             UPDATE `receipt_templates` SET
-                                name = 'Template 1 - နမူနာပြေစာ စံပုံစံ (58mm Sample Style)',
-                                paperWidthDots = 384,
-                                itemLayoutStyle = 'STANDARD_2LINE',
-                                showLogo = 0,
-                                customStoreName = 'ဆန်းသစ်',
-                                customSubtitle = 'အိမ်ဆောက်ပစ္စည်း အရောင်းဆိုင်',
-                                customOwnerOrContact = 'ကိုပါပီး+မသီရိကလျာ',
-                                customPhone = '09678473426/09943070451/09442387883/' || char(10) || '09400511789',
-                                customAddress = '3/3 ဗိုလ်ချုပ်လမ်း / စမ်းမြို့ရပ်ကွက် / ကလေးမြို့',
-                                customerLabel = 'ဈေးဝယ်သူ',
-                                showCustomerInfo = 1,
-                                showCashierInfo = 0,
-                                showVoucherNumber = 1,
-                                gridLineStyle = 'DASHED',
-                                returnPolicyText = 'ဝယ်ယူပြီး ပစ္စည်း များကို ပြန်လဲမပေးပါ',
-                                footerMessage = 'ဝယ်ယူအားပေးမှုကိုကျေးဇူးအထူးတင်ရှိပါသည်',
-                                extraNoticeText = 'သုံးမူး၊ ငါးမူး၊ ခြောက်မူး သံပင် များ ၊' || char(10) || 'သွပ် အစားထိုး polystar များ ရပါသည် ။',
-                                showPrintTime = 1
-                            WHERE templateId = 1
-                        """)
-                        db.execSQL("""
-                            UPDATE `receipt_templates` SET
-                                name = 'Template 2 - မျဉ်းမပါ သန့်ရှင်းသော ပုံစံ (Clean Borderless)',
-                                paperWidthDots = 384,
-                                itemLayoutStyle = 'COLUMNS_4',
-                                showCustomerInfo = 1,
-                                customerLabel = 'ဝယ်သူအမည်',
-                                gridLineStyle = 'NONE',
-                                footerMessage = 'ကျေးဇူးတင်ပါသည်',
-                                returnPolicyText = 'ဝယ်ယူပြီးပစ္စည်း ပြန်မလဲပေးပါ'
-                            WHERE templateId = 2
+                                paperWidthDots = 576
+                            WHERE paperWidthDots = 384
                         """)
                     }
                 }

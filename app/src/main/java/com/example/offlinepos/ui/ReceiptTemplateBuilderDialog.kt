@@ -19,7 +19,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.Save
-import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -62,15 +61,13 @@ import com.example.offlinepos.domain.CartTotals
 import com.example.offlinepos.hardware.CustomReceiptEscPosGenerator
 import com.example.offlinepos.hardware.ThermalPrinterManager
 import kotlinx.coroutines.launch
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 enum class BuilderTab(val label: String) {
-    HEADER("🏷️ Header ခေါင်းစဉ်"),
-    GRID_BODY("📊 Body ကုန်ပစ္စည်း"),
-    FOOTER("📜 Footer အောက်ခြေ"),
-    PREVIEW("👁️ Preview ပုံစံ"),
+    FONT_SPACING("🔤 Font/Spacing"),
+    HEADER("🏷️ Header"),
+    GRID_BODY("📊 Body"),
+    FOOTER("📜 Footer"),
+    PREVIEW("👁️ Preview"),
 }
 
 @Composable
@@ -84,17 +81,30 @@ fun ReceiptTemplateBuilderDialog(
     val storeProfile by viewModel.storeProfile.collectAsState()
 
     var selectedSlot by remember { mutableIntStateOf(1) }
-    var currentTab by remember { mutableStateOf(BuilderTab.PREVIEW) }
+    var currentTab by remember { mutableStateOf(BuilderTab.FONT_SPACING) }
 
     // Active editing template
     val currentDbTemplate = templates.find { it.templateId == selectedSlot }
-        ?: ReceiptTemplateEntity(templateId = selectedSlot, name = "Template $selectedSlot")
+        ?: ReceiptTemplateEntity(templateId = selectedSlot, name = "Template $selectedSlot", paperWidthDots = 576)
 
     // State bindings
     var name by remember(selectedSlot, currentDbTemplate) { mutableStateOf(currentDbTemplate.name) }
     var isDefault by remember(selectedSlot, currentDbTemplate) { mutableStateOf(currentDbTemplate.isDefault) }
-    var paperWidthDots by remember(selectedSlot, currentDbTemplate) { mutableIntStateOf(currentDbTemplate.paperWidthDots) }
+    // Default 80mm (576 dots)
+    var paperWidthDots by remember(selectedSlot, currentDbTemplate) {
+        mutableIntStateOf(if (currentDbTemplate.paperWidthDots > 0) currentDbTemplate.paperWidthDots else 576)
+    }
     var itemLayoutStyle by remember(selectedSlot, currentDbTemplate) { mutableStateOf(currentDbTemplate.itemLayoutStyle) }
+
+    // Font & Spacing States
+    var fontScalePercent by remember(selectedSlot, currentDbTemplate) { mutableIntStateOf(currentDbTemplate.fontScalePercent) }
+    var lineSpacingDp by remember(selectedSlot, currentDbTemplate) { mutableIntStateOf(currentDbTemplate.lineSpacingDp) }
+    var storeNameFontSize by remember(selectedSlot, currentDbTemplate) { mutableStateOf(currentDbTemplate.storeNameFontSize) }
+    var headerDetailsFontSize by remember(selectedSlot, currentDbTemplate) { mutableStateOf(currentDbTemplate.headerDetailsFontSize) }
+    var metaFontSize by remember(selectedSlot, currentDbTemplate) { mutableStateOf(currentDbTemplate.metaFontSize) }
+    var bodyFontSize by remember(selectedSlot, currentDbTemplate) { mutableStateOf(currentDbTemplate.bodyFontSize) }
+    var totalsFontSize by remember(selectedSlot, currentDbTemplate) { mutableStateOf(currentDbTemplate.totalsFontSize) }
+    var footerFontSize by remember(selectedSlot, currentDbTemplate) { mutableStateOf(currentDbTemplate.footerFontSize) }
 
     // Header States
     var showLogo by remember(selectedSlot, currentDbTemplate) { mutableStateOf(currentDbTemplate.showLogo) }
@@ -103,7 +113,6 @@ fun ReceiptTemplateBuilderDialog(
     var customOwnerOrContact by remember(selectedSlot, currentDbTemplate) { mutableStateOf(currentDbTemplate.customOwnerOrContact) }
     var customPhone by remember(selectedSlot, currentDbTemplate) { mutableStateOf(currentDbTemplate.customPhone) }
     var customAddress by remember(selectedSlot, currentDbTemplate) { mutableStateOf(currentDbTemplate.customAddress) }
-    var storeNameFontSize by remember(selectedSlot, currentDbTemplate) { mutableStateOf(currentDbTemplate.storeNameFontSize) }
     var storeNameAlign by remember(selectedSlot, currentDbTemplate) { mutableStateOf(currentDbTemplate.storeNameAlign) }
     var showAddress by remember(selectedSlot, currentDbTemplate) { mutableStateOf(currentDbTemplate.showAddress) }
     var showPhone by remember(selectedSlot, currentDbTemplate) { mutableStateOf(currentDbTemplate.showPhone) }
@@ -121,7 +130,6 @@ fun ReceiptTemplateBuilderDialog(
     var amountWeight by remember(selectedSlot, currentDbTemplate) { mutableFloatStateOf(currentDbTemplate.amountWidthWeight) }
     var rowPaddingDp by remember(selectedSlot, currentDbTemplate) { mutableIntStateOf(currentDbTemplate.rowPaddingDp) }
     var gridLineStyle by remember(selectedSlot, currentDbTemplate) { mutableStateOf(currentDbTemplate.gridLineStyle) }
-    var bodyFontSize by remember(selectedSlot, currentDbTemplate) { mutableStateOf(currentDbTemplate.bodyFontSize) }
 
     // Footer States
     var showTotalsBreakdown by remember(selectedSlot, currentDbTemplate) { mutableStateOf(currentDbTemplate.showTotalsBreakdown) }
@@ -171,12 +179,13 @@ fun ReceiptTemplateBuilderDialog(
 
     // Dynamic Live Preview Template Entity
     val previewTemplate = remember(
-        name, isDefault, paperWidthDots, itemLayoutStyle, showLogo, customStoreName, customSubtitle,
-        customOwnerOrContact, customPhone, customAddress, storeNameFontSize, storeNameAlign,
-        showAddress, showPhone, showHeaderNote, customHeaderNote, showCashierInfo, showVoucherNumber,
-        showCustomerInfo, customerLabel, nameWeight, qtyWeight, priceWeight, amountWeight,
-        rowPaddingDp, gridLineStyle, bodyFontSize, showTotalsBreakdown, showPaymentMethod,
-        footerMessage, returnPolicyText, extraNoticeText, showPrintTime, footerAlign
+        name, isDefault, paperWidthDots, itemLayoutStyle, fontScalePercent, lineSpacingDp,
+        showLogo, customStoreName, customSubtitle, customOwnerOrContact, customPhone, customAddress,
+        storeNameFontSize, storeNameAlign, headerDetailsFontSize, metaFontSize, showAddress, showPhone,
+        showHeaderNote, customHeaderNote, showCashierInfo, showVoucherNumber, showCustomerInfo, customerLabel,
+        nameWeight, qtyWeight, priceWeight, amountWeight, rowPaddingDp, gridLineStyle, bodyFontSize,
+        totalsFontSize, showTotalsBreakdown, showPaymentMethod, footerMessage, returnPolicyText,
+        extraNoticeText, showPrintTime, footerAlign, footerFontSize
     ) {
         ReceiptTemplateEntity(
             templateId = selectedSlot,
@@ -184,6 +193,8 @@ fun ReceiptTemplateBuilderDialog(
             isDefault = isDefault,
             paperWidthDots = paperWidthDots,
             itemLayoutStyle = itemLayoutStyle,
+            fontScalePercent = fontScalePercent,
+            lineSpacingDp = lineSpacingDp,
             showLogo = showLogo,
             customStoreName = customStoreName,
             customSubtitle = customSubtitle,
@@ -192,6 +203,8 @@ fun ReceiptTemplateBuilderDialog(
             customAddress = customAddress,
             storeNameFontSize = storeNameFontSize,
             storeNameAlign = storeNameAlign,
+            headerDetailsFontSize = headerDetailsFontSize,
+            metaFontSize = metaFontSize,
             showAddress = showAddress,
             showPhone = showPhone,
             showHeaderNote = showHeaderNote,
@@ -207,13 +220,15 @@ fun ReceiptTemplateBuilderDialog(
             rowPaddingDp = rowPaddingDp,
             gridLineStyle = gridLineStyle,
             bodyFontSize = bodyFontSize,
+            totalsFontSize = totalsFontSize,
             showTotalsBreakdown = showTotalsBreakdown,
             showPaymentMethod = showPaymentMethod,
             footerMessage = footerMessage,
             returnPolicyText = returnPolicyText,
             extraNoticeText = extraNoticeText,
             showPrintTime = showPrintTime,
-            footerAlign = footerAlign
+            footerAlign = footerAlign,
+            footerFontSize = footerFontSize
         )
     }
 
@@ -250,14 +265,15 @@ fun ReceiptTemplateBuilderDialog(
                 ) {
                     Column {
                         Text(
-                            text = "ပြေစာပုံစံ ဖန်တီးခန်း (Custom Template Builder)",
+                            text = "📐 Receipt Template Builder (1 to 5)",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = "Template 1 (နမူနာစံ) နှင့် Template 2 (မျဉ်းမပါ) စိတ်ကြိုက်ပြင်နိုင်ပါသည်",
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            text = "Default 80mm စံနှုန်း | Font အကြီး/အသေး နှင့် Line Spacing စိတ်ကြိုက်ပြင်ဆင်နိုင်သည်",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 10.5.sp
                         )
                     }
                     IconButton(onClick = onDismiss) {
@@ -267,29 +283,28 @@ fun ReceiptTemplateBuilderDialog(
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-                // 5 Slots Selector Chips
-                Text("ပြင်ဆင်မည့် Template ရွေးချယ်ပါ (Slots 1 to 5):", fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
-                Spacer(modifier = Modifier.height(6.dp))
+                // Template Slot Selector (1 to 5)
+                Text("🎨 ပြေစာပုံစံ အကွက် ရွေးပါ:", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                Spacer(modifier = Modifier.height(4.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    (1..5).forEach { slotNum ->
-                        val existing = templates.find { it.templateId == slotNum }
-                        val isSel = selectedSlot == slotNum
+                    (1..5).forEach { slot ->
+                        val isSelected = selectedSlot == slot
+                        val tmpl = templates.find { it.templateId == slot }
+                        val isDef = tmpl?.isDefault == true
                         FilterChip(
-                            selected = isSel,
-                            onClick = { selectedSlot = slotNum },
+                            selected = isSelected,
+                            onClick = { selectedSlot = slot },
                             label = {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    if (existing?.isDefault == true) {
-                                        Icon(Icons.Default.Star, contentDescription = "Default", tint = Color(0xFFEAB308), modifier = Modifier.size(12.dp))
-                                        Spacer(modifier = Modifier.width(2.dp))
-                                    }
-                                    Text("ပုံစံ $slotNum", fontSize = 11.sp)
-                                }
+                                Text(
+                                    text = if (isDef) "⭐ T$slot" else "T$slot",
+                                    fontSize = 11.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                )
                             },
-                            modifier = Modifier.testTag("template_slot_chip_$slotNum")
+                            modifier = Modifier.weight(1f)
                         )
                     }
                 }
@@ -301,304 +316,399 @@ fun ReceiptTemplateBuilderDialog(
                     value = name,
                     onValueChange = { name = it },
                     label = { Text("ပုံစံအမည် (Template Name)") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth().testTag("template_name_input")
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
                 )
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-                // Section Tabs: Header, Grid Body, Footer, Preview
+                // Paper Width Setting (Default 80mm for all templates)
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Column(modifier = Modifier.padding(10.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "🖨️ ပရင့်တာ စက္ကူအရွယ်အစား (Paper Width):",
+                                fontSize = 11.5.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = if (paperWidthDots >= 500) "80 mm (Default စံ)" else "58 mm",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            FilterChip(
+                                selected = paperWidthDots >= 500,
+                                onClick = { paperWidthDots = 576 },
+                                label = { Text("80mm (Default စံနှုန်း - 576 dots)", fontSize = 11.sp, fontWeight = FontWeight.Bold) },
+                                modifier = Modifier.weight(1.3f)
+                            )
+                            FilterChip(
+                                selected = paperWidthDots < 500,
+                                onClick = { paperWidthDots = 384 },
+                                label = { Text("58mm (384 dots)", fontSize = 11.sp) },
+                                modifier = Modifier.weight(0.9f)
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Navigation Tabs
                 TabRow(
                     selectedTabIndex = currentTab.ordinal,
-                    modifier = Modifier.clip(RoundedCornerShape(10.dp))
+                    modifier = Modifier.fillMaxWidth()
                 ) {
                     BuilderTab.values().forEach { tab ->
                         Tab(
                             selected = currentTab == tab,
                             onClick = { currentTab = tab },
-                            text = { Text(tab.label, fontSize = 10.sp, fontWeight = if (currentTab == tab) FontWeight.Bold else FontWeight.Normal) }
+                            text = { Text(tab.label, fontSize = 10.5.sp, maxLines = 1) }
                         )
                     }
                 }
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                // Section Contents
+                // Tab Content
                 when (currentTab) {
-                    BuilderTab.HEADER -> {
-                        Card(
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)),
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Column(modifier = Modifier.padding(14.dp)) {
-                                Text("🏷️ ခေါင်းစဉ်အပိုင်း ပြင်ဆင်ရန် (Header Section)", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                                Spacer(modifier = Modifier.height(8.dp))
-
-                                // Paper Size
-                                Text("စက္ကူအကျယ် အရွယ်အစား (Paper Width):", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    FilterChip(
-                                        selected = paperWidthDots <= 420,
-                                        onClick = { paperWidthDots = 384 },
-                                        label = { Text("58mm (ဘောပင်အရွယ် စံနှုန်း)", fontSize = 11.sp) }
+                    BuilderTab.FONT_SPACING -> {
+                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            // 1. Overall Font Scaling
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f)),
+                                shape = RoundedCornerShape(10.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = "🔍 ပြေစာတစ်ခုလုံး Font အကြီး/အသေး:",
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Text(
+                                            text = "$fontScalePercent% ${if (fontScalePercent == 100) "(ပုံမှန်)" else if (fontScalePercent > 100) "(ပိုကြီး)" else "(ပိုသေး)"}",
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.ExtraBold,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                    Slider(
+                                        value = fontScalePercent.toFloat(),
+                                        onValueChange = { fontScalePercent = it.toInt() },
+                                        valueRange = 70f..160f,
+                                        steps = 8
                                     )
-                                    FilterChip(
-                                        selected = paperWidthDots > 420,
-                                        onClick = { paperWidthDots = 576 },
-                                        label = { Text("80mm (အကျယ်ကြီး)", fontSize = 11.sp) }
-                                    )
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        listOf(85 to "သေး", 100 to "ပုံမှန်", 115 to "ကြီး", 130 to "အလွန်ကြီး").forEach { (scale, lbl) ->
+                                            FilterChip(
+                                                selected = fontScalePercent == scale,
+                                                onClick = { fontScalePercent = scale },
+                                                label = { Text("$lbl ($scale%)", fontSize = 10.sp) },
+                                                modifier = Modifier.weight(1f)
+                                            )
+                                        }
+                                    }
                                 }
+                            }
 
-                                Spacer(modifier = Modifier.height(8.dp))
+                            // 2. Line Spacing
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.25f)),
+                                shape = RoundedCornerShape(10.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = "📏 စာကြောင်းအကွာအဝေး (Line Spacing):",
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        val spacingLabel = when {
+                                            lineSpacingDp <= 1 -> "ကျစ်လျစ်လွန်း"
+                                            lineSpacingDp in 2..3 -> "ကျစ်လျစ်"
+                                            lineSpacingDp in 4..5 -> "ပုံမှန် စံသတ်မှတ်ချက်"
+                                            lineSpacingDp in 6..8 -> "သက်သောင့်သက်သာ"
+                                            lineSpacingDp in 9..12 -> "ကျယ်ဝန်း"
+                                            else -> "အထူးကျယ်"
+                                        }
+                                        Text(
+                                            text = "$lineSpacingDp dp ($spacingLabel)",
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.ExtraBold,
+                                            color = MaterialTheme.colorScheme.secondary
+                                        )
+                                    }
+                                    Slider(
+                                        value = lineSpacingDp.toFloat(),
+                                        onValueChange = { lineSpacingDp = it.toInt() },
+                                        valueRange = 0f..16f,
+                                        steps = 15
+                                    )
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        listOf(2 to "ကျစ်လျစ် (2dp)", 4 to "ပုံမှန် (4dp)", 7 to "သက်သာ (7dp)", 10 to "ကျယ် (10dp)").forEach { (spVal, lbl) ->
+                                            FilterChip(
+                                                selected = lineSpacingDp == spVal,
+                                                onClick = { lineSpacingDp = spVal },
+                                                label = { Text(lbl, fontSize = 10.sp) },
+                                                modifier = Modifier.weight(1f)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
 
-                                // Custom Store Name
-                                OutlinedTextField(
-                                    value = customStoreName,
-                                    onValueChange = { customStoreName = it },
-                                    label = { Text("ဆိုင်နာမည် (ဥပမာ- ဆန်းသစ်)") },
-                                    placeholder = { Text(storeProfile.storeName.ifBlank { "ဆန်းသစ်" }) },
-                                    singleLine = true,
-                                    modifier = Modifier.fillMaxWidth()
-                                )
+                            // 3. Section by Section Font Sizes
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)),
+                                shape = RoundedCornerShape(10.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Text("🔠 အပိုင်းအလိုက် Font အရွယ်အစားများ သီးခြားရွေးချယ်ရန်:", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
 
-                                Spacer(modifier = Modifier.height(6.dp))
+                                    // Store Name Font Size
+                                    FontSizeSelectorRow("ဆိုင်နာမည် (Store Name):", storeNameFontSize, listOf("SMALL", "MEDIUM", "LARGE", "XLARGE", "XXLARGE")) {
+                                        storeNameFontSize = it
+                                    }
 
-                                // Custom Subtitle
-                                OutlinedTextField(
-                                    value = customSubtitle,
-                                    onValueChange = { customSubtitle = it },
-                                    label = { Text("ဆိုင်အမျိုးအစား / ခေါင်းစဉ်ခွဲ (ဥပမာ- အိမ်ဆောက်ပစ္စည်း အရောင်းဆိုင်)") },
-                                    singleLine = true,
-                                    modifier = Modifier.fillMaxWidth()
-                                )
+                                    // Header Details Font Size
+                                    FontSizeSelectorRow("ခေါင်းစဉ်အသေးစိတ် (Subtitle/Contact/Phone/Address):", headerDetailsFontSize) {
+                                        headerDetailsFontSize = it
+                                    }
 
-                                Spacer(modifier = Modifier.height(6.dp))
+                                    // Metadata Font Size
+                                    FontSizeSelectorRow("ရက်စွဲ၊ ဘောင်ချာနှင့် ဝယ်သူ (Date/Voucher/Customer):", metaFontSize) {
+                                        metaFontSize = it
+                                    }
 
-                                // Custom Owner / Contact
-                                OutlinedTextField(
-                                    value = customOwnerOrContact,
-                                    onValueChange = { customOwnerOrContact = it },
-                                    label = { Text("ပိုင်ရှင် / တာဝန်ခံ (ဥပမာ- ကိုပါပီး+မသီရိကလျာ)") },
-                                    singleLine = true,
-                                    modifier = Modifier.fillMaxWidth()
-                                )
+                                    // Body Items Font Size
+                                    FontSizeSelectorRow("ကုန်ပစ္စည်းစာရင်း (Items/Body Table):", bodyFontSize) {
+                                        bodyFontSize = it
+                                    }
 
-                                Spacer(modifier = Modifier.height(6.dp))
+                                    // Totals Font Size
+                                    FontSizeSelectorRow("ကျသင့်ငွေနှင့် စုစုပေါင်း (Totals & Payment):", totalsFontSize) {
+                                        totalsFontSize = it
+                                    }
 
-                                // Custom Phone
+                                    // Footer Font Size
+                                    FontSizeSelectorRow("အောက်ခြေစာသား (Footer & Notices):", footerFontSize) {
+                                        footerFontSize = it
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    BuilderTab.HEADER -> {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            // Logo toggle
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Checkbox(checked = showLogo, onCheckedChange = { showLogo = it })
+                                Text("ဆိုင် Logo အမှတ်တံဆိပ် ပြသမည်", fontSize = 12.sp)
+                            }
+
+                            // Store Name Customization
+                            OutlinedTextField(
+                                value = customStoreName,
+                                onValueChange = { customStoreName = it },
+                                label = { Text("ဆိုင်နာမည် (Store Name)") },
+                                placeholder = { Text("ဥပမာ - ဆန်းသစ်") },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+
+                            // Subtitle
+                            OutlinedTextField(
+                                value = customSubtitle,
+                                onValueChange = { customSubtitle = it },
+                                label = { Text("ဆိုင်အမျိုးအစား (Subtitle)") },
+                                placeholder = { Text("ဥပမာ - အိမ်ဆောက်ပစ္စည်း အရောင်းဆိုင်") },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+
+                            // Owner / Contact
+                            OutlinedTextField(
+                                value = customOwnerOrContact,
+                                onValueChange = { customOwnerOrContact = it },
+                                label = { Text("ဆိုင်ရှင် / ဆက်သွယ်ရန် (Owner / Contact)") },
+                                placeholder = { Text("ဥပမာ - ကိုပါပီး+မသီရိကလျာ") },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+
+                            // Phone
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Checkbox(checked = showPhone, onCheckedChange = { showPhone = it })
+                                Text("ဖုန်းနံပါတ် ပြသမည်", fontSize = 12.sp)
+                            }
+                            if (showPhone) {
                                 OutlinedTextField(
                                     value = customPhone,
                                     onValueChange = { customPhone = it },
-                                    label = { Text("ဖုန်းနံပါတ်များ (ဥပမာ- 09678473426/09943070451/...)") },
-                                    placeholder = { Text(storeProfile.phone) },
+                                    label = { Text("ဖုန်းနံပါတ်များ (Phone Numbers)") },
+                                    placeholder = { Text("09678473426 / 09943070451...") },
                                     modifier = Modifier.fillMaxWidth()
                                 )
+                            }
 
-                                Spacer(modifier = Modifier.height(6.dp))
-
-                                // Custom Address
+                            // Address
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Checkbox(checked = showAddress, onCheckedChange = { showAddress = it })
+                                Text("ဆိုင်လိပ်စာ ပြသမည်", fontSize = 12.sp)
+                            }
+                            if (showAddress) {
                                 OutlinedTextField(
                                     value = customAddress,
                                     onValueChange = { customAddress = it },
-                                    label = { Text("ဆိုင်လိပ်စာ (ဥပမာ- 3/3 ဗိုလ်ချုပ်လမ်း / စမ်းမြို့ရပ်ကွက် / ကလေးမြို့)") },
-                                    placeholder = { Text(storeProfile.address) },
+                                    label = { Text("ဆိုင်လိပ်စာ (Store Address)") },
+                                    placeholder = { Text("3/3 ဗိုလ်ချုပ်လမ်း / စမ်းမြို့ရပ်ကွက် / ကလေးမြို့") },
                                     modifier = Modifier.fillMaxWidth()
                                 )
+                            }
 
-                                Spacer(modifier = Modifier.height(8.dp))
+                            // Customer Label & Toggle
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Checkbox(checked = showCustomerInfo, onCheckedChange = { showCustomerInfo = it })
+                                Text("ဈေးဝယ်သူ အချက်အလက် ပြသမည်", fontSize = 12.sp)
+                            }
+                            if (showCustomerInfo) {
+                                OutlinedTextField(
+                                    value = customerLabel,
+                                    onValueChange = { customerLabel = it },
+                                    label = { Text("ဈေးဝယ်သူ စာသားခေါင်းစဉ် (Customer Label)") },
+                                    placeholder = { Text("ဥပမာ - ဈေးဝယ်သူ သို့မဟုတ် ဝယ်သူအမည်") },
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
 
-                                // Customer name inclusion & custom label
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Checkbox(checked = showCustomerInfo, onCheckedChange = { showCustomerInfo = it })
-                                    Text("ဈေးဝယ်သူအမည် ထည့်သွင်းဖော်ပြမည်", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                                }
-
-                                if (showCustomerInfo) {
-                                    OutlinedTextField(
-                                        value = customerLabel,
-                                        onValueChange = { customerLabel = it },
-                                        label = { Text("ဈေးဝယ်သူ ခေါင်းစဉ်စာသား (ဥပမာ- ဈေးဝယ်သူ သို့မဟုတ် ဝယ်သူအမည်)") },
-                                        singleLine = true,
-                                        modifier = Modifier.fillMaxWidth()
-                                    )
-                                    Spacer(modifier = Modifier.height(6.dp))
-                                }
-
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Checkbox(checked = showAddress, onCheckedChange = { showAddress = it })
-                                    Text("ဆိုင်လိပ်စာ ဖော်ပြမည်", fontSize = 12.sp)
-                                }
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Checkbox(checked = showPhone, onCheckedChange = { showPhone = it })
-                                    Text("ဆိုင်ဖုန်းနံပါတ် ဖော်ပြမည်", fontSize = 12.sp)
-                                }
+                            // Additional Options
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Checkbox(checked = showVoucherNumber, onCheckedChange = { showVoucherNumber = it })
-                                    Text("ပြေစာအမှတ် ဖော်ပြမည်", fontSize = 12.sp)
+                                    Text("ပြေစာအမှတ်", fontSize = 11.sp)
                                 }
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Checkbox(checked = showCashierInfo, onCheckedChange = { showCashierInfo = it })
-                                    Text("အရောင်းတာဝန်ခံ ဖော်ပြမည်", fontSize = 12.sp)
-                                }
-
-                                Spacer(modifier = Modifier.height(6.dp))
-                                Text("ဆိုင်နာမည် စာလုံးအရွယ်အစား:", fontSize = 11.sp)
-                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    listOf("SMALL" to "သေး", "MEDIUM" to "အလယ်", "LARGE" to "ကြီး", "XLARGE" to "အကြီးဆုံး").forEach { (sz, lbl) ->
-                                        FilterChip(
-                                            selected = storeNameFontSize == sz,
-                                            onClick = { storeNameFontSize = sz },
-                                            label = { Text(lbl, fontSize = 11.sp) }
-                                        )
-                                    }
-                                }
-
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text("ဆိုင်နာမည် ချိန်ညှိမှု (Alignment):", fontSize = 11.sp)
-                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    listOf("LEFT" to "ဘယ်", "CENTER" to "အလယ်", "RIGHT" to "ညာ").forEach { (al, lbl) ->
-                                        FilterChip(
-                                            selected = storeNameAlign == al,
-                                            onClick = { storeNameAlign = al },
-                                            label = { Text(lbl, fontSize = 11.sp) }
-                                        )
-                                    }
+                                    Text("တာဝန်ခံ/အရောင်းစာရေး", fontSize = 11.sp)
                                 }
                             }
                         }
                     }
 
                     BuilderTab.GRID_BODY -> {
-                        Card(
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)),
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Column(modifier = Modifier.padding(14.dp)) {
-                                Text("📊 Body ကုန်ပစ္စည်းပြသမှု ပုံစံ (Item Layout Style)", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                                Spacer(modifier = Modifier.height(8.dp))
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            // Layout Style Selector (2-Line vs 4-Column)
+                            Text("📋 ကုန်ပစ္စည်း ပြသမှု ပုံစံ (Item Layout Style):", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                FilterChip(
+                                    selected = itemLayoutStyle == "STANDARD_2LINE",
+                                    onClick = { itemLayoutStyle = "STANDARD_2LINE" },
+                                    label = { Text("၂ ကြောင်းစံ (Template 1 ပုံစံ)", fontSize = 10.5.sp) },
+                                    modifier = Modifier.weight(1f)
+                                )
+                                FilterChip(
+                                    selected = itemLayoutStyle == "COLUMNS_4",
+                                    onClick = { itemLayoutStyle = "COLUMNS_4" },
+                                    label = { Text("၄ ကော်လံ ဇယား (Template 2 ပုံစံ)", fontSize = 10.5.sp) },
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
 
-                                // Item Layout Style: 2-Line Sample vs 4-Column Table
-                                Text("ပုံစံ အမျိုးအစား ရွေးချယ်ပါ:", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            // Grid Line Style
+                            Text("📏 မျဉ်းစတိုင် (Grid Line Style):", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                listOf("NONE" to "မျဉ်းမပါ (None)", "DASHED" to "အစက်မျဉ်း (Dashed)", "SOLID" to "မျဉ်းဖြောင့်", "DOUBLE" to "မျဉ်းနှစ်ထပ်").forEach { (style, label) ->
                                     FilterChip(
-                                        selected = itemLayoutStyle == "STANDARD_2LINE",
-                                        onClick = {
-                                            itemLayoutStyle = "STANDARD_2LINE"
-                                            gridLineStyle = "DASHED"
-                                        },
-                                        label = { Text("နမူနာ ၂ ကြောင်းစံ (Template 1)", fontSize = 11.sp) }
+                                        selected = gridLineStyle.uppercase() == style,
+                                        onClick = { gridLineStyle = style },
+                                        label = { Text(label, fontSize = 10.sp) },
+                                        modifier = Modifier.weight(1f)
                                     )
-                                    FilterChip(
-                                        selected = itemLayoutStyle == "COLUMNS_4",
-                                        onClick = {
-                                            itemLayoutStyle = "COLUMNS_4"
-                                            gridLineStyle = "NONE"
-                                        },
-                                        label = { Text("၄ ကော်လံ ဇယား (Template 2)", fontSize = 11.sp) }
-                                    )
-                                }
-
-                                Spacer(modifier = Modifier.height(8.dp))
-                                HorizontalDivider()
-                                Spacer(modifier = Modifier.height(8.dp))
-
-                                Text("ဇယားကွက် မျဉ်းကြောင်းပုံစံ (Grid Line Style):", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    listOf(
-                                        "NONE" to "မျဉ်းမပါ (Template 2)",
-                                        "DASHED" to "အစက်မျဉ်း (- - - Template 1)",
-                                        "SOLID" to "မျဉ်းဖြောင့် (───)",
-                                        "DOUBLE" to "မျဉ်းနှစ်ထပ် (═══)"
-                                    ).forEach { (st, lbl) ->
-                                        FilterChip(
-                                            selected = gridLineStyle == st,
-                                            onClick = { gridLineStyle = st },
-                                            label = { Text(lbl, fontSize = 11.sp) }
-                                        )
-                                    }
-                                }
-
-                                Spacer(modifier = Modifier.height(8.dp))
-                                Text("စာလုံး အရွယ်အစား (Body Font Size):", fontSize = 11.sp)
-                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    listOf("SMALL" to "သေး (Small)", "MEDIUM" to "အလယ် (Medium)", "LARGE" to "ကြီး (Large)").forEach { (sz, lbl) ->
-                                        FilterChip(
-                                            selected = bodyFontSize == sz,
-                                            onClick = { bodyFontSize = sz },
-                                            label = { Text(lbl, fontSize = 11.sp) }
-                                        )
-                                    }
-                                }
-
-                                if (itemLayoutStyle == "COLUMNS_4") {
-                                    Spacer(modifier = Modifier.height(10.dp))
-                                    Text("၄ ကော်လံ အကျယ်အဝန်း အချိုးအစား (Column Widths):", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                                    Text("၁။ ပစ္စည်းအမည် (Name): ${(nameWeight * 100).toInt()}%", fontSize = 11.sp)
-                                    Slider(
-                                        value = nameWeight,
-                                        onValueChange = {
-                                            nameWeight = it
-                                            val remaining = (1.0f - nameWeight).coerceAtLeast(0.2f)
-                                            qtyWeight = remaining * 0.28f
-                                            priceWeight = remaining * 0.34f
-                                            amountWeight = remaining * 0.38f
-                                        },
-                                        valueRange = 0.25f..0.60f
-                                    )
-                                    Text("၂။ အရေအတွက် (Qty): ${(qtyWeight * 100).toInt()}% | ၃။ နှုန်း: ${(priceWeight * 100).toInt()}% | ၄။ သင့်ငွေ: ${(amountWeight * 100).toInt()}%", fontSize = 11.sp, color = Color.DarkGray)
                                 }
                             }
+
+                            // Row Padding
+                            Text("အကွက် အကွာအဝေး (Row Padding): $rowPaddingDp dp", fontSize = 11.sp)
+                            Slider(
+                                value = rowPaddingDp.toFloat(),
+                                onValueChange = { rowPaddingDp = it.toInt() },
+                                valueRange = 1f..10f,
+                                steps = 8
+                            )
                         }
                     }
 
                     BuilderTab.FOOTER -> {
-                        Card(
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)),
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Column(modifier = Modifier.padding(14.dp)) {
-                                Text("📜 အောက်ခြေအပိုင်း ပြင်ဆင်ရန် (Footer Section)", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                                Spacer(modifier = Modifier.height(8.dp))
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedTextField(
+                                value = returnPolicyText,
+                                onValueChange = { returnPolicyText = it },
+                                label = { Text("ပစ္စည်းလဲလှယ်ခြင်း စည်းကမ်းချက် (Return Policy)") },
+                                placeholder = { Text("ဥပမာ - ဝယ်ယူပြီး ပစ္စည်း များကို ပြန်လဲမပေးပါ") },
+                                modifier = Modifier.fillMaxWidth()
+                            )
 
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Checkbox(checked = showTotalsBreakdown, onCheckedChange = { showTotalsBreakdown = it })
-                                    Text("ကျသင့်ငွေ အသေးစိတ်ရှင်းတမ်း ဖော်ပြမည်", fontSize = 12.sp)
-                                }
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Checkbox(checked = showPaymentMethod, onCheckedChange = { showPaymentMethod = it })
-                                    Text("ပေးငွေနှင့် ပြန်အမ်းငွေ ဖော်ပြမည်", fontSize = 12.sp)
-                                }
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Checkbox(checked = showPrintTime, onCheckedChange = { showPrintTime = it })
-                                    Text("Print Time ထည့်သွင်းဖော်ပြမည်", fontSize = 12.sp)
-                                }
+                            OutlinedTextField(
+                                value = footerMessage,
+                                onValueChange = { footerMessage = it },
+                                label = { Text("အောက်ခြေ ကျေးဇူးတင်လွှာ (Footer Message)") },
+                                placeholder = { Text("ဥပမာ - ဝယ်ယူအားပေးမှုကိုကျေးဇူးအထူးတင်ရှိပါသည်") },
+                                modifier = Modifier.fillMaxWidth()
+                            )
 
-                                Spacer(modifier = Modifier.height(6.dp))
-                                OutlinedTextField(
-                                    value = returnPolicyText,
-                                    onValueChange = { returnPolicyText = it },
-                                    label = { Text("ပစ္စည်း ပြန်လဲခြင်း စည်းကမ်းချက် (ဥပမာ- ဝယ်ယူပြီး ပစ္စည်း များကို ပြန်လဲမပေးပါ)") },
-                                    modifier = Modifier.fillMaxWidth()
-                                )
+                            OutlinedTextField(
+                                value = extraNoticeText,
+                                onValueChange = { extraNoticeText = it },
+                                label = { Text("ဆိုင်အထူးကြော်ငြာ / အသိပေးချက် (Extra Notice)") },
+                                placeholder = { Text("သုံးမူး၊ ငါးမူး၊ ခြောက်မူး သံပင် များ ၊\nသွပ် အစားထိုး polystar များ ရပါသည် ။") },
+                                modifier = Modifier.fillMaxWidth()
+                            )
 
-                                Spacer(modifier = Modifier.height(6.dp))
-                                OutlinedTextField(
-                                    value = footerMessage,
-                                    onValueChange = { footerMessage = it },
-                                    label = { Text("နှုတ်ခွန်းဆက် စကား (ဥပမာ- ဝယ်ယူအားပေးမှုကိုကျေးဇူးအထူးတင်ရှိပါသည် သို့မဟုတ် ကျေးဇူးတင်ပါသည်)") },
-                                    modifier = Modifier.fillMaxWidth()
-                                )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Checkbox(checked = showPrintTime, onCheckedChange = { showPrintTime = it })
+                                Text("Print Time အချိန် ပြသမည်", fontSize = 12.sp)
+                            }
 
-                                Spacer(modifier = Modifier.height(6.dp))
-                                OutlinedTextField(
-                                    value = extraNoticeText,
-                                    onValueChange = { extraNoticeText = it },
-                                    label = { Text("အပိုဆောင်း ကြော်ငြာ/အသိပေးချက် (ဥပမာ- သုံးမူး၊ ငါးမူး၊ ခြောက်မူး သံပင် များ ၊ ...)") },
-                                    modifier = Modifier.fillMaxWidth()
-                                )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Checkbox(checked = showPaymentMethod, onCheckedChange = { showPaymentMethod = it })
+                                Text("ငွေပေးချေမှုအမျိုးအစား (Cash/KBZPay) ပြသမည်", fontSize = 12.sp)
                             }
                         }
                     }
@@ -617,7 +727,11 @@ fun ReceiptTemplateBuilderDialog(
                                 horizontalAlignment = Alignment.CenterHorizontally
                             ) {
                                 Text("🖨️ Thermal Paper Live Preview", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color(0xFF92400E))
-                                Text("စက္ကူအရွယ်: ${if (paperWidthDots <= 420) "58mm Compact" else "80mm Wide"} | ပုံစံ: ${if (itemLayoutStyle == "STANDARD_2LINE") "၂ ကြောင်းစံ" else "၄ ကော်လံ"}", fontSize = 10.5.sp, color = Color.Gray)
+                                Text(
+                                    text = "စက္ကူ: ${if (paperWidthDots >= 500) "80mm Wide (Default)" else "58mm Compact"} | Font: $fontScalePercent% | Spacing: ${lineSpacingDp}dp",
+                                    fontSize = 10.5.sp,
+                                    color = Color.Gray
+                                )
                                 Spacer(modifier = Modifier.height(8.dp))
 
                                 previewBitmap?.let { bmp ->
@@ -701,6 +815,41 @@ fun ReceiptTemplateBuilderDialog(
                         Text("ပုံစံ သိမ်းဆည်းမည်", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FontSizeSelectorRow(
+    title: String,
+    currentValue: String,
+    options: List<String> = listOf("SMALL", "MEDIUM", "LARGE", "XLARGE"),
+    onSelect: (String) -> Unit
+) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text(title, fontSize = 11.sp, fontWeight = FontWeight.Medium)
+        Spacer(modifier = Modifier.height(2.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            options.forEach { opt ->
+                val isSelected = currentValue.uppercase() == opt.uppercase()
+                val label = when (opt.uppercase()) {
+                    "SMALL" -> "သေး"
+                    "MEDIUM" -> "ပုံမှန်"
+                    "LARGE" -> "ကြီး"
+                    "XLARGE" -> "ပိုကြီး"
+                    "XXLARGE" -> "အလွန်ကြီး"
+                    else -> opt
+                }
+                FilterChip(
+                    selected = isSelected,
+                    onClick = { onSelect(opt) },
+                    label = { Text(label, fontSize = 9.5.sp) },
+                    modifier = Modifier.weight(1f)
+                )
             }
         }
     }

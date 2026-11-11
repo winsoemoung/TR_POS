@@ -246,6 +246,18 @@ val MIGRATION_13_14 = object : Migration(13, 14) {
     }
 }
 
+val MIGRATION_14_15 = object : Migration(14, 15) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE `receipt_templates` ADD COLUMN `fontScalePercent` INTEGER NOT NULL DEFAULT 100")
+        db.execSQL("ALTER TABLE `receipt_templates` ADD COLUMN `lineSpacingDp` INTEGER NOT NULL DEFAULT 4")
+        db.execSQL("ALTER TABLE `receipt_templates` ADD COLUMN `headerDetailsFontSize` TEXT NOT NULL DEFAULT 'MEDIUM'")
+        db.execSQL("ALTER TABLE `receipt_templates` ADD COLUMN `metaFontSize` TEXT NOT NULL DEFAULT 'MEDIUM'")
+        db.execSQL("ALTER TABLE `receipt_templates` ADD COLUMN `totalsFontSize` TEXT NOT NULL DEFAULT 'MEDIUM'")
+        // Set default 80mm (576 dots) for all receipt templates
+        db.execSQL("UPDATE `receipt_templates` SET `paperWidthDots` = 576")
+    }
+}
+
 val ALL_MIGRATIONS: Array<Migration> = arrayOf(
     MIGRATION_1_2,
     MIGRATION_2_3,
@@ -260,5 +272,7 @@ val ALL_MIGRATIONS: Array<Migration> = arrayOf(
     MIGRATION_11_12,
     MIGRATION_12_13,
     MIGRATION_13_14,
+    MIGRATION_14_15,
 )
+
 
