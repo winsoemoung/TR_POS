@@ -62,6 +62,8 @@ import androidx.compose.ui.window.Dialog
 import com.example.offlinepos.R
 import com.example.offlinepos.domain.CartItem
 import com.example.offlinepos.domain.CartTotals
+import com.example.offlinepos.domain.Money
+import kotlin.math.roundToLong
 
 @Composable
 fun CartSheet(
@@ -70,7 +72,7 @@ fun CartSheet(
     canApplyDiscount: Boolean,
     taxRatePercent: Double = 0.0,
     customLogoPath: String? = null,
-    onQuantityChange: (productId: Long, qty: Long) -> Unit,
+    onQuantityChange: (productId: Long, qty: Double) -> Unit,
     onRemoveItem: (productId: Long) -> Unit,
     onApplyDiscount: (productId: Long, discountMinor: Long) -> Unit,
     onUpdateTaxRate: ((Double) -> Unit)? = null,
@@ -187,7 +189,7 @@ fun CartSheet(
                                 item = item,
                                 canApplyDiscount = canApplyDiscount,
                                 onQuantityChange = { qty ->
-                                    if (qty <= 0) {
+                                    if (qty <= 0.0) {
                                         itemToRemove = item
                                     } else {
                                         onQuantityChange(item.productId, qty)
@@ -196,7 +198,7 @@ fun CartSheet(
                                 onRemove = { itemToRemove = item },
                                 onDirectQuantityClick = {
                                     quantityEditItem = item
-                                    quantityInput = item.quantity.toString()
+                                    quantityInput = Money.formatQty(item.effectiveQuantity)
                                 },
                                 onDiscountClick = {
                                     if (canApplyDiscount) {
@@ -317,7 +319,7 @@ fun CartSheet(
                     Text(
                         text = "Unit Price: %,d Ks | Max Discount: %,d Ks".format(
                             item.unitPriceMinor,
-                            item.unitPriceMinor * item.quantity
+                            item.grossAmountMinor
                         ),
                         style = MaterialTheme.typography.bodySmall,
                     )
@@ -352,8 +354,13 @@ fun CartSheet(
         )
     }
 
-    // Direct numeric quantity input dialog for hundreds or thousands of products
+    // Direct numeric/decimal quantity input dialog (e.g., 0.25, 0.5, 1.5, 100)
     quantityEditItem?.let { item ->
+        val parsedQty = quantityInput.toDoubleOrNull()
+        val previewGross = if (parsedQty != null && parsedQty > 0.0) {
+            (item.unitPriceMinor.toDouble() * parsedQty).roundToLong()
+        } else 0L
+
         AlertDialog(
             onDismissRequest = { quantityEditItem = null },
             title = {
@@ -371,34 +378,66 @@ fun CartSheet(
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "လက်ရှိ အရောင်း အရေအတွက်: ${item.quantity} ခု (ရာချီ/ထောင်ချီ ဂဏန်း တိုက်ရိုက် ရိုက်ထည့်နိုင်ပါသည်)",
+                        text = "လက်ရှိ: ${Money.formatQty(item.effectiveQuantity)} ${item.unitName} (ဥပမာ - 0.25, 0.5, 1.5 သို့မဟုတ် 100 စသည် ရိုက်ထည့်နိုင်ပါသည်)",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                     OutlinedTextField(
                         value = quantityInput,
-                        onValueChange = { quantityInput = it.filter { ch -> ch.isDigit() } },
-                        label = { Text("အရေအတွက် (Quantity)") },
-                        placeholder = { Text("ဥပမာ - 100, 500, 1000...") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        onValueChange = { raw ->
+                            val normalized = normalizeDecimalInput(raw)
+                            quantityInput = normalized
+                        },
+                        label = { Text("အရေအတွက် (${item.unitName})") },
+                        placeholder = { Text("ဥပမာ - 0.25, 0.5, 1.5, 10...") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth().testTag("direct_quantity_input_field"),
                     )
+                    if (parsedQty != null && parsedQty > 0.0) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = "သင့်ငွေ: %,d Ks (${Money.formatQty(parsedQty)} ${item.unitName} × %,d Ks)".format(
+                                previewGross,
+                                item.unitPriceMinor,
+                            ),
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
                     Spacer(modifier = Modifier.height(10.dp))
-                    Text("အမြန် ရွေးချယ်ရန် (Quick Set):", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
+                    Text("အပိုင်းကိန်း အမြန်ရွေးရန် (Decimal):", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
                     Spacer(modifier = Modifier.height(4.dp))
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        listOf(50L, 100L, 500L, 1000L).forEach { quickQty ->
+                        listOf("0.25", "0.5", "0.75", "1.5", "2.5").forEach { quickDec ->
                             OutlinedButton(
-                                onClick = { quantityInput = quickQty.toString() },
-                                modifier = Modifier.weight(1f).height(36.dp),
+                                onClick = { quantityInput = quickDec },
+                                modifier = Modifier.weight(1f).height(34.dp),
                                 contentPadding = PaddingValues(horizontal = 2.dp, vertical = 2.dp)
                             ) {
-                                Text("$quickQty", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                Text(quickDec, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text("အရေအတွက်များ အမြန်ရွေးရန်:", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        listOf("5", "10", "50", "100", "500").forEach { quickQty ->
+                            OutlinedButton(
+                                onClick = { quantityInput = quickQty },
+                                modifier = Modifier.weight(1f).height(34.dp),
+                                contentPadding = PaddingValues(horizontal = 2.dp, vertical = 2.dp)
+                            ) {
+                                Text(quickQty, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                             }
                         }
                     }
@@ -407,14 +446,16 @@ fun CartSheet(
             confirmButton = {
                 Button(
                     onClick = {
-                        val qty = quantityInput.toLongOrNull() ?: 0L
-                        if (qty > 0) {
+                        val qty = quantityInput.toDoubleOrNull() ?: -1.0
+                        if (qty > 0.0) {
                             onQuantityChange(item.productId, qty)
-                        } else if (qty == 0L) {
+                            quantityEditItem = null
+                        } else if (qty == 0.0) {
                             onRemoveItem(item.productId)
+                            quantityEditItem = null
                         }
-                        quantityEditItem = null
                     },
+                    enabled = (quantityInput.toDoubleOrNull() ?: -1.0) >= 0.0,
                     modifier = Modifier.testTag("apply_quantity_confirm_button")
                 ) {
                     Text("အတည်ပြုမည်")
@@ -463,7 +504,7 @@ fun CartSheet(
 private fun CartItemRow(
     item: CartItem,
     canApplyDiscount: Boolean,
-    onQuantityChange: (Long) -> Unit,
+    onQuantityChange: (Double) -> Unit,
     onRemove: () -> Unit,
     onDirectQuantityClick: () -> Unit,
     onDiscountClick: () -> Unit,
@@ -491,7 +532,11 @@ private fun CartItemRow(
                     fontWeight = FontWeight.Bold,
                 )
                 Text(
-                    text = "%,d Ks each".format(item.unitPriceMinor),
+                    text = "%,d Ks / %s • %,d Ks".format(
+                        item.unitPriceMinor,
+                        item.unitName,
+                        item.grossAmountMinor,
+                    ),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -555,7 +600,11 @@ private fun CartItemRow(
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 IconButton(
-                    onClick = { onQuantityChange(item.quantity - 1) },
+                    onClick = {
+                        val eff = item.effectiveQuantity
+                        val nextQty = if (eff > 1.0) eff - 1.0 else 0.0
+                        onQuantityChange(nextQty)
+                    },
                     modifier = Modifier
                         .size(32.dp)
                         .background(MaterialTheme.colorScheme.surfaceVariant, CircleShape)
@@ -576,7 +625,7 @@ private fun CartItemRow(
                         modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp)
                     ) {
                         Text(
-                            text = "${item.quantity}",
+                            text = Money.formatQty(item.effectiveQuantity),
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -592,7 +641,7 @@ private fun CartItemRow(
                 }
 
                 IconButton(
-                    onClick = { onQuantityChange(item.quantity + 1) },
+                    onClick = { onQuantityChange(item.effectiveQuantity + 1.0) },
                     modifier = Modifier
                         .size(32.dp)
                         .background(MaterialTheme.colorScheme.primaryContainer, CircleShape)
@@ -644,4 +693,23 @@ private fun SummaryRow(label: String, value: String, isNegative: Boolean = false
             color = if (isNegative) Color(0xFFDC2626) else MaterialTheme.colorScheme.onSurface,
         )
     }
+}
+
+private fun normalizeDecimalInput(raw: String): String {
+    val sb = StringBuilder()
+    var hasDot = false
+    for (ch in raw) {
+        val asciiChar = when (ch) {
+            in '၀'..'၉' -> ('0'.code + (ch.code - '၀'.code)).toChar()
+            ',' -> '.'
+            else -> ch
+        }
+        if (asciiChar in '0'..'9') {
+            sb.append(asciiChar)
+        } else if (asciiChar == '.' && !hasDot) {
+            hasDot = true
+            sb.append('.')
+        }
+    }
+    return sb.toString()
 }

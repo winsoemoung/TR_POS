@@ -9,6 +9,7 @@ import android.graphics.Typeface
 import android.graphics.pdf.PdfDocument
 import android.net.Uri
 import androidx.core.content.FileProvider
+import com.example.offlinepos.data.local.effectiveQuantity
 import com.example.offlinepos.ui.ReceiptData
 import com.example.offlinepos.ui.StoreProfile
 import java.io.File
@@ -123,9 +124,9 @@ object PdfReceiptHelper {
             canvas.drawText("${index + 1}. $itemName", 30f, y, paint)
 
             paint.textAlign = Paint.Align.RIGHT
-            canvas.drawText("${item.quantity} ${item.unitName}", 285f, y, paint)
+            canvas.drawText("${com.example.offlinepos.domain.Money.formatQty(item.effectiveQuantity())} ${item.unitName}", 285f, y, paint)
             canvas.drawText("%,d".format(item.unitPriceMinor), 355f, y, paint)
-            val lineTotal = (item.unitPriceMinor * item.quantity) - item.lineDiscountMinor
+            val lineTotal = (kotlin.math.round(item.unitPriceMinor.toDouble() * item.effectiveQuantity()).toLong()) - item.lineDiscountMinor
             canvas.drawText("%,d".format(lineTotal), pageWidth - 30f, y, paint)
 
             y += 16f

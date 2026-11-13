@@ -42,6 +42,9 @@ import com.example.offlinepos.data.local.StockMovementEntity
 import com.example.offlinepos.data.local.SupplierEntity
 import com.example.offlinepos.data.local.ReceiptTemplateEntity
 import com.example.offlinepos.data.local.ReturnTransactionEntity
+import com.example.offlinepos.data.local.effectiveQuantity
+import com.example.offlinepos.data.local.effectiveStock
+import com.example.offlinepos.domain.Money
 import kotlinx.coroutines.flow.map
 import com.example.offlinepos.hardware.PdfReceiptHelper
 import org.json.JSONArray
@@ -152,7 +155,7 @@ class PosViewModel(private val context: Context) : ViewModel() {
         .catch { emit(emptyList()) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    private val activeProducts: StateFlow<List<ProductEntity>> = db.productDao().observeActive()
+    val activeProducts: StateFlow<List<ProductEntity>> = db.productDao().observeActive()
         .catch { emit(emptyList()) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
@@ -199,7 +202,7 @@ class PosViewModel(private val context: Context) : ViewModel() {
 
     // AI Stock Predictions Flow (Sales velocity & days remaining forecasting)
     val stockPredictions: StateFlow<List<com.example.offlinepos.domain.StockPredictionItem>> = kotlinx.coroutines.flow.combine(
-        allProducts,
+        activeProducts,
         salesHistory,
         allSaleItems
     ) { prods, sales, items ->
@@ -239,7 +242,7 @@ class PosViewModel(private val context: Context) : ViewModel() {
 
     // 1st and 15th BI Reports Flow
     val biMonthlyReport: StateFlow<com.example.offlinepos.ai.BusinessIntelligenceEngine.BiMonthlyReport?> = kotlinx.coroutines.flow.combine(
-        allProducts,
+        activeProducts,
         salesHistory,
         allSaleItems,
         purchases,
@@ -257,7 +260,7 @@ class PosViewModel(private val context: Context) : ViewModel() {
     .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     // 12-Month Annual Seasonal Predictions Flow
-    val seasonalPredictions: StateFlow<List<com.example.offlinepos.ai.BusinessIntelligenceEngine.MonthlySeasonalInsight>> = allProducts
+    val seasonalPredictions: StateFlow<List<com.example.offlinepos.ai.BusinessIntelligenceEngine.MonthlySeasonalInsight>> = activeProducts
         .map { prods: List<ProductEntity> ->
             com.example.offlinepos.ai.BusinessIntelligenceEngine.generate12MonthSeasonalPredictions(prods)
         }
@@ -702,8 +705,8 @@ class PosViewModel(private val context: Context) : ViewModel() {
                 val todayRevenue = todaySales.sumOf { it.totalMinor }
                 val totalRevenue = allSales.sumOf { it.totalMinor }
 
-                val allProds = allProducts.value
-                val lowStockList = allProds.filter { it.stockQuantity <= it.lowStockThreshold }
+                val allProds = activeProducts.value
+                val lowStockList = allProds.filter { it.effectiveStock() <= it.lowStockThreshold }
 
                 val allCust = customers.value
                 val debtors = allCust.filter { it.currentDebtMinor > 0 }
@@ -763,9 +766,9 @@ class PosViewModel(private val context: Context) : ViewModel() {
     fun requestStockRecommendationAi(prompt: String, onComplete: (String) -> Unit) {
         viewModelScope.launch {
             try {
-                val productsSnapshot = allProducts.value
+                val productsSnapshot = activeProducts.value
                 val salesSnapshot = salesHistory.value
-                val lowStock = productsSnapshot.filter { it.stockQuantity <= it.lowStockThreshold }
+                val lowStock = productsSnapshot.filter { it.effectiveStock() <= it.lowStockThreshold }
                 val debtors = customers.value.filter { it.currentDebtMinor > 0 }
                 val today = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date())
                 val dbContext = com.example.offlinepos.ai.PosDatabaseContext(
@@ -972,7 +975,7 @@ class PosViewModel(private val context: Context) : ViewModel() {
             val discFactor = promo.discountPercent / 100.0
             for (i in currentList.indices) {
                 val item = currentList[i]
-                val lineTotal = item.unitPriceMinor * item.quantity
+                val lineTotal = item.grossAmountMinor
                 val lineDisc = (lineTotal * discFactor).roundToLong()
                 currentList[i] = item.copy(lineDiscountMinor = lineDisc)
                 totalDiscountApplied += lineDisc
@@ -981,7 +984,7 @@ class PosViewModel(private val context: Context) : ViewModel() {
             var remaining = promo.discountFlatMinor
             for (i in currentList.indices) {
                 val item = currentList[i]
-                val lineTotal = item.unitPriceMinor * item.quantity
+                val lineTotal = item.grossAmountMinor
                 val lineDisc = minOf(remaining, lineTotal)
                 currentList[i] = item.copy(lineDiscountMinor = lineDisc)
                 remaining -= lineDisc
@@ -1045,18 +1048,22 @@ class PosViewModel(private val context: Context) : ViewModel() {
         val currentTaxRate = _storeProfile.value.taxRatePercent
         if (index >= 0) {
             val existing = currentList[index]
-            if (existing.quantity >= product.stockQuantity) {
-                setBanner("လက်ကျန်မလုံလောက်ပါ: ${product.stockQuantity} ခုသာ ကျန်ရှိပါသည်")
+            val stockAvail = product.effectiveStock()
+            if (existing.effectiveQuantity + 1e-6 >= stockAvail) {
+                setBanner("လက်ကျန်မလုံလောက်ပါ: ${Money.formatQty(stockAvail)} ${product.unitName} သာ ကျန်ရှိပါသည်")
                 return
             }
-            val newQty = existing.quantity + 1
+            val newQty = existing.effectiveQuantity + 1.0
             val isWholesale = product.wholesaleMinQty > 0 && newQty >= product.wholesaleMinQty && product.wholesalePriceMinor > 0
             val effectivePrice = if (isWholesale) product.wholesalePriceMinor else product.sellPriceMinor
-            val singleTax = ((effectivePrice * currentTaxRate) / 100.0).roundToLong()
+            val lineTax = ((effectivePrice.toDouble() * newQty * currentTaxRate) / 100.0).roundToLong()
+            val intQty = kotlin.math.ceil(newQty).toLong().coerceAtLeast(1L)
+            val decQty = if (kotlin.math.abs(newQty - kotlin.math.round(newQty)) < 1e-6) null else newQty
             currentList[index] = existing.copy(
-                quantity = newQty,
+                quantity = intQty,
+                quantityDecimal = decQty,
                 unitPriceMinor = effectivePrice,
-                lineTaxMinor = singleTax * newQty,
+                lineTaxMinor = lineTax,
                 unitName = product.unitName,
                 isWholesale = isWholesale,
                 costPriceMinor = product.costPriceMinor,
@@ -1065,7 +1072,7 @@ class PosViewModel(private val context: Context) : ViewModel() {
                 setBanner("လက်ကားဈေးနှုန်း (Wholesale) အလိုအလျောက် သတ်မှတ်ပေးလိုက်ပါသည်")
             }
         } else {
-            if (product.stockQuantity <= 0) {
+            if (product.effectiveStock() <= 0.0) {
                 setBanner("ပစ္စည်း လက်ကျန် ကုန်နေပါသည်")
                 return
             }
@@ -1144,7 +1151,7 @@ class PosViewModel(private val context: Context) : ViewModel() {
     }
 
     fun toggleCartItemWholesale(productId: Long) {
-        val product = allProducts.value.find { it.productId == productId } ?: return
+        val product = activeProducts.value.find { it.productId == productId } ?: return
         val currentList = _cart.value.toMutableList()
         val index = currentList.indexOfFirst { it.productId == productId }
         if (index < 0) return
@@ -1221,10 +1228,14 @@ class PosViewModel(private val context: Context) : ViewModel() {
     }
 
     fun updateQuantity(productId: Long, quantity: Long) {
+        updateQuantity(productId, quantity.toDouble())
+    }
+
+    fun updateQuantity(productId: Long, quantity: Double) {
         val currentList = _cart.value.toMutableList()
         val index = currentList.indexOfFirst { it.productId == productId }
         if (index >= 0) {
-            if (quantity <= 0) {
+            if (!quantity.isFinite() || quantity <= 0.0) {
                 currentList.removeAt(index)
             } else {
                 val existing = currentList[index]
@@ -1232,11 +1243,16 @@ class PosViewModel(private val context: Context) : ViewModel() {
                 val isWholesale = product != null && product.wholesaleMinQty > 0 && quantity >= product.wholesaleMinQty && product.wholesalePriceMinor > 0
                 val effectivePrice = if (isWholesale) product!!.wholesalePriceMinor else (product?.sellPriceMinor ?: existing.unitPriceMinor)
                 val currentTaxRate = _storeProfile.value.taxRatePercent
-                val singleTax = ((effectivePrice * currentTaxRate) / 100.0).roundToLong()
+                val lineTax = ((effectivePrice.toDouble() * quantity * currentTaxRate) / 100.0).roundToLong()
+                val intQty = kotlin.math.ceil(quantity).toLong().coerceAtLeast(1L)
+                val decQty = if (kotlin.math.abs(quantity - kotlin.math.round(quantity)) < 1e-6) null else quantity
+                val newGross = (effectivePrice.toDouble() * quantity).roundToLong()
                 currentList[index] = existing.copy(
-                    quantity = quantity,
+                    quantity = intQty,
+                    quantityDecimal = decQty,
                     unitPriceMinor = effectivePrice,
-                    lineTaxMinor = singleTax * quantity,
+                    lineTaxMinor = lineTax,
+                    lineDiscountMinor = existing.lineDiscountMinor.coerceIn(0L, newGross),
                     isWholesale = isWholesale,
                 )
             }
@@ -1256,7 +1272,7 @@ class PosViewModel(private val context: Context) : ViewModel() {
         val index = currentList.indexOfFirst { it.productId == productId }
         if (index >= 0) {
             val existing = currentList[index]
-            val maxDiscount = existing.unitPriceMinor * existing.quantity
+            val maxDiscount = existing.grossAmountMinor
             val safeDiscount = discountAmountMinor.coerceIn(0, maxDiscount)
             currentList[index] = existing.copy(lineDiscountMinor = safeDiscount)
             _cart.value = currentList
@@ -1340,16 +1356,19 @@ class PosViewModel(private val context: Context) : ViewModel() {
                         enqueueGoogleDriveSync()
                     }
                     val items = cartItems.map { item ->
+                        val effQty = item.effectiveQuantity
+                        val intQty = kotlin.math.ceil(effQty).toLong().coerceAtLeast(1L)
                         SaleItemEntity(
                             saleId = result.saleId,
                             productId = item.productId,
                             productNameSnapshot = item.name,
                             unitPriceMinor = item.unitPriceMinor,
-                            quantity = item.quantity,
+                            quantity = intQty,
                             lineDiscountMinor = item.lineDiscountMinor,
                             lineTaxMinor = item.lineTaxMinor,
-                            lineTotalMinor = (item.unitPriceMinor * item.quantity) - item.lineDiscountMinor + item.lineTaxMinor,
+                            lineTotalMinor = item.grossAmountMinor - item.lineDiscountMinor + item.lineTaxMinor,
                             unitName = item.unitName,
+                            quantityDecimal = effQty,
                         )
                     }
 
@@ -1759,15 +1778,15 @@ class PosViewModel(private val context: Context) : ViewModel() {
             for (item in items) {
                 val prod = activeProds[item.productId]
                 val unitCost = prod?.costPriceMinor ?: 0L
-                totalCostMinor += unitCost * item.quantity
+                totalCostMinor += (unitCost.toDouble() * item.effectiveQuantity()).roundToLong()
             }
         }
         val totalProfitMinor = (totalSalesMinor - totalCostMinor - expenseMinor).coerceAtLeast(0L)
 
         // Low stock products
-        val lowStock = allProducts.value
-            .filter { it.isActive && it.stockQuantity <= it.lowStockThreshold }
-            .sortedBy { it.stockQuantity }
+        val lowStock = activeProducts.value
+            .filter { it.isActive && it.effectiveStock() <= it.lowStockThreshold }
+            .sortedBy { it.effectiveStock() }
             .map { it.name to it.stockQuantity }
 
         DailyReportData(
@@ -2024,7 +2043,7 @@ class PosViewModel(private val context: Context) : ViewModel() {
             try {
                 val csv = buildString {
                     append(ProductCsv.HEADER).append('\n')
-                    allProducts.value.forEach { append(ProductCsv.encode(it)).append('\n') }
+                    activeProducts.value.forEach { append(ProductCsv.encode(it)).append('\n') }
                 }
                 context.contentResolver.openOutputStream(uri)?.use { it.write(csv.toByteArray(Charsets.UTF_8)) }
                 withContext(Dispatchers.Main) { setBanner("Product CSV export ပြီးပါပြီ") }
@@ -2082,6 +2101,7 @@ class PosViewModel(private val context: Context) : ViewModel() {
                     put("name", item.name)
                     put("unitPriceMinor", item.unitPriceMinor)
                     put("quantity", item.quantity)
+                    put("quantityDecimal", item.effectiveQuantity)
                     put("lineDiscountMinor", item.lineDiscountMinor)
                     put("lineTaxMinor", item.lineTaxMinor)
                     put("unitName", item.unitName)
@@ -2115,12 +2135,16 @@ class PosViewModel(private val context: Context) : ViewModel() {
                 val restoredItems = mutableListOf<CartItem>()
                 for (i in 0 until array.length()) {
                     val obj = array.getJSONObject(i)
+                    val qtyLong = obj.getLong("quantity")
+                    val qtyDecRaw = obj.optDouble("quantityDecimal", -1.0)
+                    val qtyDec = if (qtyDecRaw > 0.0 && kotlin.math.abs(qtyDecRaw - kotlin.math.round(qtyDecRaw)) >= 1e-6) qtyDecRaw else null
                     restoredItems.add(
                         CartItem(
                             productId = obj.getLong("productId"),
                             name = obj.getString("name"),
                             unitPriceMinor = obj.getLong("unitPriceMinor"),
-                            quantity = obj.getLong("quantity"),
+                            quantity = qtyLong,
+                            quantityDecimal = qtyDec,
                             lineDiscountMinor = obj.optLong("lineDiscountMinor", 0L),
                             lineTaxMinor = obj.optLong("lineTaxMinor", 0L),
                             unitName = obj.optString("unitName", "ခု"),
@@ -2486,11 +2510,27 @@ class PosViewModel(private val context: Context) : ViewModel() {
     }
 
     fun archiveProduct(productId: Long) {
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             val now = System.currentTimeMillis()
-            db.productDao().archive(productId, now)
-            triggerAutoDriveSync("Archive Product")
-            setBanner("ကုန်ပစ္စည်းကို ဖျက်သိမ်းပြီးပါပြီ")
+            val existing = db.productDao().findById(productId) ?: return@launch
+            val hasHistory = db.productDao().countSalesForProduct(productId) > 0 ||
+                db.productDao().countPurchasesForProduct(productId) > 0
+            if (hasHistory) {
+                db.productDao().archive(productId, now)
+            } else {
+                db.productDao().deleteById(productId)
+            }
+            RecordLevelSyncManager(context.applicationContext).recordTombstone(db, "products", existing.sku)
+            withContext(Dispatchers.Main) {
+                if (_cart.value.any { it.productId == productId }) {
+                    removeFromCart(productId)
+                }
+                if (_detailsProduct.value?.productId == productId) {
+                    dismissProductDetails()
+                }
+                triggerAutoDriveSync("Archive Product")
+                setBanner("ကုန်ပစ္စည်း '${existing.name}' ကို စာရင်းမှ ဖျက်သိမ်းပြီးပါပြီ")
+            }
         }
     }
 

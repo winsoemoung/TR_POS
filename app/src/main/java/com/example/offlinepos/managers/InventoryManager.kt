@@ -99,11 +99,17 @@ class InventoryManager(
         coroutineScope.launch(Dispatchers.IO) {
             val now = System.currentTimeMillis()
             val existing = productDao.findById(productId) ?: return@launch
-            productDao.update(existing.copy(isActive = false, updatedAtEpochMs = now))
-            RecordLevelSyncManager(context.applicationContext).recordTombstone(db, "products", productId.toString())
+            val hasHistory = productDao.countSalesForProduct(productId) > 0 ||
+                productDao.countPurchasesForProduct(productId) > 0
+            if (hasHistory) {
+                productDao.archive(productId, now)
+            } else {
+                productDao.deleteById(productId)
+            }
+            RecordLevelSyncManager(context.applicationContext).recordTombstone(db, "products", existing.sku)
             withContext(Dispatchers.Main) {
                 onTriggerSync("Archive Product")
-                onBannerMessage("ကုန်ပစ္စည်းကို စာရင်းမှ ဖယ်ရှားပြီးပါပြီ")
+                onBannerMessage("ကုန်ပစ္စည်းကို စာရင်းမှ ဖျက်ပြီးပါပြီ")
             }
         }
     }

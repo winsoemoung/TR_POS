@@ -72,16 +72,19 @@ class CheckoutRepository(
             pickupNote = payment.pickupNote,
         )
         val lines = cart.map { item ->
-            val gross = (Money.multiply(item.unitPriceMinor, item.quantity) as
+            val gross = (Money.calculateLineGross(item.unitPriceMinor, item.quantity, item.quantityDecimal) as
                     MoneyResult.Ok).value
             val net = (Money.subtract(gross, item.lineDiscountMinor) as MoneyResult.Ok).value
             val lineTotal = (Money.add(net, item.lineTaxMinor) as MoneyResult.Ok).value
+            val effQty = item.effectiveQuantity
+            val intQty = kotlin.math.ceil(effQty).toLong().coerceAtLeast(1L)
             SaleItemEntity(
                 saleId = saleId, productId = item.productId,
                 productNameSnapshot = item.name, unitPriceMinor = item.unitPriceMinor,
-                quantity = item.quantity, lineDiscountMinor = item.lineDiscountMinor,
+                quantity = intQty, lineDiscountMinor = item.lineDiscountMinor,
                 lineTaxMinor = item.lineTaxMinor, lineTotalMinor = lineTotal,
                 unitName = item.unitName,
+                quantityDecimal = effQty,
             )
         }
         val changeMinor = if (isCredit) 0L else (payment.tenderedMinor - totals.totalMinor).coerceAtLeast(0L)
@@ -105,8 +108,19 @@ class CheckoutRepository(
         val stockDeductions = cart.groupBy { it.productId }.mapValues { (_, cartList) ->
             cartList.sumOf { it.quantity * it.unitMultiplier }
         }
+        val stockDeductionsDecimal = cart.groupBy { it.productId }.mapValues { (_, cartList) ->
+            cartList.sumOf { it.effectiveQuantity * it.unitMultiplier.toDouble() }
+        }
         return try {
-            db.checkoutDao().commitSale(sale, lines, paymentRow, audit, timestamp, stockDeductions)
+            db.checkoutDao().commitSale(
+                sale = sale,
+                items = lines,
+                payment = paymentRow,
+                audit = audit,
+                now = timestamp,
+                stockDeductions = stockDeductions,
+                stockDeductionsDecimal = stockDeductionsDecimal,
+            )
             val operationId = newId()
             db.outboxDao().enqueue(
                 OutboxEntity(

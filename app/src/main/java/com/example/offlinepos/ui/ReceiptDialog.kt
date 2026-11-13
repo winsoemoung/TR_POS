@@ -4,6 +4,7 @@ import android.bluetooth.BluetoothDevice
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import com.example.offlinepos.data.local.effectiveQuantity
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -318,7 +319,7 @@ fun ReceiptDialog(
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
                                     Text(line.productNameSnapshot, modifier = Modifier.weight(0.42f), fontSize = 11.sp)
-                                    Text(line.quantity.toString(), modifier = Modifier.weight(0.16f), textAlign = TextAlign.Center, fontSize = 11.sp)
+                                    Text(com.example.offlinepos.domain.Money.formatQty(line.effectiveQuantity()), modifier = Modifier.weight(0.16f), textAlign = TextAlign.Center, fontSize = 11.sp)
                                     Text("%,d".format(line.unitPriceMinor), modifier = Modifier.weight(0.20f), textAlign = TextAlign.End, fontSize = 11.sp)
                                     Text("%,d".format(line.lineTotalMinor), modifier = Modifier.weight(0.22f), textAlign = TextAlign.End, fontWeight = FontWeight.SemiBold, fontSize = 11.sp)
                                 }
@@ -346,7 +347,7 @@ fun ReceiptDialog(
                                         )
                                     }
                                     Text(
-                                        text = "${line.quantity} ${line.unitName.ifBlank { "ခု" }} x %,d Ks".format(line.unitPriceMinor),
+                                        text = "${com.example.offlinepos.domain.Money.formatQty(line.effectiveQuantity())} ${line.unitName.ifBlank { "ခု" }} x %,d Ks".format(line.unitPriceMinor),
                                         style = MaterialTheme.typography.bodySmall,
                                         color = Color(0xFF475569),
                                         fontFamily = FontFamily.Monospace,

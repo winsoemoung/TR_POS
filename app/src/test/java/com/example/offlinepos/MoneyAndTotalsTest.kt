@@ -36,4 +36,25 @@ class MoneyAndTotalsTest {
         )
         assertTrue(calculateTotals(items) is TotalsResult.Invalid)
     }
+
+    @Test
+    fun decimal_quantities_calculate_exact_rounded_totals() {
+        val items = listOf(
+            CartItem(productId = 10, name = "သံချောင်း (ပိဿာ)", unitPriceMinor = 10_000, quantity = 1, quantityDecimal = 0.25, unitName = "ပိဿာ"),
+            CartItem(productId = 11, name = "သံကြိုး (ပိဿာ)", unitPriceMinor = 8_000, quantity = 1, quantityDecimal = 0.5, unitName = "ပိဿာ"),
+            CartItem(productId = 12, name = "သွပ်နန်း", unitPriceMinor = 5_000, quantity = 2, quantityDecimal = 1.5, unitName = "ပိဿာ"),
+        )
+        val totals = (calculateTotals(items) as TotalsResult.Ok).totals
+        assertEquals(2_500 + 4_000 + 7_500, totals.subtotalMinor)
+        assertEquals(14_000, totals.totalMinor)
+    }
+
+    @Test
+    fun format_qty_strips_trailing_zero_decimals() {
+        assertEquals("1", Money.formatQty(1.0))
+        assertEquals("0.25", Money.formatQty(0.25))
+        assertEquals("0.5", Money.formatQty(0.5))
+        assertEquals("1.75", Money.formatQty(1.75))
+        assertEquals("100", Money.formatQty(100.0))
+    }
 }

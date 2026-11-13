@@ -55,7 +55,7 @@ fun StockInDialog(
     suggestedQty: Long = 10L,
     onDismiss: () -> Unit,
 ) {
-    val products by viewModel.allProducts.collectAsState()
+    val products by viewModel.activeProducts.collectAsState()
 
     var selectedProduct by remember { mutableStateOf(preselectedProduct ?: products.firstOrNull()) }
     var dropdownExpanded by remember { mutableStateOf(false) }

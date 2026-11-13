@@ -116,7 +116,7 @@ fun HoldOrdersDialog(
                                     fontWeight = FontWeight.Medium
                                 )
                                 Text(
-                                    text = "${cart.sumOf { it.quantity }} ခု (%,d Ks)".format(totals.totalMinor),
+                                    text = "${com.example.offlinepos.domain.Money.formatQty(cart.sumOf { it.effectiveQuantity })} ခု (%,d Ks)".format(totals.totalMinor),
                                     fontSize = 14.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.primary

@@ -60,11 +60,28 @@ abstract class CheckoutDao {
     @Query("SELECT stockQuantity FROM products WHERE productId = :productId LIMIT 1")
     abstract suspend fun getProductStock(productId: Long): Long?
 
+    @Query("SELECT * FROM products WHERE productId = :productId LIMIT 1")
+    abstract suspend fun getProductById(productId: Long): ProductEntity?
+
     @Query("""
         UPDATE products SET stockQuantity = stockQuantity - :qty, updatedAtEpochMs = :now
         WHERE productId = :productId AND isActive = 1 AND stockQuantity >= :qty
     """)
     abstract suspend fun reduceStock(productId: Long, qty: Long, now: Long): Int
+
+    @Query("""
+        UPDATE products
+        SET stockQuantity = :newStockLong,
+            stockQuantityDecimal = :newStockDecimal,
+            updatedAtEpochMs = :now
+        WHERE productId = :productId AND isActive = 1
+    """)
+    abstract suspend fun updateStockDecimal(
+        productId: Long,
+        newStockLong: Long,
+        newStockDecimal: Double?,
+        now: Long,
+    ): Int
 
     @Query("UPDATE products SET stockQuantity = stockQuantity + :qty, updatedAtEpochMs = :now WHERE productId = :productId")
     abstract suspend fun restoreStock(productId: Long, qty: Long, now: Long): Int
@@ -83,13 +100,27 @@ abstract class CheckoutDao {
         audit: AuditEventEntity,
         now: Long,
         stockDeductions: Map<Long, Long> = emptyMap(),
+        stockDeductionsDecimal: Map<Long, Double> = emptyMap(),
     ) {
         require(items.isNotEmpty()) { "Sale must contain at least one line" }
         require(payment.saleId == sale.saleId) { "Payment must belong to the sale" }
         insertSale(sale)
-        items.forEach { line ->
-            val deductQty = stockDeductions[line.productId] ?: line.quantity
-            check(reduceStock(line.productId, deductQty, now) == 1) { "Insufficient stock" }
+        if (stockDeductionsDecimal.isNotEmpty()) {
+            stockDeductionsDecimal.forEach { (productId, deductDecimal) ->
+                val prod = getProductById(productId) ?: error("Insufficient stock")
+                check(prod.isActive) { "Insufficient stock" }
+                val current = prod.effectiveStock()
+                check(current + 1e-6 >= deductDecimal) { "Insufficient stock" }
+                val remaining = (current - deductDecimal).coerceAtLeast(0.0)
+                val roundedLong = if (remaining > 0.0 && remaining < 1.0) 1L else kotlin.math.round(remaining).toLong()
+                val decimalCol: Double? = if (kotlin.math.abs(remaining - roundedLong.toDouble()) < 1e-6) null else remaining
+                check(updateStockDecimal(productId, roundedLong, decimalCol, now) == 1) { "Insufficient stock" }
+            }
+        } else {
+            items.forEach { line ->
+                val deductQty = stockDeductions[line.productId] ?: line.quantity
+                check(reduceStock(line.productId, deductQty, now) == 1) { "Insufficient stock" }
+            }
         }
         insertItems(items)
         insertPayment(payment)

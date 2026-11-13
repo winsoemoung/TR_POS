@@ -25,7 +25,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         SupplierEntity::class,
         ReceiptTemplateEntity::class,
     ],
-    version = 15,
+    version = 16,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -219,11 +219,14 @@ abstract class AppDatabase : RoomDatabase() {
                 ensureColumnExists(db, "products", "unitName", "TEXT NOT NULL DEFAULT 'ခု'")
                 ensureColumnExists(db, "products", "wholesaleUnitName", "TEXT NOT NULL DEFAULT 'ဖာ'")
                 ensureColumnExists(db, "products", "wholesaleUnitMultiplier", "INTEGER NOT NULL DEFAULT 1")
+                ensureColumnExists(db, "products", "stockQuantityDecimal", "REAL")
                 ensureColumnExists(db, "sales", "deliveryFeeMinor", "INTEGER NOT NULL DEFAULT 0")
                 ensureColumnExists(db, "sales", "pickupStatus", "TEXT NOT NULL DEFAULT 'PICKED_UP'")
                 ensureColumnExists(db, "sales", "expectedPickupDate", "TEXT")
                 ensureColumnExists(db, "sales", "pickupNote", "TEXT")
                 ensureColumnExists(db, "sale_items", "returnedQuantity", "INTEGER NOT NULL DEFAULT 0")
+                ensureColumnExists(db, "sale_items", "quantityDecimal", "REAL NOT NULL DEFAULT 0.0")
+                ensureColumnExists(db, "sale_items", "returnedQuantityDecimal", "REAL NOT NULL DEFAULT 0.0")
                 ensureColumnExists(db, "customers", "creditDueDateEpochMs", "INTEGER")
 
                 // Ensure all performance indices exist

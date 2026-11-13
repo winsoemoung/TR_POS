@@ -27,4 +27,12 @@ data class SaleItemEntity(
     val lineTotalMinor: Long,
     val unitName: String = "ခု",
     val returnedQuantity: Long = 0L,
+    val quantityDecimal: Double = 0.0,
+    val returnedQuantityDecimal: Double = 0.0,
 )
+
+fun SaleItemEntity.effectiveQuantity(): Double =
+    if (quantityDecimal > 0.0) quantityDecimal else quantity.toDouble()
+
+fun SaleItemEntity.effectiveReturnedQuantity(): Double =
+    if (returnedQuantityDecimal > 0.0) returnedQuantityDecimal else returnedQuantity.toDouble()

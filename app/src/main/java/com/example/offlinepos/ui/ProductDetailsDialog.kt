@@ -47,6 +47,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.example.offlinepos.data.local.ProductEntity
+import com.example.offlinepos.data.local.effectiveStock
+import com.example.offlinepos.domain.Money
 
 @Composable
 fun ProductDetailsDialog(
@@ -67,7 +69,7 @@ fun ProductDetailsDialog(
     var editImageUri by remember(product) { mutableStateOf(product.imageUri) }
     var editSellPrice by remember(product) { mutableStateOf(product.sellPriceMinor.toString()) }
     var editCostPrice by remember(product) { mutableStateOf(product.costPriceMinor.toString()) }
-    var editStock by remember(product) { mutableStateOf(product.stockQuantity.toString()) }
+    var editStock by remember(product) { mutableStateOf(Money.formatQty(product.effectiveStock())) }
     var editThreshold by remember(product) { mutableStateOf(product.lowStockThreshold.toString()) }
     var editWholesalePrice by remember(product) { mutableStateOf(if (product.wholesalePriceMinor > 0) product.wholesalePriceMinor.toString() else "") }
     var editWholesaleMinQty by remember(product) { mutableStateOf(if (product.wholesaleMinQty > 0) product.wholesaleMinQty.toString() else "1") }
@@ -80,7 +82,7 @@ fun ProductDetailsDialog(
         (profitMinor * 100.0) / product.sellPriceMinor
     } else 0.0
 
-    val isLowStock = product.stockQuantity <= product.lowStockThreshold
+    val isLowStock = product.effectiveStock() <= product.lowStockThreshold
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
@@ -329,7 +331,13 @@ fun ProductDetailsDialog(
                                 }
                                 val sellP = editSellPrice.toLongOrNull() ?: 0L
                                 val costP = editCostPrice.toLongOrNull() ?: 0L
-                                val stockQ = editStock.toLongOrNull() ?: product.stockQuantity
+                                val parsedStockDouble = editStock.replace(',', '.').toDoubleOrNull()
+                                val stockQ = if (parsedStockDouble != null && parsedStockDouble >= 0.0) {
+                                    kotlin.math.round(parsedStockDouble).toLong()
+                                } else product.stockQuantity
+                                val stockQDec = if (parsedStockDouble != null && parsedStockDouble >= 0.0 &&
+                                    kotlin.math.abs(parsedStockDouble - kotlin.math.round(parsedStockDouble)) >= 1e-6
+                                ) parsedStockDouble else null
                                 val thresh = editThreshold.toLongOrNull() ?: product.lowStockThreshold
                                 val wsPrice = editWholesalePrice.toLongOrNull() ?: 0L
                                 val wsMin = editWholesaleMinQty.toLongOrNull() ?: 0L
@@ -345,6 +353,7 @@ fun ProductDetailsDialog(
                                     sellPriceMinor = sellP,
                                     costPriceMinor = costP,
                                     stockQuantity = stockQ,
+                                    stockQuantityDecimal = stockQDec,
                                     lowStockThreshold = thresh,
                                     wholesalePriceMinor = wsPrice,
                                     wholesaleMinQty = wsMin,
@@ -410,7 +419,7 @@ fun ProductDetailsDialog(
                         ) {
                             Text("⚠️ ", fontSize = 18.sp)
                             Text(
-                                text = "လက်ကျန် အလွန်နည်းနေပါသည် (အနည်းဆုံး ${product.lowStockThreshold} ခု သတ်မှတ်ထားသော်လည်း ${product.stockQuantity} ခုသာ ကျန်ရှိပါသည်)",
+                                text = "လက်ကျန် အလွန်နည်းနေပါသည် (အနည်းဆုံး ${product.lowStockThreshold} ခု သတ်မှတ်ထားသော်လည်း ${Money.formatQty(product.effectiveStock())} ${product.unitName} သာ ကျန်ရှိပါသည်)",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = Color(0xFFDC2626),
                                 fontWeight = FontWeight.SemiBold,
@@ -450,7 +459,7 @@ fun ProductDetailsDialog(
                                 "၁ ${product.wholesaleUnitName} = ${product.wholesaleUnitMultiplier} ${product.unitName} (လက်ကား: %,d Ks)".format(product.wholesalePriceMinor)
                             )
                         }
-                        DetailItem("လက်ရှိ လက်ကျန်", "${product.stockQuantity} ${product.unitName}")
+                        DetailItem("လက်ရှိ လက်ကျန်", "${Money.formatQty(product.effectiveStock())} ${product.unitName}")
                         DetailItem("သတိပေး လက်ကျန်", "${product.lowStockThreshold} ${product.unitName}")
                     }
                 }

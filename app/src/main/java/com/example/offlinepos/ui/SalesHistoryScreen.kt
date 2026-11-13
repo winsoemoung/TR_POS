@@ -4,6 +4,10 @@ import android.content.Intent
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import com.example.offlinepos.data.local.PickupStatus
+import com.example.offlinepos.data.local.effectiveQuantity
+import com.example.offlinepos.data.local.effectiveReturnedQuantity
+import com.example.offlinepos.data.local.effectiveStock
+import com.example.offlinepos.domain.Money
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -200,8 +204,8 @@ fun SalesHistoryScreen(
     // Exact COGS from sale-line snapshots and current catalog cost prices.
     val costByProduct = allProducts.associateBy { it.productId }
     val estimatedCostOfGoods = filteredSaleItems.sumOf { item ->
-        val netQuantity = (item.quantity - item.returnedQuantity).coerceAtLeast(0L)
-        netQuantity * (costByProduct[item.productId]?.costPriceMinor ?: 0L)
+        val netQuantity = (item.effectiveQuantity() - item.effectiveReturnedQuantity()).coerceAtLeast(0.0)
+        kotlin.math.round(netQuantity * (costByProduct[item.productId]?.costPriceMinor ?: 0L).toDouble()).toLong()
     }
     val grossProfit = (totalRevenue - estimatedCostOfGoods).coerceAtLeast(0L)
     val profitMarginPercent = if (totalRevenue > 0) (grossProfit.toDouble() / totalRevenue.toDouble()) * 100.0 else 0.0
@@ -1088,7 +1092,7 @@ fun ReorderAndPeriodicReportView(
             PeriodicReportType.HALF_YEAR_6M -> 180L
             PeriodicReportType.ANNUAL_12M -> 365L
         }
-        allProducts.map { prod ->
+        allProducts.filter { it.isActive }.map { prod ->
             val sold = productSoldQtyMap[prod.productId] ?: 0L
             val annualSold = annualSoldQtyMap[prod.productId] ?: 0L
             val recentRate = sold.toDouble() / periodDays.toDouble()

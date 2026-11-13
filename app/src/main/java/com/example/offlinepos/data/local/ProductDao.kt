@@ -21,7 +21,7 @@ interface ProductDao {
     @Query("SELECT * FROM products WHERE isActive = 1 ORDER BY category, name")
     fun observeActive(): Flow<List<ProductEntity>>
 
-    @Query("SELECT DISTINCT category FROM products ORDER BY category")
+    @Query("SELECT DISTINCT category FROM products WHERE isActive = 1 ORDER BY category")
     fun observeCategories(): Flow<List<String>>
 
     @Query("SELECT * FROM products WHERE productId = :id")
@@ -39,7 +39,18 @@ interface ProductDao {
     @Update
     suspend fun update(product: ProductEntity): Int
 
-    @Query("UPDATE products SET stockQuantity = stockQuantity + :adjustment, updatedAtEpochMs = :now WHERE productId = :id")
+    @Query(
+        """
+        UPDATE products
+        SET stockQuantity = stockQuantity + :adjustment,
+            stockQuantityDecimal = CASE
+                WHEN stockQuantityDecimal IS NOT NULL THEN stockQuantityDecimal + :adjustment
+                ELSE NULL
+            END,
+            updatedAtEpochMs = :now
+        WHERE productId = :id
+        """
+    )
     suspend fun adjustStock(id: Long, adjustment: Long, now: Long): Int
 
     @Query("UPDATE products SET sellPriceMinor = :newPrice, updatedAtEpochMs = :now WHERE productId = :id")
@@ -63,11 +74,20 @@ interface ProductDao {
     @Query("UPDATE products SET category = :newCategory, updatedAtEpochMs = :now WHERE category = :oldCategory AND isActive = 1")
     suspend fun batchUpdateCategory(oldCategory: String, newCategory: String, now: Long): Int
 
-    @Query("SELECT COUNT(*) FROM products")
+    @Query("SELECT COUNT(*) FROM products WHERE isActive = 1")
     suspend fun countProducts(): Int
 
-    @Query("UPDATE products SET isActive = 0, updatedAtEpochMs = :now WHERE productId = :id")
+    @Query("SELECT COUNT(*) FROM sale_items WHERE productId = :id")
+    suspend fun countSalesForProduct(id: Long): Int
+
+    @Query("SELECT COUNT(*) FROM purchases WHERE productId = :id")
+    suspend fun countPurchasesForProduct(id: Long): Int
+
+    @Query("UPDATE products SET isActive = 0, barcode = NULL, updatedAtEpochMs = :now WHERE productId = :id")
     suspend fun archive(id: Long, now: Long): Int
+
+    @Query("DELETE FROM products WHERE productId = :id")
+    suspend fun deleteById(id: Long): Int
 
     @Query("UPDATE products SET isActive = 1, updatedAtEpochMs = :now WHERE productId = :id")
     suspend fun activate(id: Long, now: Long): Int

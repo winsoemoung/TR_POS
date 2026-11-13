@@ -1,8 +1,10 @@
 package com.example.offlinepos.ui
 
+import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import com.example.offlinepos.data.local.effectiveStock
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -126,7 +128,7 @@ fun HomeScreen(
     onNavigateToAiCopilot: () -> Unit = {},
 ) {
     val salesHistory by viewModel.salesHistory.collectAsState()
-    val allProducts by viewModel.allProducts.collectAsState()
+    val allProducts by viewModel.activeProducts.collectAsState()
     val cart by viewModel.cart.collectAsState()
     val totals by viewModel.totals.collectAsState()
     val customers by viewModel.customers.collectAsState()
@@ -159,7 +161,8 @@ fun HomeScreen(
     val todayStr = remember { SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date()) }
     val todaySales = salesHistory.filter { it.businessDate == todayStr && it.status == "COMPLETED" }
     val todayVouchersCount = todaySales.size
-    val totalCartItems = cart.sumOf { it.quantity }
+    val totalCartItems = cart.sumOf { it.effectiveQuantity }
+    val totalCartItemsDisplay = com.example.offlinepos.domain.Money.formatQty(totalCartItems)
 
     Box(
         modifier = Modifier
@@ -591,7 +594,7 @@ fun HomeScreen(
         }
 
         // Floating Cart Bar (if items in cart)
-        if (totalCartItems > 0) {
+        if (cart.isNotEmpty() && totalCartItems > 0.0) {
             Surface(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
@@ -616,7 +619,7 @@ fun HomeScreen(
                         Spacer(modifier = Modifier.width(10.dp))
                         Column {
                             Text(
-                                text = "ဘောက်ချာတွင် $totalCartItems ခု ရှိနေပါသည်",
+                                text = "ဘောက်ချာတွင် $totalCartItemsDisplay ခု ရှိနေပါသည်",
                                 color = Color.White,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 14.sp
@@ -1757,12 +1760,12 @@ fun DynamicReportViewerDialog(
     viewModel: PosViewModel,
     onDismiss: () -> Unit
 ) {
-    val products by viewModel.allProducts.collectAsState()
+    val products by viewModel.activeProducts.collectAsState()
     val sales by viewModel.salesHistory.collectAsState()
     val customers by viewModel.customers.collectAsState()
 
-    val totalCostValue = products.fold(0L) { acc, p -> acc + (p.costPriceMinor * p.stockQuantity) }
-    val totalRetailValue = products.fold(0L) { acc, p -> acc + (p.sellPriceMinor * p.stockQuantity) }
+    val totalCostValue = products.fold(0L) { acc, p -> acc + kotlin.math.round(p.costPriceMinor.toDouble() * p.effectiveStock()).toLong() }
+    val totalRetailValue = products.fold(0L) { acc, p -> acc + kotlin.math.round(p.sellPriceMinor.toDouble() * p.effectiveStock()).toLong() }
     val totalGrossProfitEst = totalRetailValue - totalCostValue
 
     val (reportTitle, reportDesc) = when (reportType) {
@@ -1877,7 +1880,7 @@ fun DynamicReportViewerDialog(
                                         horizontalArrangement = Arrangement.SpaceBetween
                                     ) {
                                         Text(p.name, fontSize = 13.sp, modifier = Modifier.weight(1f))
-                                        Text("လက်ကျန်: ${p.stockQuantity}", color = BrandRed, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                        Text("လက်ကျန်: ${com.example.offlinepos.domain.Money.formatQty(p.effectiveStock())}", color = BrandRed, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                                     }
                                     HorizontalDivider(color = BorderLight, thickness = 0.5.dp)
                                 }

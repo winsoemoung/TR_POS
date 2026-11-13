@@ -39,10 +39,13 @@ class CartManager {
 
         if (index >= 0) {
             val existing = currentList[index]
-            val newQty = existing.quantity + 1
+            val newEffQty = existing.effectiveQuantity + 1.0
+            val newQtyInt = kotlin.math.ceil(newEffQty).toLong().coerceAtLeast(1L)
+            val decQty = if (kotlin.math.abs(newEffQty - kotlin.math.round(newEffQty)) < 1e-6) null else newEffQty
             currentList[index] = existing.copy(
-                quantity = newQty,
-                lineTaxMinor = singleTax * newQty,
+                quantity = newQtyInt,
+                quantityDecimal = decQty,
+                lineTaxMinor = ((price.toDouble() * newEffQty * taxRatePercent) / 100.0).roundToLong(),
             )
         } else {
             currentList.add(
@@ -164,21 +167,30 @@ class CartManager {
     }
 
     fun updateQuantity(productId: Long, quantity: Long, allProducts: List<ProductEntity>, taxRatePercent: Double, deliveryFee: Long) {
+        updateQuantity(productId, quantity.toDouble(), allProducts, taxRatePercent, deliveryFee)
+    }
+
+    fun updateQuantity(productId: Long, quantity: Double, allProducts: List<ProductEntity>, taxRatePercent: Double, deliveryFee: Long) {
         val currentList = _cart.value.toMutableList()
         val index = currentList.indexOfFirst { it.productId == productId }
         if (index >= 0) {
-            if (quantity <= 0) {
+            if (!quantity.isFinite() || quantity <= 0.0) {
                 currentList.removeAt(index)
             } else {
                 val existing = currentList[index]
                 val product = allProducts.find { it.productId == productId }
                 val isWholesale = product != null && product.wholesaleMinQty > 0 && quantity >= product.wholesaleMinQty && product.wholesalePriceMinor > 0
                 val effectivePrice = if (isWholesale) product!!.wholesalePriceMinor else (product?.sellPriceMinor ?: existing.unitPriceMinor)
-                val singleTax = ((effectivePrice * taxRatePercent) / 100.0).roundToLong()
+                val newTax = ((effectivePrice.toDouble() * quantity * taxRatePercent) / 100.0).roundToLong()
+                val intQty = kotlin.math.ceil(quantity).toLong().coerceAtLeast(1L)
+                val decQty = if (kotlin.math.abs(quantity - kotlin.math.round(quantity)) < 1e-6) null else quantity
+                val newGross = (effectivePrice.toDouble() * quantity).roundToLong()
                 currentList[index] = existing.copy(
-                    quantity = quantity,
+                    quantity = intQty,
+                    quantityDecimal = decQty,
                     unitPriceMinor = effectivePrice,
-                    lineTaxMinor = singleTax * quantity,
+                    lineTaxMinor = newTax,
+                    lineDiscountMinor = existing.lineDiscountMinor.coerceIn(0L, newGross),
                     isWholesale = isWholesale,
                 )
             }
@@ -206,7 +218,7 @@ class CartManager {
         val index = currentList.indexOfFirst { it.productId == productId }
         if (index >= 0) {
             val existing = currentList[index]
-            val maxDiscount = existing.unitPriceMinor * existing.quantity
+            val maxDiscount = existing.grossAmountMinor
             val safeDiscount = discountMinor.coerceIn(0L, maxDiscount)
             currentList[index] = existing.copy(lineDiscountMinor = safeDiscount)
             _cart.value = currentList
@@ -227,7 +239,7 @@ class CartManager {
         var totalTax = 0L
 
         for (item in items) {
-            val gross = item.unitPriceMinor * item.quantity
+            val gross = item.grossAmountMinor
             val net = (gross - item.lineDiscountMinor).coerceAtLeast(0L)
             subtotal += net
             totalLineDiscount += item.lineDiscountMinor

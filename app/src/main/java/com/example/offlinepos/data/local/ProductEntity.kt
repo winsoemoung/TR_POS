@@ -33,4 +33,7 @@ data class ProductEntity(
     val unitName: String = "ခု",
     val wholesaleUnitName: String = "ဖာ",
     val wholesaleUnitMultiplier: Long = 1L,
+    val stockQuantityDecimal: Double? = null,
 )
+
+fun ProductEntity.effectiveStock(): Double = stockQuantityDecimal ?: stockQuantity.toDouble()

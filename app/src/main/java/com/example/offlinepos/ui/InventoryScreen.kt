@@ -94,6 +94,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.example.offlinepos.data.local.ProductEntity
+import com.example.offlinepos.data.local.effectiveStock
+import com.example.offlinepos.domain.Money
 import com.example.offlinepos.domain.ProductDraft
 
 /**
@@ -110,7 +112,7 @@ fun InventoryScreen(
     viewModel: PosViewModel,
     onNavigateBack: () -> Unit = {},
 ) {
-    val products by viewModel.allProducts.collectAsState()
+    val products by viewModel.activeProducts.collectAsState()
     val categories by viewModel.categories.collectAsState()
     val storeProfile by viewModel.storeProfile.collectAsState()
     val predictions by viewModel.stockPredictions.collectAsState()
@@ -428,7 +430,7 @@ fun InventoryScreen(
                         overflow = TextOverflow.Ellipsis
                     )
                     Text(
-                        text = "လက်ကျန်: ${prod.stockQuantity} ${prod.unitName} | ဈေး: %,d Ks".format(prod.sellPriceMinor),
+                        text = "လက်ကျန်: ${Money.formatQty(prod.effectiveStock())} ${prod.unitName} | ဈေး: %,d Ks".format(prod.sellPriceMinor),
                         fontSize = 12.5.sp,
                         color = Color(0xFF64748B)
                     )

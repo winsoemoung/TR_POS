@@ -12,6 +12,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Typeface
+import com.example.offlinepos.data.local.effectiveQuantity
 import com.example.offlinepos.ui.ReceiptData
 import com.example.offlinepos.ui.StoreProfile
 import kotlinx.coroutines.Dispatchers
@@ -237,7 +238,7 @@ object BluetoothPrinterHelper {
             canvas.drawText(nameDisplay, leftMargin, y, paintBodyBold)
             y += if (is58mm) 20f else 24f
 
-            canvas.drawText("${line.quantity}", colQty, y, paintBody)
+            canvas.drawText(com.example.offlinepos.domain.Money.formatQty(line.effectiveQuantity()), colQty, y, paintBody)
             canvas.drawText("%,d".format(line.unitPriceMinor), colRate, y, paintBody)
             canvas.drawText("%,d".format(line.lineTotalMinor), colTotal, y, paintBodyBold)
             y += if (is58mm) 24f else 30f

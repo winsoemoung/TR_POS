@@ -7,6 +7,7 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Typeface
 import com.example.offlinepos.data.local.ReceiptTemplateEntity
+import com.example.offlinepos.data.local.effectiveQuantity
 import com.example.offlinepos.ui.ReceiptData
 import com.example.offlinepos.ui.StoreProfile
 import java.io.ByteArrayOutputStream
@@ -364,7 +365,7 @@ object CustomReceiptEscPosGenerator {
 
                 // Qty
                 textPaint.textAlign = Paint.Align.CENTER
-                canvas.drawText(line.quantity.toString(), x1 + (colQtyW / 2f), currentY, textPaint)
+                canvas.drawText(com.example.offlinepos.domain.Money.formatQty(line.effectiveQuantity()), x1 + (colQtyW / 2f), currentY, textPaint)
 
                 // Unit Price
                 textPaint.textAlign = Paint.Align.RIGHT
@@ -400,7 +401,7 @@ object CustomReceiptEscPosGenerator {
                 textPaint.textSize = subDetailSize
                 textPaint.textAlign = Paint.Align.LEFT
                 val unitStr = line.unitName.ifBlank { "ခု" }
-                val subDetail = "${line.quantity} $unitStr x %,d Ks".format(line.unitPriceMinor)
+                val subDetail = "${com.example.offlinepos.domain.Money.formatQty(line.effectiveQuantity())} $unitStr x %,d Ks".format(line.unitPriceMinor)
                 canvas.drawText(subDetail, 14f, currentY, textPaint)
                 currentY += subDetailSize + 4f + extraLineSpacing
 

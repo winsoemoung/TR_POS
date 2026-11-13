@@ -258,6 +258,14 @@ val MIGRATION_14_15 = object : Migration(14, 15) {
     }
 }
 
+val MIGRATION_15_16 = object : Migration(15, 16) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE `products` ADD COLUMN `stockQuantityDecimal` REAL")
+        db.execSQL("ALTER TABLE `sale_items` ADD COLUMN `quantityDecimal` REAL NOT NULL DEFAULT 0.0")
+        db.execSQL("ALTER TABLE `sale_items` ADD COLUMN `returnedQuantityDecimal` REAL NOT NULL DEFAULT 0.0")
+    }
+}
+
 val ALL_MIGRATIONS: Array<Migration> = arrayOf(
     MIGRATION_1_2,
     MIGRATION_2_3,
@@ -273,6 +281,7 @@ val ALL_MIGRATIONS: Array<Migration> = arrayOf(
     MIGRATION_12_13,
     MIGRATION_13_14,
     MIGRATION_14_15,
+    MIGRATION_15_16,
 )
 
 

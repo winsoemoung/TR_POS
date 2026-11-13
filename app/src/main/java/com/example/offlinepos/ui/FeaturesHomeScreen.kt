@@ -118,7 +118,7 @@ fun FeaturesHomeScreen(
     val context = LocalContext.current
     val storeProfile by viewModel.storeProfile.collectAsState()
     val actor by viewModel.actor.collectAsState()
-    val allProducts by viewModel.allProducts.collectAsState()
+    val allProducts by viewModel.activeProducts.collectAsState()
     val predictions by viewModel.stockPredictions.collectAsState()
     val customers by viewModel.customers.collectAsState()
     val suppliers by viewModel.suppliers.collectAsState()

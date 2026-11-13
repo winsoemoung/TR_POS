@@ -499,7 +499,7 @@ class RecordLevelSyncManager(private val context: Context) {
                 when (t.optString("entityType")) {
                     "customers" -> sqlite.execSQL("DELETE FROM customers WHERE customerId = ?", arrayOf(t.optString("entityId")))
                     "parked_orders" -> sqlite.execSQL("DELETE FROM parked_orders WHERE parkId = ?", arrayOf(t.optString("entityId")))
-                    "products" -> sqlite.execSQL("UPDATE products SET isActive = 0, updatedAtEpochMs = ? WHERE sku = ?", arrayOf<Any>(t.optLong("deletedAtEpochMs"), t.optString("entityId")))
+                    "products" -> sqlite.execSQL("UPDATE products SET isActive = 0, barcode = NULL, updatedAtEpochMs = ? WHERE sku = ?", arrayOf<Any>(t.optLong("deletedAtEpochMs"), t.optString("entityId")))
                 }
             }
 
