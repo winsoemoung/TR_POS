@@ -155,5 +155,91 @@ class ThermalPrinterTest {
         assertEquals("ကျေးဇူးတင်ပါသည်", tmpl2.footerMessage)
         assertTrue(tmpl2.showCustomerInfo)
     }
+
+    @Test
+    fun escPosRasterBands_splitsTallBitmapsIntoSafe128DotBands() {
+        val widthBytes = 72 // 576 dots (80mm)
+        val heightDots = 300 // > 255 rows -> must split into 128 + 128 + 44 bands
+        val rawData = ByteArray(widthBytes * heightDots) { index -> (index % 251).toByte() }
+
+        val banded = EscPos.rasterBands(widthBytes, heightDots, rawData)
+        // 3 bands * 8-byte header + rawData.size
+        assertEquals((3 * 8) + rawData.size, banded.size)
+
+        // Band 1: height = 128
+        assertEquals(0x1D.toByte(), banded[0])
+        assertEquals(0x76.toByte(), banded[1])
+        assertEquals(0x30.toByte(), banded[2])
+        assertEquals(0x00.toByte(), banded[3])
+        assertEquals(72.toByte(), banded[4])
+        assertEquals(0.toByte(), banded[5])
+        assertEquals(128.toByte(), banded[6])
+        assertEquals(0.toByte(), banded[7])
+
+        // Band 2 starts at 8 + (128 * 72) = 9224: height = 128
+        val band2Start = 8 + (128 * widthBytes)
+        assertEquals(0x1D.toByte(), banded[band2Start])
+        assertEquals(0x76.toByte(), banded[band2Start + 1])
+        assertEquals(128.toByte(), banded[band2Start + 6])
+        assertEquals(0.toByte(), banded[band2Start + 7])
+
+        // Band 3 starts at 2 * (8 + 128 * 72) = 18448: height = 44
+        val band3Start = 2 * (8 + (128 * widthBytes))
+        assertEquals(0x1D.toByte(), banded[band3Start])
+        assertEquals(0x76.toByte(), banded[band3Start + 1])
+        assertEquals(44.toByte(), banded[band3Start + 6])
+        assertEquals(0.toByte(), banded[band3Start + 7])
+    }
+
+    @Test
+    fun escPosBuildRasterReceiptPayload_includesInitCancelChineseBandsFeedAndCut() {
+        val widthBytes = 72
+        val heightDots = 200
+        val rawData = ByteArray(widthBytes * heightDots) { 0x55.toByte() }
+
+        val payload = EscPos.buildRasterReceiptPayload(
+            bitmapWidthBytes = widthBytes,
+            bitmapHeightDots = heightDots,
+            data = rawData,
+            feedLines = 5,
+            cutMode = EscPos.PrinterCutMode.FEED_AND_CUT,
+            kickDrawer = true,
+        )
+
+        // Starts with ESC @ (1B 40) + FS . (1C 2E) + ESC a 1 (1B 61 01) + ESC 3 0 (1B 33 00)
+        assertEquals(0x1B.toByte(), payload[0])
+        assertEquals(0x40.toByte(), payload[1])
+        assertEquals(0x1C.toByte(), payload[2])
+        assertEquals(0x2E.toByte(), payload[3])
+        assertEquals(0x1B.toByte(), payload[4])
+        assertEquals(0x61.toByte(), payload[5])
+        assertEquals(0x01.toByte(), payload[6])
+        assertEquals(0x1B.toByte(), payload[7])
+        assertEquals(0x33.toByte(), payload[8])
+        assertEquals(0x00.toByte(), payload[9])
+
+        // Tail ends with ESC 2 (1B 32) + ESC d 5 (1B 64 05) + GS V B 0 (1D 56 42 00) + CASH_DRAWER_KICK (5 bytes)
+        val n = payload.size
+        assertEquals(0x1B.toByte(), payload[n - 14])
+        assertEquals(0x32.toByte(), payload[n - 13])
+        assertEquals(0x1B.toByte(), payload[n - 12])
+        assertEquals(0x64.toByte(), payload[n - 11])
+        assertEquals(0x05.toByte(), payload[n - 10])
+        assertEquals(0x1D.toByte(), payload[n - 9])
+        assertEquals(0x56.toByte(), payload[n - 8])
+        assertEquals(0x42.toByte(), payload[n - 7])
+        assertEquals(0x00.toByte(), payload[n - 6])
+        assertEquals(0x1B.toByte(), payload[n - 5])
+        assertEquals(0x70.toByte(), payload[n - 4])
+    }
+
+    @Test
+    fun printerCutModes_mapCorrectCommands() {
+        assertEquals(EscPos.PrinterCutMode.FEED_AND_CUT, EscPos.PrinterCutMode.fromString(null))
+        assertEquals(EscPos.PrinterCutMode.PARTIAL_CUT, EscPos.PrinterCutMode.fromString("PARTIAL_CUT"))
+        assertEquals(EscPos.PrinterCutMode.FULL_CUT, EscPos.PrinterCutMode.fromString("FULL_CUT"))
+        assertEquals(EscPos.PrinterCutMode.NONE, EscPos.PrinterCutMode.fromString("NONE"))
+        assertTrue(EscPos.PrinterCutMode.NONE.commandBytes.isEmpty())
+    }
 }
 

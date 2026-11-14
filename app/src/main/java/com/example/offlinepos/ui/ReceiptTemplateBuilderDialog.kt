@@ -783,7 +783,8 @@ fun ReceiptTemplateBuilderDialog(
                                 template = previewTemplate,
                                 receipt = sampleReceipt,
                                 profile = storeProfile,
-                                paperWidthDots = previewTemplate.paperWidthDots
+                                paperWidthDots = previewTemplate.paperWidthDots,
+                                cutMode = ThermalPrinterManager.getCutMode(context),
                             )
                             scope.launch {
                                 val result = ThermalPrinterManager.printRawBytes(context, bytes)

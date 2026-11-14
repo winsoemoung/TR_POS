@@ -1417,7 +1417,12 @@ class PosViewModel(private val context: Context) : ViewModel() {
                     _receipt.value = receiptData
                     if (ThermalPrinterManager.isAutoPrintEnabled(context)) {
                         viewModelScope.launch {
-                            ThermalPrinterManager.printReceipt(context, receiptData, _storeProfile.value)
+                            val defaultTmpl = defaultReceiptTemplate.value
+                            if (defaultTmpl != null) {
+                                ThermalPrinterManager.printCustomReceipt(context, receiptData, _storeProfile.value, defaultTmpl)
+                            } else {
+                                ThermalPrinterManager.printReceipt(context, receiptData, _storeProfile.value)
+                            }
                         }
                     }
                     clearCart()
@@ -2550,12 +2555,14 @@ class PosViewModel(private val context: Context) : ViewModel() {
         viewModelScope.launch {
             val paperWidth = ThermalPrinterManager.getPaperWidth(context).dots
             val kick = ThermalPrinterManager.isKickDrawerEnabled(context)
+            val cutMode = ThermalPrinterManager.getCutMode(context)
             val result = BluetoothPrinterHelper.printReceipt(
                 device = device,
                 receipt = receipt,
                 profile = _storeProfile.value,
                 paperWidthDots = paperWidth,
                 kickDrawer = kick,
+                cutMode = cutMode,
             )
             onResult(result.first, result.second)
         }
@@ -2568,6 +2575,7 @@ class PosViewModel(private val context: Context) : ViewModel() {
         viewModelScope.launch {
             val paperWidth = ThermalPrinterManager.getPaperWidth(context).dots
             val kick = ThermalPrinterManager.isKickDrawerEnabled(context)
+            val cutMode = ThermalPrinterManager.getCutMode(context)
             val result = UsbPrinterHelper.printReceipt(
                 context = context,
                 device = device,
@@ -2575,6 +2583,7 @@ class PosViewModel(private val context: Context) : ViewModel() {
                 profile = _storeProfile.value,
                 paperWidthDots = paperWidth,
                 kickDrawer = kick,
+                cutMode = cutMode,
             )
             onResult(result.first, result.second)
         }

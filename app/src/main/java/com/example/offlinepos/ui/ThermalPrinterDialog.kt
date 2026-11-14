@@ -96,6 +96,7 @@ fun ThermalPrinterDialog(
     var autoPrintEnabled by remember { mutableStateOf(ThermalPrinterManager.isAutoPrintEnabled(context)) }
     var kickDrawerEnabled by remember { mutableStateOf(ThermalPrinterManager.isKickDrawerEnabled(context)) }
     var numCopies by remember { mutableIntStateOf(ThermalPrinterManager.getNumCopies(context)) }
+    var currentCutMode by remember { mutableStateOf(ThermalPrinterManager.getCutMode(context)) }
 
     var savedBtAddress by remember { mutableStateOf(ThermalPrinterManager.getSavedBluetoothAddress(context)) }
     var savedUsbName by remember { mutableStateOf(ThermalPrinterManager.getSavedUsbDevice(context)?.let { UsbPrinterHelper.getDisplayName(it) }) }
@@ -411,7 +412,8 @@ fun ThermalPrinterDialog(
                                                                     val res = BluetoothPrinterHelper.printTestReceipt(
                                                                         device = device,
                                                                         profile = viewModel.storeProfile.value,
-                                                                        paperWidthDots = currentPaperWidth.dots
+                                                                        paperWidthDots = currentPaperWidth.dots,
+                                                                        cutMode = currentCutMode,
                                                                     )
                                                                     isTesting = false
                                                                     statusMessage = res.second
@@ -592,9 +594,17 @@ fun ThermalPrinterDialog(
                                                                             profile = viewModel.storeProfile.value,
                                                                             paperWidthDots = currentPaperWidth.dots
                                                                         )
-                                                                        val raster = BluetoothPrinterHelper.convertBitmapToEscPos(bitmap)
-                                                                        val feedCut = byteArrayOf(0x1B.toByte(), 0x64.toByte(), 0x03.toByte()) + com.example.offlinepos.hardware.EscPos.CUT
-                                                                        val res = UsbPrinterHelper.printRawBytes(context, device, com.example.offlinepos.hardware.EscPos.INIT + raster + feedCut)
+                                                                        val (widthBytes, height, rawBits) = BluetoothPrinterHelper.bitmapToMonochromeBytes(bitmap)
+                                                                        bitmap.recycle()
+                                                                        val payload = com.example.offlinepos.hardware.EscPos.buildRasterReceiptPayload(
+                                                                            bitmapWidthBytes = widthBytes,
+                                                                            bitmapHeightDots = height,
+                                                                            data = rawBits,
+                                                                            feedLines = 5,
+                                                                            cutMode = currentCutMode,
+                                                                            kickDrawer = false,
+                                                                        )
+                                                                        val res = UsbPrinterHelper.printRawBytes(context, device, payload)
                                                                         isTesting = false
                                                                         statusMessage = res.second
                                                                     }
@@ -747,6 +757,40 @@ fun ThermalPrinterDialog(
                                                 modifier = Modifier.size(34.dp)
                                             ) {
                                                 Text("+", fontWeight = FontWeight.Bold)
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // Paper Cut Mode selector
+                                Card(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        Text("စာရွက်ဖြတ်စနစ် (Paper Cut Mode)", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                        Text(
+                                            "ပရင့်တာ မဖြတ်ပေးပါက အခြား Cut Command ပုံစံသို့ ပြောင်းလဲစမ်းသပ်နိုင်ပါသည်",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                            items(com.example.offlinepos.hardware.EscPos.PrinterCutMode.values().toList()) { mode ->
+                                                val modeLabel = when (mode) {
+                                                    com.example.offlinepos.hardware.EscPos.PrinterCutMode.FEED_AND_CUT -> "Auto Cut (စံ)"
+                                                    com.example.offlinepos.hardware.EscPos.PrinterCutMode.PARTIAL_CUT -> "Partial Cut (GS V 1)"
+                                                    com.example.offlinepos.hardware.EscPos.PrinterCutMode.FULL_CUT -> "Full Cut (GS V 0)"
+                                                    com.example.offlinepos.hardware.EscPos.PrinterCutMode.NONE -> "မဖြတ်ပါ"
+                                                }
+                                                FilterChip(
+                                                    selected = currentCutMode == mode,
+                                                    onClick = {
+                                                        currentCutMode = mode
+                                                        ThermalPrinterManager.setCutMode(context, mode)
+                                                    },
+                                                    label = { Text(modeLabel, fontSize = 11.sp) }
+                                                )
                                             }
                                         }
                                     }

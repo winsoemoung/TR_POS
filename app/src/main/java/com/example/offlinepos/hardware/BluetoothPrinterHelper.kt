@@ -16,8 +16,10 @@ import com.example.offlinepos.data.local.effectiveQuantity
 import com.example.offlinepos.ui.ReceiptData
 import com.example.offlinepos.ui.StoreProfile
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.OutputStream
 import java.text.SimpleDateFormat
@@ -26,6 +28,12 @@ import java.util.Locale
 import java.util.UUID
 
 object BluetoothPrinterHelper {
+    private val btMutex = Mutex()
+    private const val BT_CHUNK_SIZE_BYTES = 512
+    private const val BT_CHUNK_DELAY_MS = 14L
+    private const val BT_CONNECT_SETTLE_MS = 120L
+    private const val BT_POST_INIT_PAUSE_MS = 60L
+    private const val BT_DRAIN_BEFORE_CLOSE_MS = 650L
     private val SPP_UUID: UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
     const val PRINTER_WIDTH_80MM = 576 // 80mm standard: 576 dots (72 bytes)
     const val PRINTER_WIDTH_58MM = 384 // 58mm standard: 384 dots (48 bytes)
@@ -319,8 +327,10 @@ object BluetoothPrinterHelper {
         y += 36f
 
         // Trim bitmap to actual rendered height
-        val finalHeight = y.toInt().coerceAtMost(totalHeight)
-        return Bitmap.createBitmap(bitmap, 0, 0, width, finalHeight)
+        val finalHeight = y.toInt().coerceIn(1, totalHeight)
+        val cropped = Bitmap.createBitmap(bitmap, 0, 0, width, finalHeight)
+        if (cropped !== bitmap) bitmap.recycle()
+        return cropped
     }
 
     /**
@@ -367,7 +377,10 @@ object BluetoothPrinterHelper {
         canvas.drawText("OFFLINE POS - READY TO PRINT", width / 2f, y, paintBody)
         y += 40f
 
-        return Bitmap.createBitmap(bitmap, 0, 0, width, y.toInt().coerceAtMost(height))
+        val finalHeight = y.toInt().coerceIn(1, height)
+        val cropped = Bitmap.createBitmap(bitmap, 0, 0, width, finalHeight)
+        if (cropped !== bitmap) bitmap.recycle()
+        return cropped
     }
 
     private fun drawDashedLine(canvas: Canvas, y: Float, width: Int) {
@@ -404,34 +417,73 @@ object BluetoothPrinterHelper {
     }
 
     /**
-     * Converts an Android Bitmap into standard ESC/POS raster bit-image command data.
-     * Compatible with 80mm (576 dots = 72 bytes) and 58mm (384 dots = 48 bytes).
+     * Converts an Android Bitmap to monochrome packed raster bytes: (widthBytes, heightDots, packedBits).
      */
-    fun convertBitmapToEscPos(bitmap: Bitmap): ByteArray {
+    fun bitmapToMonochromeBytes(
+        bitmap: Bitmap,
+        luminanceThreshold: Int = 175,
+    ): Triple<Int, Int, ByteArray> {
         val width = bitmap.width
         val height = bitmap.height
         val widthBytes = (width + 7) / 8
-
         val rawBits = ByteArray(widthBytes * height)
+        val pixels = IntArray(width * height)
+        bitmap.getPixels(pixels, 0, width, 0, 0, width, height)
 
         for (y in 0 until height) {
+            val rowPixelOffset = y * width
+            val rowByteOffset = y * widthBytes
             for (x in 0 until width) {
-                val pixel = bitmap.getPixel(x, y)
+                val pixel = pixels[rowPixelOffset + x]
                 val r = (pixel shr 16) and 0xFF
                 val g = (pixel shr 8) and 0xFF
                 val b = pixel and 0xFF
                 val luminance = (r * 299 + g * 587 + b * 114) / 1000
-
-                // If pixel is dark (black ink)
-                if (luminance < 165) {
-                    val byteIndex = y * widthBytes + (x / 8)
-                    val bitIndex = 7 - (x % 8)
+                if (luminance < luminanceThreshold) {
+                    val byteIndex = rowByteOffset + (x shr 3)
+                    val bitIndex = 7 - (x and 7)
                     rawBits[byteIndex] = (rawBits[byteIndex].toInt() or (1 shl bitIndex)).toByte()
                 }
             }
         }
+        return Triple(widthBytes, height, rawBits)
+    }
 
-        return EscPos.raster(widthBytes, height, rawBits)
+    /**
+     * Converts an Android Bitmap into banded ESC/POS raster bit-image command data (<= 128 dot-rows per band).
+     * Compatible with 80mm (576 dots = 72 bytes) and 58mm (384 dots = 48 bytes).
+     */
+    fun convertBitmapToEscPos(bitmap: Bitmap): ByteArray {
+        val (widthBytes, height, rawBits) = bitmapToMonochromeBytes(bitmap)
+        return EscPos.rasterBands(widthBytes, height, rawBits)
+    }
+
+    /**
+     * Streams ESC/POS bytes to a connected BluetoothSocket OutputStream in paced chunks
+     * so small thermal printer Bluetooth-UART receive buffers do not overflow, and drains
+     * before returning so trailing feed/cut commands are never dropped on socket.close().
+     */
+    private suspend fun writeChunkedAndDrain(outputStream: OutputStream, bytes: ByteArray) {
+        delay(BT_CONNECT_SETTLE_MS)
+
+        // Send an initial ESC @ + FS . reset with a brief settle pause before raster data starts
+        outputStream.write(EscPos.INIT)
+        outputStream.write(EscPos.CANCEL_CHINESE_MODE)
+        outputStream.flush()
+        delay(BT_POST_INIT_PAUSE_MS)
+
+        var offset = 0
+        while (offset < bytes.size) {
+            val len = minOf(BT_CHUNK_SIZE_BYTES, bytes.size - offset)
+            outputStream.write(bytes, offset, len)
+            outputStream.flush()
+            offset += len
+            if (offset < bytes.size) {
+                delay(BT_CHUNK_DELAY_MS)
+            }
+        }
+        outputStream.flush()
+        delay(BT_DRAIN_BEFORE_CLOSE_MS)
     }
 
     /**
@@ -444,33 +496,36 @@ object BluetoothPrinterHelper {
         profile: StoreProfile,
         paperWidthDots: Int = PRINTER_WIDTH_80MM,
         kickDrawer: Boolean = true,
+        cutMode: EscPos.PrinterCutMode = EscPos.PrinterCutMode.FEED_AND_CUT,
     ): Pair<Boolean, String> = withContext(Dispatchers.IO) {
-        var socket: BluetoothSocket? = null
-        var outputStream: OutputStream? = null
-        try {
-            val bitmap = renderReceiptBitmap(receipt, profile, paperWidthDots)
-            val rasterData = convertBitmapToEscPos(bitmap)
+        btMutex.withLock {
+            var socket: BluetoothSocket? = null
+            var outputStream: OutputStream? = null
+            try {
+                val bitmap = renderReceiptBitmap(receipt, profile, paperWidthDots)
+                val (widthBytes, height, rawBits) = bitmapToMonochromeBytes(bitmap)
+                bitmap.recycle()
+                val payload = EscPos.buildRasterReceiptPayload(
+                    bitmapWidthBytes = widthBytes,
+                    bitmapHeightDots = height,
+                    data = rawBits,
+                    feedLines = 5,
+                    cutMode = cutMode,
+                    kickDrawer = kickDrawer,
+                )
 
-            socket = connectWithRetry(device)
-            outputStream = socket.outputStream
+                socket = connectWithRetry(device)
+                outputStream = socket.outputStream
+                writeChunkedAndDrain(outputStream, payload)
 
-            // Send Init, Print Bitmap, Feed & Cut Paper, Kick Cash Drawer
-            outputStream.write(EscPos.INIT)
-            outputStream.write(rasterData)
-            outputStream.write(byteArrayOf(0x1B.toByte(), 0x64.toByte(), 0x03.toByte())) // Feed 3 lines
-            outputStream.write(EscPos.CUT)
-            if (kickDrawer) {
-                outputStream.write(EscPos.CASH_DRAWER_KICK)
+                val devName = try { device.name ?: "Bluetooth Printer" } catch (_: SecurityException) { "Bluetooth Printer" }
+                Pair(true, "ဘေလ်ပြေစာကို $devName သို့ အောင်မြင်စွာ ပရင့်ထုတ်ပြီးပါပြီ")
+            } catch (e: Exception) {
+                Pair(false, "Bluetooth Printer ချိတ်ဆက်မှု မအောင်မြင်ပါ: ${e.message}")
+            } finally {
+                try { outputStream?.close() } catch (_: Exception) {}
+                try { socket?.close() } catch (_: Exception) {}
             }
-            outputStream.flush()
-
-            val devName = try { device.name ?: "Bluetooth Printer" } catch (_: SecurityException) { "Bluetooth Printer" }
-            Pair(true, "ဘေလ်ပြေစာကို $devName သို့ အောင်မြင်စွာ ပရင့်ထုတ်ပြီးပါပြီ")
-        } catch (e: Exception) {
-            Pair(false, "Bluetooth Printer ချိတ်ဆက်မှု မအောင်မြင်ပါ: ${e.message}")
-        } finally {
-            try { outputStream?.close() } catch (_: Exception) {}
-            try { socket?.close() } catch (_: Exception) {}
         }
     }
 
@@ -482,29 +537,36 @@ object BluetoothPrinterHelper {
         device: BluetoothDevice,
         profile: StoreProfile,
         paperWidthDots: Int = PRINTER_WIDTH_80MM,
+        cutMode: EscPos.PrinterCutMode = EscPos.PrinterCutMode.FEED_AND_CUT,
     ): Pair<Boolean, String> = withContext(Dispatchers.IO) {
-        var socket: BluetoothSocket? = null
-        var outputStream: OutputStream? = null
-        try {
-            val bitmap = renderTestReceiptBitmap(profile, paperWidthDots)
-            val rasterData = convertBitmapToEscPos(bitmap)
+        btMutex.withLock {
+            var socket: BluetoothSocket? = null
+            var outputStream: OutputStream? = null
+            try {
+                val bitmap = renderTestReceiptBitmap(profile, paperWidthDots)
+                val (widthBytes, height, rawBits) = bitmapToMonochromeBytes(bitmap)
+                bitmap.recycle()
+                val payload = EscPos.buildRasterReceiptPayload(
+                    bitmapWidthBytes = widthBytes,
+                    bitmapHeightDots = height,
+                    data = rawBits,
+                    feedLines = 5,
+                    cutMode = cutMode,
+                    kickDrawer = false,
+                )
 
-            socket = connectWithRetry(device)
-            outputStream = socket.outputStream
+                socket = connectWithRetry(device)
+                outputStream = socket.outputStream
+                writeChunkedAndDrain(outputStream, payload)
 
-            outputStream.write(EscPos.INIT)
-            outputStream.write(rasterData)
-            outputStream.write(byteArrayOf(0x1B.toByte(), 0x64.toByte(), 0x03.toByte()))
-            outputStream.write(EscPos.CUT)
-            outputStream.flush()
-
-            val devName = try { device.name ?: "Bluetooth Printer" } catch (_: SecurityException) { "Bluetooth Printer" }
-            Pair(true, "စမ်းသပ်ပရင့်ကို $devName သို့ အောင်မြင်စွာ ထုတ်ပြီးပါပြီ")
-        } catch (e: Exception) {
-            Pair(false, "Bluetooth စမ်းသပ်ပရင့် မအောင်မြင်ပါ: ${e.message}")
-        } finally {
-            try { outputStream?.close() } catch (_: Exception) {}
-            try { socket?.close() } catch (_: Exception) {}
+                val devName = try { device.name ?: "Bluetooth Printer" } catch (_: SecurityException) { "Bluetooth Printer" }
+                Pair(true, "စမ်းသပ်ပရင့်ကို $devName သို့ အောင်မြင်စွာ ထုတ်ပြီးပါပြီ")
+            } catch (e: Exception) {
+                Pair(false, "Bluetooth စမ်းသပ်ပရင့် မအောင်မြင်ပါ: ${e.message}")
+            } finally {
+                try { outputStream?.close() } catch (_: Exception) {}
+                try { socket?.close() } catch (_: Exception) {}
+            }
         }
     }
 
@@ -516,20 +578,21 @@ object BluetoothPrinterHelper {
         device: BluetoothDevice,
         bytes: ByteArray,
     ): Pair<Boolean, String> = withContext(Dispatchers.IO) {
-        var socket: BluetoothSocket? = null
-        var outputStream: OutputStream? = null
-        try {
-            socket = connectWithRetry(device)
-            outputStream = socket.outputStream
-            outputStream.write(bytes)
-            outputStream.flush()
-            val devName = try { device.name ?: "Bluetooth Printer" } catch (_: SecurityException) { "Bluetooth Printer" }
-            Pair(true, "ဘေလ်ပြေစာကို $devName သို့ အောင်မြင်စွာ ပရင့်ထုတ်ပြီးပါပြီ")
-        } catch (e: Exception) {
-            Pair(false, "Bluetooth Printer ချိတ်ဆက်မှု မအောင်မြင်ပါ: ${e.message}")
-        } finally {
-            try { outputStream?.close() } catch (_: Exception) {}
-            try { socket?.close() } catch (_: Exception) {}
+        btMutex.withLock {
+            var socket: BluetoothSocket? = null
+            var outputStream: OutputStream? = null
+            try {
+                socket = connectWithRetry(device)
+                outputStream = socket.outputStream
+                writeChunkedAndDrain(outputStream, bytes)
+                val devName = try { device.name ?: "Bluetooth Printer" } catch (_: SecurityException) { "Bluetooth Printer" }
+                Pair(true, "ဘေလ်ပြေစာကို $devName သို့ အောင်မြင်စွာ ပရင့်ထုတ်ပြီးပါပြီ")
+            } catch (e: Exception) {
+                Pair(false, "Bluetooth Printer ချိတ်ဆက်မှု မအောင်မြင်ပါ: ${e.message}")
+            } finally {
+                try { outputStream?.close() } catch (_: Exception) {}
+                try { socket?.close() } catch (_: Exception) {}
+            }
         }
     }
 }

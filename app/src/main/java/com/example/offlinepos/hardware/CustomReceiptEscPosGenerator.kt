@@ -29,6 +29,7 @@ object CustomReceiptEscPosGenerator {
         receipt: ReceiptData,
         storeProfile: StoreProfile,
         paperWidth: PaperWidth = PaperWidth.WIDTH_80MM,
+        cutMode: EscPos.PrinterCutMode = EscPos.PrinterCutMode.FEED_AND_CUT,
     ): ByteArray {
         val widthDots = if (template.paperWidthDots > 0) template.paperWidthDots else paperWidth.dots
         val bitmap = renderReceiptBitmap(
@@ -37,7 +38,11 @@ object CustomReceiptEscPosGenerator {
             storeProfile = storeProfile,
             targetWidthDots = widthDots
         )
-        return bitmapToEscPosRaster(bitmap)
+        return try {
+            bitmapToEscPosRaster(bitmap, cutMode = cutMode, kickDrawer = false)
+        } finally {
+            bitmap.recycle()
+        }
     }
 
     fun generateEscPosForTemplate(
@@ -46,6 +51,7 @@ object CustomReceiptEscPosGenerator {
         profile: StoreProfile,
         paperWidthDots: Int = 576, // Default 80mm
         kickDrawer: Boolean = false,
+        cutMode: EscPos.PrinterCutMode = EscPos.PrinterCutMode.FEED_AND_CUT,
     ): ByteArray {
         val widthDots = if (template.paperWidthDots > 0) template.paperWidthDots else paperWidthDots
         val bitmap = renderReceiptBitmap(
@@ -54,11 +60,10 @@ object CustomReceiptEscPosGenerator {
             storeProfile = profile,
             targetWidthDots = widthDots
         )
-        val raster = bitmapToEscPosRaster(bitmap)
-        return if (kickDrawer) {
-            raster + EscPos.CASH_DRAWER_KICK
-        } else {
-            raster
+        return try {
+            bitmapToEscPosRaster(bitmap, cutMode = cutMode, kickDrawer = kickDrawer)
+        } finally {
+            bitmap.recycle()
         }
     }
 
@@ -531,62 +536,31 @@ object CustomReceiptEscPosGenerator {
         currentY += 18f + extraLineSpacing
 
         // Crop bitmap to exact content height
-        val finalHeight = currentY.toInt().coerceAtLeast(100)
-        return Bitmap.createBitmap(tempBitmap, 0, 0, width, minOf(finalHeight, tempBitmap.height))
+        val finalHeight = currentY.toInt().coerceIn(100, tempBitmap.height)
+        val cropped = Bitmap.createBitmap(tempBitmap, 0, 0, width, finalHeight)
+        if (cropped !== tempBitmap) tempBitmap.recycle()
+        return cropped
     }
 
     /**
-     * Converts an ARGB_8888 bitmap to high-contrast monochrome ESC/POS raster command (GS v 0).
+     * Converts an ARGB_8888 bitmap into a buffer-safe banded monochrome ESC/POS raster payload (GS v 0).
      */
-    fun bitmapToEscPosRaster(bitmap: Bitmap): ByteArray {
-        val width = bitmap.width
-        val height = bitmap.height
-        val widthBytes = (width + 7) / 8
-
-        val output = ByteArrayOutputStream()
-        // ESC @ (Initialize printer)
-        output.write(byteArrayOf(0x1B, 0x40))
-        // ESC a 1 (Center alignment)
-        output.write(byteArrayOf(0x1B, 0x61, 0x01))
-
-        // GS v 0 m xL xH yL yH d1...dk
-        val header = byteArrayOf(
-            0x1D, 0x76, 0x30, 0x00,
-            (widthBytes and 0xFF).toByte(),
-            ((widthBytes shr 8) and 0xFF).toByte(),
-            (height and 0xFF).toByte(),
-            ((height shr 8) and 0xFF).toByte()
+    fun bitmapToEscPosRaster(
+        bitmap: Bitmap,
+        cutMode: EscPos.PrinterCutMode = EscPos.PrinterCutMode.FEED_AND_CUT,
+        kickDrawer: Boolean = false,
+    ): ByteArray {
+        val (widthBytes, height, rawBits) = BluetoothPrinterHelper.bitmapToMonochromeBytes(
+            bitmap = bitmap,
+            luminanceThreshold = 180,
         )
-        output.write(header)
-
-        val pixels = IntArray(width * height)
-        bitmap.getPixels(pixels, 0, width, 0, 0, width, height)
-
-        val threshold = 180 // Binarization luminance threshold
-
-        for (y in 0 until height) {
-            for (byteX in 0 until widthBytes) {
-                var slice = 0
-                for (b in 0 until 8) {
-                    val px = (byteX * 8) + b
-                    if (px < width) {
-                        val color = pixels[(y * width) + px]
-                        val r = (color shr 16) and 0xFF
-                        val g = (color shr 8) and 0xFF
-                        val bl = color and 0xFF
-                        val lum = (0.299 * r + 0.587 * g + 0.114 * bl).toInt()
-                        if (lum < threshold) {
-                            slice = slice or (1 shl (7 - b)) // 1 = black dot
-                        }
-                    }
-                }
-                output.write(slice)
-            }
-        }
-
-        // Line feeds & Cut
-        output.write(byteArrayOf(0x1B, 0x64, 0x03)) // feed 3 lines
-        output.write(byteArrayOf(0x1D, 0x56, 0x42, 0x00)) // GS V B 0 (Cut paper)
-        return output.toByteArray()
+        return EscPos.buildRasterReceiptPayload(
+            bitmapWidthBytes = widthBytes,
+            bitmapHeightDots = height,
+            data = rawBits,
+            feedLines = 5,
+            cutMode = cutMode,
+            kickDrawer = kickDrawer,
+        )
     }
 }

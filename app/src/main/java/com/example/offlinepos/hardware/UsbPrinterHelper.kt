@@ -16,10 +16,17 @@ import androidx.core.content.ContextCompat
 import com.example.offlinepos.ui.ReceiptData
 import com.example.offlinepos.ui.StoreProfile
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.IOException
 
 object UsbPrinterHelper {
+    private val usbMutex = Mutex()
+    private const val USB_CHUNK_SIZE_BYTES = 1024
+    private const val USB_CHUNK_DELAY_MS = 4L
+    private const val USB_DRAIN_BEFORE_CLOSE_MS = 250L
     const val ACTION_USB_PERMISSION = "com.example.offlinepos.USB_PRINTER_PERMISSION"
 
     /**
@@ -143,6 +150,38 @@ object UsbPrinterHelper {
         }
     }
 
+    private suspend fun writeUsbChunked(
+        connection: UsbDeviceConnection,
+        endpoint: UsbEndpoint,
+        payload: ByteArray,
+    ) {
+        var offset = 0
+        var zeroTransfers = 0
+        while (offset < payload.size) {
+            val len = minOf(USB_CHUNK_SIZE_BYTES, payload.size - offset)
+            val chunk = payload.copyOfRange(offset, offset + len)
+            val transferred = connection.bulkTransfer(endpoint, chunk, len, 6000)
+            when {
+                transferred < 0 -> throw IOException("USB Printer သို့ ဒေတာပို့ဆောင်စဉ် ချို့ယွင်းချက်ဖြစ်ပေါ်ပါသည် ($transferred)")
+                transferred == 0 -> {
+                    zeroTransfers++
+                    if (zeroTransfers > 25) {
+                        throw IOException("USB Printer သို့ ဒေတာပို့ဆောင်မှု Timeout ဖြစ်ပါသည်")
+                    }
+                    delay(15L)
+                }
+                else -> {
+                    zeroTransfers = 0
+                    offset += transferred
+                    if (offset < payload.size) {
+                        delay(USB_CHUNK_DELAY_MS)
+                    }
+                }
+            }
+        }
+        delay(USB_DRAIN_BEFORE_CLOSE_MS)
+    }
+
     /**
      * Prints a transaction receipt to a USB thermal printer.
      */
@@ -153,114 +192,100 @@ object UsbPrinterHelper {
         profile: StoreProfile,
         paperWidthDots: Int = 576,
         kickDrawer: Boolean = true,
+        cutMode: EscPos.PrinterCutMode = EscPos.PrinterCutMode.FEED_AND_CUT,
     ): Pair<Boolean, String> = withContext(Dispatchers.IO) {
-        val usbManager = context.getSystemService(Context.USB_SERVICE) as? UsbManager
-            ?: return@withContext Pair(false, "USB Manager မရရှိနိုင်ပါ")
+        usbMutex.withLock {
+            val usbManager = context.getSystemService(Context.USB_SERVICE) as? UsbManager
+                ?: return@withContext Pair(false, "USB Manager မရရှိနိုင်ပါ")
 
-        if (!usbManager.hasPermission(device)) {
-            return@withContext Pair(false, "USB Printer အသုံးပြုခွင့် (Permission) မပေးရသေးပါ")
-        }
-
-        val pair = findPrinterEndpoint(device)
-            ?: return@withContext Pair(false, "Printer ၏ Bulk OUT Endpoint ရှာမတွေ့ပါ")
-
-        val usbInterface = pair.first
-        val endpoint = pair.second
-
-        var connection: UsbDeviceConnection? = null
-        try {
-            connection = usbManager.openDevice(device)
-                ?: return@withContext Pair(false, "USB Printer နှင့် ချိတ်ဆက်၍မရပါ (Open Device Failed)")
-
-            if (!connection.claimInterface(usbInterface, true)) {
-                return@withContext Pair(false, "USB Interface ကို အသုံးပြုခွင့် ရယူ၍မရပါ (Claim Interface Failed)")
+            if (!usbManager.hasPermission(device)) {
+                return@withContext Pair(false, "USB Printer အသုံးပြုခွင့် (Permission) မပေးရသေးပါ")
             }
 
-            // Render receipt bitmap
-            val bitmap = BluetoothPrinterHelper.renderReceiptBitmap(receipt, profile, paperWidthDots)
-            val rasterData = BluetoothPrinterHelper.convertBitmapToEscPos(bitmap)
+            val pair = findPrinterEndpoint(device)
+                ?: return@withContext Pair(false, "Printer ၏ Bulk OUT Endpoint ရှာမတွေ့ပါ")
 
-            // Prepare ESC/POS byte sequence
-            val feedLines = byteArrayOf(0x1B.toByte(), 0x64.toByte(), 0x03.toByte())
-            val kickData = if (kickDrawer) EscPos.CASH_DRAWER_KICK else byteArrayOf()
+            val usbInterface = pair.first
+            val endpoint = pair.second
 
-            val payload = EscPos.INIT + rasterData + feedLines + EscPos.CUT + kickData
+            var connection: UsbDeviceConnection? = null
+            try {
+                connection = usbManager.openDevice(device)
+                    ?: return@withContext Pair(false, "USB Printer နှင့် ချိတ်ဆက်၍မရပါ (Open Device Failed)")
 
-            // Transfer in chunks to prevent USB buffer overflow
-            val chunkSize = 4096
-            var offset = 0
-            while (offset < payload.size) {
-                val len = minOf(chunkSize, payload.size - offset)
-                val chunk = payload.copyOfRange(offset, offset + len)
-                val transferred = connection.bulkTransfer(endpoint, chunk, len, 6000)
-                if (transferred < 0) {
-                    throw IOException("USB Printer သို့ ဒေတာပို့ဆောင်စဉ် ချို့ယွင်းချက်ဖြစ်ပေါ်ပါသည် ($transferred)")
+                if (!connection.claimInterface(usbInterface, true)) {
+                    return@withContext Pair(false, "USB Interface ကို အသုံးပြုခွင့် ရယူ၍မရပါ (Claim Interface Failed)")
                 }
-                offset += len
-            }
 
-            val printerName = getDisplayName(device)
-            Pair(true, "ဘေလ်ပြေစာကို USB Printer ($printerName) သို့ အောင်မြင်စွာ ပရင့်ထုတ်ပြီးပါပြီ")
-        } catch (e: Exception) {
-            Pair(false, "USB ပရင့်ထုတ်မှု မအောင်မြင်ပါ: ${e.message}")
-        } finally {
-            try {
-                connection?.releaseInterface(usbInterface)
-            } catch (_: Exception) {}
-            try {
-                connection?.close()
-            } catch (_: Exception) {}
+                val bitmap = BluetoothPrinterHelper.renderReceiptBitmap(receipt, profile, paperWidthDots)
+                val (widthBytes, height, rawBits) = BluetoothPrinterHelper.bitmapToMonochromeBytes(bitmap)
+                bitmap.recycle()
+                val payload = EscPos.buildRasterReceiptPayload(
+                    bitmapWidthBytes = widthBytes,
+                    bitmapHeightDots = height,
+                    data = rawBits,
+                    feedLines = 5,
+                    cutMode = cutMode,
+                    kickDrawer = kickDrawer,
+                )
+
+                writeUsbChunked(connection, endpoint, payload)
+
+                val printerName = getDisplayName(device)
+                Pair(true, "ဘေလ်ပြေစာကို USB Printer ($printerName) သို့ အောင်မြင်စွာ ပရင့်ထုတ်ပြီးပါပြီ")
+            } catch (e: Exception) {
+                Pair(false, "USB ပရင့်ထုတ်မှု မအောင်မြင်ပါ: ${e.message}")
+            } finally {
+                try {
+                    connection?.releaseInterface(usbInterface)
+                } catch (_: Exception) {}
+                try {
+                    connection?.close()
+                } catch (_: Exception) {}
+            }
         }
     }
 
     /**
-     * Prints raw ESC/POS bytes (used for test prints).
+     * Prints raw ESC/POS bytes (used for test prints and custom template prints).
      */
     suspend fun printRawBytes(
         context: Context,
         device: UsbDevice,
         data: ByteArray,
     ): Pair<Boolean, String> = withContext(Dispatchers.IO) {
-        val usbManager = context.getSystemService(Context.USB_SERVICE) as? UsbManager
-            ?: return@withContext Pair(false, "USB Manager မရရှိနိုင်ပါ")
+        usbMutex.withLock {
+            val usbManager = context.getSystemService(Context.USB_SERVICE) as? UsbManager
+                ?: return@withContext Pair(false, "USB Manager မရရှိနိုင်ပါ")
 
-        if (!usbManager.hasPermission(device)) {
-            return@withContext Pair(false, "USB Printer အသုံးပြုခွင့် မပေးရသေးပါ")
-        }
-
-        val pair = findPrinterEndpoint(device)
-            ?: return@withContext Pair(false, "Printer ၏ Bulk OUT Endpoint ရှာမတွေ့ပါ")
-
-        val usbInterface = pair.first
-        val endpoint = pair.second
-
-        var connection: UsbDeviceConnection? = null
-        try {
-            connection = usbManager.openDevice(device)
-                ?: return@withContext Pair(false, "USB Printer ချိတ်ဆက်မရပါ")
-
-            if (!connection.claimInterface(usbInterface, true)) {
-                return@withContext Pair(false, "USB Interface ရယူမရပါ")
+            if (!usbManager.hasPermission(device)) {
+                return@withContext Pair(false, "USB Printer အသုံးပြုခွင့် မပေးရသေးပါ")
             }
 
-            val chunkSize = 4096
-            var offset = 0
-            while (offset < data.size) {
-                val len = minOf(chunkSize, data.size - offset)
-                val chunk = data.copyOfRange(offset, offset + len)
-                val transferred = connection.bulkTransfer(endpoint, chunk, len, 5000)
-                if (transferred < 0) {
-                    throw IOException("USB data transfer error ($transferred)")
+            val pair = findPrinterEndpoint(device)
+                ?: return@withContext Pair(false, "Printer ၏ Bulk OUT Endpoint ရှာမတွေ့ပါ")
+
+            val usbInterface = pair.first
+            val endpoint = pair.second
+
+            var connection: UsbDeviceConnection? = null
+            try {
+                connection = usbManager.openDevice(device)
+                    ?: return@withContext Pair(false, "USB Printer ချိတ်ဆက်မရပါ")
+
+                if (!connection.claimInterface(usbInterface, true)) {
+                    return@withContext Pair(false, "USB Interface ရယူမရပါ")
                 }
-                offset += len
-            }
 
-            Pair(true, "USB Printer စမ်းသပ်ပရင့်ထုတ်မှု အောင်မြင်ပါသည်")
-        } catch (e: Exception) {
-            Pair(false, "USB ပရင့်ထုတ်မှု မအောင်မြင်ပါ: ${e.message}")
-        } finally {
-            try { connection?.releaseInterface(usbInterface) } catch (_: Exception) {}
-            try { connection?.close() } catch (_: Exception) {}
+                writeUsbChunked(connection, endpoint, data)
+
+                Pair(true, "USB Printer ပရင့်ထုတ်မှု အောင်မြင်ပါသည်")
+            } catch (e: Exception) {
+                Pair(false, "USB ပရင့်ထုတ်မှု မအောင်မြင်ပါ: ${e.message}")
+            } finally {
+                try { connection?.releaseInterface(usbInterface) } catch (_: Exception) {}
+                try { connection?.close() } catch (_: Exception) {}
+            }
         }
     }
 }

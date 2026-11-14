@@ -8,6 +8,9 @@ import com.example.offlinepos.data.local.ReceiptTemplateEntity
 import com.example.offlinepos.ui.ReceiptData
 import com.example.offlinepos.ui.StoreProfile
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 enum class PrinterConnectionType {
@@ -40,6 +43,9 @@ object ThermalPrinterManager {
     private const val KEY_AUTO_PRINT = "auto_print"
     private const val KEY_KICK_DRAWER = "kick_drawer"
     private const val KEY_COPIES = "copies"
+    private const val KEY_CUT_MODE = "cut_mode"
+
+    private val printMutex = Mutex()
 
     private fun prefs(context: Context) = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
@@ -91,6 +97,15 @@ object ThermalPrinterManager {
 
     fun setNumCopies(context: Context, copies: Int) {
         prefs(context).edit().putInt(KEY_COPIES, copies.coerceIn(1, 3)).apply()
+    }
+
+    fun getCutMode(context: Context): EscPos.PrinterCutMode {
+        val str = prefs(context).getString(KEY_CUT_MODE, null)
+        return EscPos.PrinterCutMode.fromString(str)
+    }
+
+    fun setCutMode(context: Context, mode: EscPos.PrinterCutMode) {
+        prefs(context).edit().putString(KEY_CUT_MODE, mode.name).apply()
     }
 
     fun getSavedBluetoothAddress(context: Context): String? {
@@ -159,88 +174,101 @@ object ThermalPrinterManager {
         }
     }
 
+    private fun resolveConnectionType(context: Context): PrinterConnectionType {
+        val current = getConnectionType(context)
+        if (current != PrinterConnectionType.NONE) return current
+
+        val usbPrinters = UsbPrinterHelper.getConnectedUsbPrinters(context)
+        if (usbPrinters.isNotEmpty()) {
+            saveUsbPrinter(context, usbPrinters.first())
+            return PrinterConnectionType.USB
+        }
+
+        val pairedBt = BluetoothPrinterHelper.getPairedDevices(context)
+        if (pairedBt.isNotEmpty()) {
+            val bt = pairedBt.first()
+            val btName = runCatching { bt.name }.getOrNull() ?: "BT Printer"
+            saveBluetoothPrinter(context, bt.address, btName)
+            return PrinterConnectionType.BLUETOOTH
+        }
+
+        return PrinterConnectionType.NONE
+    }
+
     /**
      * Unified print transaction receipt method. Automatically uses configured connection (Bluetooth or USB),
-     * respect configured paper width and copies.
+     * respects configured paper width, cut mode, and copies.
      */
     suspend fun printReceipt(
         context: Context,
         receipt: ReceiptData,
         profile: StoreProfile,
     ): Pair<Boolean, String> = withContext(Dispatchers.IO) {
-        val connType = getConnectionType(context)
-        val paperWidth = getPaperWidth(context).dots
-        val kickDrawer = isKickDrawerEnabled(context)
-        val copies = getNumCopies(context)
+        printMutex.withLock {
+            val connType = resolveConnectionType(context)
+            val paperWidth = getPaperWidth(context).dots
+            val kickDrawer = isKickDrawerEnabled(context)
+            val cutMode = getCutMode(context)
+            val copies = getNumCopies(context)
 
-        when (connType) {
-            PrinterConnectionType.USB -> {
-                val usbDevice = getSavedUsbDevice(context)
-                    ?: return@withContext Pair(false, "ချိတ်ဆက်ထားသော USB Thermal Printer မတွေ့ပါ။ OTG ကြိုးနှင့် Printer ဖွင့်ထားခြင်း ရှိမရှိ စစ်ဆေးပါ။")
+            when (connType) {
+                PrinterConnectionType.USB -> {
+                    val usbDevice = getSavedUsbDevice(context)
+                        ?: return@withLock Pair(false, "ချိတ်ဆက်ထားသော USB Thermal Printer မတွေ့ပါ။ OTG ကြိုးနှင့် Printer ဖွင့်ထားခြင်း ရှိမရှိ စစ်ဆေးပါ။")
 
-                if (!UsbPrinterHelper.hasPermission(context, usbDevice)) {
-                    return@withContext Pair(false, "USB Printer အသုံးပြုခွင့် (Permission) တောင်းဆိုရန် လိုအပ်ပါသည်")
+                    if (!UsbPrinterHelper.hasPermission(context, usbDevice)) {
+                        return@withLock Pair(false, "USB Printer အသုံးပြုခွင့် (Permission) တောင်းဆိုရန် လိုအပ်ပါသည်")
+                    }
+
+                    var lastResult = Pair(false, "")
+                    for (copyIdx in 0 until copies) {
+                        lastResult = UsbPrinterHelper.printReceipt(
+                            context = context,
+                            device = usbDevice,
+                            receipt = receipt,
+                            profile = profile,
+                            paperWidthDots = paperWidth,
+                            kickDrawer = kickDrawer,
+                            cutMode = cutMode,
+                        )
+                        if (!lastResult.first) return@withLock lastResult
+                        if (copyIdx < copies - 1) delay(450L)
+                    }
+                    lastResult
                 }
 
-                var lastResult = Pair(false, "")
-                repeat(copies) {
-                    lastResult = UsbPrinterHelper.printReceipt(
-                        context = context,
-                        device = usbDevice,
-                        receipt = receipt,
-                        profile = profile,
-                        paperWidthDots = paperWidth,
-                        kickDrawer = kickDrawer,
-                    )
-                    if (!lastResult.first) return@withContext lastResult
-                }
-                lastResult
-            }
+                PrinterConnectionType.BLUETOOTH -> {
+                    val address = getSavedBluetoothAddress(context)
+                        ?: return@withLock Pair(false, "Bluetooth Printer ရွေးချယ်ထားခြင်း မရှိပါ။ Settings > Thermal Printer တွင် ရွေးပေးပါ။")
 
-            PrinterConnectionType.BLUETOOTH -> {
-                val address = getSavedBluetoothAddress(context)
-                    ?: return@withContext Pair(false, "Bluetooth Printer ရွေးချယ်ထားခြင်း မရှိပါ။ Settings > Thermal Printer တွင် ရွေးပေးပါ။")
+                    val adapter = BluetoothAdapter.getDefaultAdapter()
+                        ?: return@withLock Pair(false, "ဤဖုန်းတွင် Bluetooth စနစ် မရရှိနိုင်ပါ")
 
-                val adapter = BluetoothAdapter.getDefaultAdapter()
-                    ?: return@withContext Pair(false, "ဤဖုန်းတွင် Bluetooth စနစ် မရရှိနိုင်ပါ")
+                    val device = try {
+                        adapter.getRemoteDevice(address)
+                    } catch (e: Exception) {
+                        null
+                    } ?: return@withLock Pair(false, "ရွေးချယ်ထားသော Bluetooth Printer ($address) ရှာမတွေ့ပါ")
 
-                val device = try {
-                    adapter.getRemoteDevice(address)
-                } catch (e: Exception) {
-                    null
-                } ?: return@withContext Pair(false, "ရွေးချယ်ထားသော Bluetooth Printer ($address) ရှာမတွေ့ပါ")
-
-                var lastResult = Pair(false, "")
-                repeat(copies) {
-                    lastResult = BluetoothPrinterHelper.printReceipt(
-                        device = device,
-                        receipt = receipt,
-                        profile = profile,
-                        paperWidthDots = paperWidth,
-                        kickDrawer = kickDrawer,
-                    )
-                    if (!lastResult.first) return@withContext lastResult
-                }
-                lastResult
-            }
-
-            PrinterConnectionType.NONE -> {
-                // If neither is explicitly configured, check if there's any paired Bluetooth or connected USB printer
-                val usbPrinters = UsbPrinterHelper.getConnectedUsbPrinters(context)
-                if (usbPrinters.isNotEmpty()) {
-                    val usb = usbPrinters.first()
-                    saveUsbPrinter(context, usb)
-                    return@withContext printReceipt(context, receipt, profile)
+                    var lastResult = Pair(false, "")
+                    for (copyIdx in 0 until copies) {
+                        lastResult = BluetoothPrinterHelper.printReceipt(
+                            device = device,
+                            receipt = receipt,
+                            profile = profile,
+                            paperWidthDots = paperWidth,
+                            kickDrawer = kickDrawer,
+                            cutMode = cutMode,
+                        )
+                        if (!lastResult.first) return@withLock lastResult
+                        if (copyIdx < copies - 1) delay(450L)
+                    }
+                    lastResult
                 }
 
-                val pairedBt = BluetoothPrinterHelper.getPairedDevices(context)
-                if (pairedBt.isNotEmpty()) {
-                    val bt = pairedBt.first()
-                    saveBluetoothPrinter(context, bt.address, bt.name ?: "BT Printer")
-                    return@withContext printReceipt(context, receipt, profile)
+                PrinterConnectionType.NONE -> {
+                    Pair(false, "Thermal Printer ချိတ်ဆက်ထားခြင်း မရှိပါ။ Bluetooth သို့မဟုတ် USB OTG ဖြင့် ချိတ်ဆက်ပေးပါ။")
                 }
-
-                Pair(false, "Thermal Printer ချိတ်ဆက်ထားခြင်း မရှိပါ။ Bluetooth သို့မဟုတ် USB OTG ဖြင့် ချိတ်ဆက်ပေးပါ။")
             }
         }
     }
@@ -252,36 +280,51 @@ object ThermalPrinterManager {
         context: Context,
         profile: StoreProfile,
     ): Pair<Boolean, String> = withContext(Dispatchers.IO) {
-        val connType = getConnectionType(context)
-        val paperWidth = getPaperWidth(context).dots
+        printMutex.withLock {
+            val connType = getConnectionType(context)
+            val paperWidth = getPaperWidth(context).dots
+            val cutMode = getCutMode(context)
 
-        when (connType) {
-            PrinterConnectionType.USB -> {
-                val usbDevice = getSavedUsbDevice(context)
-                    ?: return@withContext Pair(false, "USB Thermal Printer ချိတ်ဆက်မထားပါ")
+            when (connType) {
+                PrinterConnectionType.USB -> {
+                    val usbDevice = getSavedUsbDevice(context)
+                        ?: return@withLock Pair(false, "USB Thermal Printer ချိတ်ဆက်မထားပါ")
 
-                if (!UsbPrinterHelper.hasPermission(context, usbDevice)) {
-                    return@withContext Pair(false, "USB Printer Permission ခွင့်ပြုချက် လိုအပ်ပါသည်")
+                    if (!UsbPrinterHelper.hasPermission(context, usbDevice)) {
+                        return@withLock Pair(false, "USB Printer Permission ခွင့်ပြုချက် လိုအပ်ပါသည်")
+                    }
+
+                    val bitmap = BluetoothPrinterHelper.renderTestReceiptBitmap(profile, paperWidth)
+                    val (widthBytes, height, rawBits) = BluetoothPrinterHelper.bitmapToMonochromeBytes(bitmap)
+                    bitmap.recycle()
+                    val payload = EscPos.buildRasterReceiptPayload(
+                        bitmapWidthBytes = widthBytes,
+                        bitmapHeightDots = height,
+                        data = rawBits,
+                        feedLines = 5,
+                        cutMode = cutMode,
+                        kickDrawer = false,
+                    )
+                    UsbPrinterHelper.printRawBytes(context, usbDevice, payload)
                 }
 
-                val bitmap = BluetoothPrinterHelper.renderTestReceiptBitmap(profile, paperWidth)
-                val raster = BluetoothPrinterHelper.convertBitmapToEscPos(bitmap)
-                val feedAndCut = byteArrayOf(0x1B.toByte(), 0x64.toByte(), 0x03.toByte()) + EscPos.CUT
-                val payload = EscPos.INIT + raster + feedAndCut
-                UsbPrinterHelper.printRawBytes(context, usbDevice, payload)
-            }
+                PrinterConnectionType.BLUETOOTH -> {
+                    val address = getSavedBluetoothAddress(context)
+                        ?: return@withLock Pair(false, "Bluetooth Printer ရွေးချယ်မထားပါ")
+                    val adapter = BluetoothAdapter.getDefaultAdapter()
+                        ?: return@withLock Pair(false, "Bluetooth မရှိပါ")
+                    val device = adapter.getRemoteDevice(address)
+                    BluetoothPrinterHelper.printTestReceipt(
+                        device = device,
+                        profile = profile,
+                        paperWidthDots = paperWidth,
+                        cutMode = cutMode,
+                    )
+                }
 
-            PrinterConnectionType.BLUETOOTH -> {
-                val address = getSavedBluetoothAddress(context)
-                    ?: return@withContext Pair(false, "Bluetooth Printer ရွေးချယ်မထားပါ")
-                val adapter = BluetoothAdapter.getDefaultAdapter()
-                    ?: return@withContext Pair(false, "Bluetooth မရှိပါ")
-                val device = adapter.getRemoteDevice(address)
-                BluetoothPrinterHelper.printTestReceipt(device, profile, paperWidth)
-            }
-
-            PrinterConnectionType.NONE -> {
-                Pair(false, "စမ်းသပ်ပရင့်ထုတ်ရန် Bluetooth သို့မဟုတ် USB Printer တစ်ခုခုကို အရင်ရွေးချယ်ပါ")
+                PrinterConnectionType.NONE -> {
+                    Pair(false, "စမ်းသပ်ပရင့်ထုတ်ရန် Bluetooth သို့မဟုတ် USB Printer တစ်ခုခုကို အရင်ရွေးချယ်ပါ")
+                }
             }
         }
     }
@@ -293,21 +336,30 @@ object ThermalPrinterManager {
         context: Context,
         bytes: ByteArray,
     ): Pair<Boolean, String> = withContext(Dispatchers.IO) {
-        val connType = getConnectionType(context)
-        when (connType) {
+        printMutex.withLock {
+            printRawBytesUnlocked(context, bytes)
+        }
+    }
+
+    private suspend fun printRawBytesUnlocked(
+        context: Context,
+        bytes: ByteArray,
+    ): Pair<Boolean, String> {
+        val connType = resolveConnectionType(context)
+        return when (connType) {
             PrinterConnectionType.USB -> {
                 val usbDevice = getSavedUsbDevice(context)
-                    ?: return@withContext Pair(false, "USB Thermal Printer ချိတ်ဆက်မထားပါ")
+                    ?: return Pair(false, "USB Thermal Printer ချိတ်ဆက်မထားပါ")
                 if (!UsbPrinterHelper.hasPermission(context, usbDevice)) {
-                    return@withContext Pair(false, "USB Printer Permission ခွင့်ပြုချက် လိုအပ်ပါသည်")
+                    return Pair(false, "USB Printer Permission ခွင့်ပြုချက် လိုအပ်ပါသည်")
                 }
                 UsbPrinterHelper.printRawBytes(context, usbDevice, bytes)
             }
             PrinterConnectionType.BLUETOOTH -> {
                 val address = getSavedBluetoothAddress(context)
-                    ?: return@withContext Pair(false, "Bluetooth Printer ရွေးချယ်မထားပါ")
+                    ?: return Pair(false, "Bluetooth Printer ရွေးချယ်မထားပါ")
                 val adapter = BluetoothAdapter.getDefaultAdapter()
-                    ?: return@withContext Pair(false, "Bluetooth မရှိပါ")
+                    ?: return Pair(false, "Bluetooth မရှိပါ")
                 val device = adapter.getRemoteDevice(address)
                 BluetoothPrinterHelper.printRawBytes(device, bytes)
             }
@@ -326,23 +378,28 @@ object ThermalPrinterManager {
         profile: StoreProfile,
         template: ReceiptTemplateEntity,
     ): Pair<Boolean, String> = withContext(Dispatchers.IO) {
-        val paperWidth = getPaperWidth(context).dots
-        val kickDrawer = isKickDrawerEnabled(context)
-        val copies = getNumCopies(context).coerceAtLeast(1)
+        printMutex.withLock {
+            val paperWidth = getPaperWidth(context).dots
+            val kickDrawer = isKickDrawerEnabled(context)
+            val cutMode = getCutMode(context)
+            val copies = getNumCopies(context).coerceAtLeast(1)
 
-        val escPosBytes = CustomReceiptEscPosGenerator.generateEscPosForTemplate(
-            template = template,
-            receipt = receipt,
-            profile = profile,
-            paperWidthDots = paperWidth,
-            kickDrawer = kickDrawer
-        )
+            val escPosBytes = CustomReceiptEscPosGenerator.generateEscPosForTemplate(
+                template = template,
+                receipt = receipt,
+                profile = profile,
+                paperWidthDots = paperWidth,
+                kickDrawer = kickDrawer,
+                cutMode = cutMode,
+            )
 
-        var lastResult = Pair(false, "")
-        repeat(copies) {
-            lastResult = printRawBytes(context, escPosBytes)
-            if (!lastResult.first) return@withContext lastResult
+            var lastResult = Pair(false, "")
+            for (copyIdx in 0 until copies) {
+                lastResult = printRawBytesUnlocked(context, escPosBytes)
+                if (!lastResult.first) return@withLock lastResult
+                if (copyIdx < copies - 1) delay(450L)
+            }
+            lastResult
         }
-        lastResult
     }
 }
