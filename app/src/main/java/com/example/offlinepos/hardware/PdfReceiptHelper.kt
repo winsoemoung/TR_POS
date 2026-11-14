@@ -20,6 +20,59 @@ import java.util.Locale
 
 object PdfReceiptHelper {
 
+    fun calculateDynamicPdfHeight(
+        receipt: ReceiptData,
+        storeProfile: StoreProfile,
+    ): Int {
+        var y = 35f
+        val titleSize = ReceiptStyle.size(20f, storeProfile.receiptHeaderSize)
+        val headerDetailSize = ReceiptStyle.size(12f, storeProfile.receiptHeaderSize)
+        val footerSize = ReceiptStyle.size(12f, storeProfile.receiptFooterSize)
+
+        y += titleSize + 2f
+        if (storeProfile.address.isNotBlank()) y += headerDetailSize + 4f
+        if (storeProfile.phone.isNotBlank()) y += headerDetailSize + 4f
+        if (storeProfile.headerNote.isNotBlank()) y += headerDetailSize + 4f
+        y += 10f + 20f
+
+        // Metadata
+        y += 18f + 18f
+        if (receipt.saleStatus != "COMPLETED") y += 18f
+        y += 18f
+        if (!receipt.customerName.isNullOrBlank()) y += 18f
+        y += 15f + 18f
+
+        // Table Header
+        y += 12f + 20f
+
+        // Line items
+        receipt.items.forEach { item ->
+            y += 16f
+            y += if (item.lineDiscountMinor > 0) 14f else 6f
+        }
+
+        // Totals breakdown
+        y += 6f + 22f + 18f
+        if (receipt.discountMinor > 0) y += 18f
+        if (receipt.deliveryFeeMinor > 0) y += 18f
+        y += 6f + 22f + 25f
+
+        // Payment info
+        y += 18f
+        if (receipt.tenderedMinor > 0 && receipt.paymentMethod.contains("CASH", ignoreCase = true)) {
+            y += 18f + 18f + 22f
+        }
+        y += 10f
+
+        // Footer lines
+        val footer = storeProfile.footerMessage.ifBlank { "ဝယ်ယူအားပေးမှုကို အထူးပင် ကျေးဇူးတင်ရှိပါသည်" }
+        footer.split("\n").filter { it.isNotBlank() }.forEach {
+            y += footerSize + 4f
+        }
+
+        return (y + 30f).toInt().coerceAtLeast(220)
+    }
+
     fun generateAndSharePdf(
         context: Context,
         receipt: ReceiptData,
@@ -27,9 +80,7 @@ object PdfReceiptHelper {
     ): Uri? {
         val pdfDocument = PdfDocument()
         val pageWidth = 450
-        val baseHeight = 650
-        val itemHeight = 35
-        val pageHeight = baseHeight + (receipt.items.size * itemHeight)
+        val pageHeight = calculateDynamicPdfHeight(receipt, storeProfile)
 
         val pageInfo = PdfDocument.PageInfo.Builder(pageWidth, pageHeight, 1).create()
         val page = pdfDocument.startPage(pageInfo)

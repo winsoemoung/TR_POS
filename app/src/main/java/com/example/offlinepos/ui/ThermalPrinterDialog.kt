@@ -600,7 +600,6 @@ fun ThermalPrinterDialog(
                                                                             bitmapWidthBytes = widthBytes,
                                                                             bitmapHeightDots = height,
                                                                             data = rawBits,
-                                                                            feedLines = 5,
                                                                             cutMode = currentCutMode,
                                                                             kickDrawer = false,
                                                                         )

@@ -67,26 +67,28 @@ object CustomReceiptEscPosGenerator {
         }
     }
 
-    /**
-     * Renders a bitmap of the receipt based on the Custom Receipt Template Builder parameters.
-     * Supports dynamic font scaling for all elements, custom line spacing, and 80mm/58mm paper sizes.
-     */
-    fun renderReceiptBitmap(
+    private data class ResolvedTypography(
+        val width: Int,
+        val is58mm: Boolean,
+        val globalScale: Float,
+        val extraLineSpacing: Float,
+        val storeNameSize: Float,
+        val headerDetailsSize: Float,
+        val metaSize: Float,
+        val bodySize: Float,
+        val totalsSize: Float,
+        val footerSize: Float,
+    )
+
+    private fun resolveTypography(
         template: ReceiptTemplateEntity,
-        receipt: ReceiptData,
-        storeProfile: StoreProfile,
-        targetWidthDots: Int = 576, // 576 dots for standard 80mm, 384 dots for 58mm
-    ): Bitmap {
+        targetWidthDots: Int,
+    ): ResolvedTypography {
         val width = if (template.paperWidthDots > 0) template.paperWidthDots else targetWidthDots
         val is58mm = width <= 420
-
-        // Global font scaling (70% - 160%)
-        val globalScale = (template.fontScalePercent.coerceIn(60, 200) / 100f)
-
-        // Custom line spacing extra dp (0 - 24dp)
+        val globalScale = template.fontScalePercent.coerceIn(60, 200) / 100f
         val extraLineSpacing = template.lineSpacingDp.toFloat().coerceIn(0f, 24f)
 
-        // Helper to resolve font sizes per section with global scale applied
         fun getSectionFontSize(
             sizeKey: String,
             small: Float,
@@ -106,61 +108,241 @@ object CustomReceiptEscPosGenerator {
             return base * globalScale
         }
 
-        // Section Font Sizes
-        val storeNameSize = getSectionFontSize(
-            template.storeNameFontSize,
-            small = if (is58mm) 19f else 24f,
-            medium = if (is58mm) 22f else 28f,
-            large = if (is58mm) 26f else 33f,
-            xlarge = if (is58mm) 30f else 39f,
-            xxlarge = if (is58mm) 35f else 46f,
+        return ResolvedTypography(
+            width = width,
+            is58mm = is58mm,
+            globalScale = globalScale,
+            extraLineSpacing = extraLineSpacing,
+            storeNameSize = getSectionFontSize(
+                template.storeNameFontSize,
+                small = if (is58mm) 19f else 24f,
+                medium = if (is58mm) 22f else 28f,
+                large = if (is58mm) 26f else 33f,
+                xlarge = if (is58mm) 30f else 39f,
+                xxlarge = if (is58mm) 35f else 46f,
+            ),
+            headerDetailsSize = getSectionFontSize(
+                template.headerDetailsFontSize,
+                small = if (is58mm) 13.5f else 16.5f,
+                medium = if (is58mm) 15.5f else 19f,
+                large = if (is58mm) 18f else 22.5f,
+                xlarge = if (is58mm) 21f else 26.5f,
+            ),
+            metaSize = getSectionFontSize(
+                template.metaFontSize,
+                small = if (is58mm) 13f else 16f,
+                medium = if (is58mm) 15f else 18.5f,
+                large = if (is58mm) 17.5f else 21.5f,
+                xlarge = if (is58mm) 20.5f else 25f,
+            ),
+            bodySize = getSectionFontSize(
+                template.bodyFontSize,
+                small = if (is58mm) 13.5f else 16.5f,
+                medium = if (is58mm) 16f else 20f,
+                large = if (is58mm) 19f else 24f,
+                xlarge = if (is58mm) 22.5f else 28.5f,
+            ),
+            totalsSize = getSectionFontSize(
+                template.totalsFontSize,
+                small = if (is58mm) 14f else 17.5f,
+                medium = if (is58mm) 16.5f else 21f,
+                large = if (is58mm) 19.5f else 25f,
+                xlarge = if (is58mm) 23f else 29.5f,
+            ),
+            footerSize = getSectionFontSize(
+                template.footerFontSize,
+                small = if (is58mm) 13f else 16f,
+                medium = if (is58mm) 15f else 18.5f,
+                large = if (is58mm) 17.5f else 22f,
+                xlarge = if (is58mm) 20.5f else 26f,
+            ),
         )
+    }
 
-        val headerDetailsSize = getSectionFontSize(
-            template.headerDetailsFontSize,
-            small = if (is58mm) 13.5f else 16.5f,
-            medium = if (is58mm) 15.5f else 19f,
-            large = if (is58mm) 18f else 22.5f,
-            xlarge = if (is58mm) 21f else 26.5f,
+    private fun dividerAdvance(style: String, is58mm: Boolean, extraLineSpacing: Float): Float =
+        when (style.uppercase()) {
+            "DASHED" -> (if (is58mm) 12f else 15f) + (extraLineSpacing * 0.5f)
+            "SOLID" -> (if (is58mm) 10f else 13f) + (extraLineSpacing * 0.5f)
+            "DOUBLE" -> (if (is58mm) 14f else 17f) + (extraLineSpacing * 0.5f)
+            else -> (if (is58mm) 4f else 6f) + (extraLineSpacing * 0.3f)
+        }
+
+    /**
+     * Dynamically calculates exact physical receipt height in printer dots from the template sections,
+     * typography scaling, line spacing, and actual number of line items, preventing oversized allocations
+     * or max-length / endless paper feed errors.
+     */
+    fun calculatePhysicalHeightDots(
+        template: ReceiptTemplateEntity,
+        receipt: ReceiptData,
+        storeProfile: StoreProfile,
+        targetWidthDots: Int = 576,
+    ): Int {
+        val typo = resolveTypography(template, targetWidthDots)
+        val extra = typo.extraLineSpacing
+        val is58mm = typo.is58mm
+
+        // Top margin must clear store name ascenders (above baseline)
+        val topMargin = if (is58mm) 14f else 18f
+        var y = topMargin + typo.storeNameSize
+        var lastDrawnBaseline = y
+        var lastDescenderExtent = typo.storeNameSize * 0.35f
+
+        fun advanceLine(step: Float, drawnTextSize: Float) {
+            lastDrawnBaseline = y
+            lastDescenderExtent = drawnTextSize * 0.35f
+            y += step
+        }
+
+        // 1. Header section (store name already positioned at y)
+        advanceLine(typo.storeNameSize + 6f + extra, typo.storeNameSize)
+        if (template.customSubtitle.isNotBlank()) {
+            template.customSubtitle.split("\n").forEach { sub ->
+                if (sub.isNotBlank()) {
+                    advanceLine(typo.headerDetailsSize + 4f + extra, typo.headerDetailsSize + 1.5f)
+                }
+            }
+        }
+        if (template.customOwnerOrContact.isNotBlank()) {
+            template.customOwnerOrContact.split("\n").forEach { line ->
+                if (line.isNotBlank()) {
+                    advanceLine(typo.headerDetailsSize + 3.5f + extra, typo.headerDetailsSize)
+                }
+            }
+        }
+        if (template.showPhone) {
+            val phoneText = template.customPhone.ifBlank { storeProfile.phone }
+            phoneText.split("\n").forEach { pLine ->
+                if (pLine.isNotBlank()) {
+                    advanceLine(typo.headerDetailsSize + 3.5f + extra, typo.headerDetailsSize)
+                }
+            }
+        }
+        if (template.showAddress) {
+            val addressText = template.customAddress.ifBlank { storeProfile.address }
+            addressText.split("\n").forEach { aLine ->
+                if (aLine.isNotBlank()) {
+                    advanceLine(typo.headerDetailsSize + 3f + extra, typo.headerDetailsSize - 0.5f)
+                }
+            }
+        }
+        if (template.showHeaderNote) {
+            val note = template.customHeaderNote.ifBlank { storeProfile.headerNote }
+            if (note.isNotBlank()) {
+                advanceLine(typo.headerDetailsSize + 4f + extra, typo.headerDetailsSize)
+            }
+        }
+
+        // Date & Cashier + optional Customer
+        advanceLine(typo.metaSize + 5f + extra, typo.metaSize)
+        if (template.showCustomerInfo) {
+            advanceLine(typo.metaSize + 6f + extra, typo.metaSize)
+        }
+        y += dividerAdvance(template.gridLineStyle, is58mm, extra)
+
+        // 2. Body items section
+        val pad = template.rowPaddingDp.toFloat() + (extra * 0.4f)
+        if (template.itemLayoutStyle == "COLUMNS_4") {
+            advanceLine(typo.bodySize + 7f + extra, typo.bodySize)
+            if (template.gridLineStyle != "NONE") {
+                y += dividerAdvance(template.gridLineStyle, is58mm, extra)
+            }
+            repeat(receipt.items.size) {
+                y += pad
+                advanceLine(typo.bodySize + pad + 3f + extra, typo.bodySize)
+            }
+        } else {
+            val subDetailSize = typo.bodySize * 0.88f
+            repeat(receipt.items.size) {
+                advanceLine(typo.bodySize + 3f + extra, typo.bodySize)
+                advanceLine(subDetailSize + 4f + extra, subDetailSize)
+                y += 4f + (extra * 0.5f)
+            }
+        }
+        y += dividerAdvance(template.gridLineStyle, is58mm, extra)
+
+        // 3. Totals & summary
+        advanceLine(typo.totalsSize + 6f + extra, typo.totalsSize)
+        if (receipt.discountMinor > 0) {
+            advanceLine(typo.totalsSize + 6f + extra, typo.totalsSize)
+        }
+        if (receipt.deliveryFeeMinor > 0) {
+            advanceLine(typo.totalsSize + 6f + extra, typo.totalsSize)
+        }
+        advanceLine(typo.totalsSize + 8f + extra, typo.totalsSize + 2f)
+        if (template.showPaymentMethod) {
+            advanceLine(typo.totalsSize + 4f + extra, typo.totalsSize - 1.5f)
+            if (receipt.changeMinor > 0) {
+                advanceLine(typo.totalsSize + 4f + extra, typo.totalsSize - 1.5f)
+            }
+        }
+        y += dividerAdvance(template.gridLineStyle, is58mm, extra)
+
+        // 4. Voucher & footer notices
+        if (template.showVoucherNumber) {
+            advanceLine(typo.metaSize + 5f + extra, typo.metaSize)
+        }
+        if (template.returnPolicyText.isNotBlank()) {
+            template.returnPolicyText.split("\n").forEach { line ->
+                if (line.isNotBlank()) {
+                    advanceLine(typo.footerSize + 5f + extra, typo.footerSize)
+                }
+            }
+        }
+        val footerMsg = template.footerMessage.ifBlank { storeProfile.footerMessage }
+        if (footerMsg.isNotBlank()) {
+            footerMsg.split("\n").forEach { line ->
+                if (line.isNotBlank()) {
+                    advanceLine(typo.footerSize + 5f + extra, typo.footerSize)
+                }
+            }
+        }
+        if (template.extraNoticeText.isNotBlank()) {
+            template.extraNoticeText.split("\n").forEach { noticeLine ->
+                if (noticeLine.isNotBlank()) {
+                    advanceLine(typo.footerSize + 6f + extra, typo.footerSize + 1f)
+                }
+            }
+        }
+        if (template.showPrintTime) {
+            advanceLine(typo.footerSize + 4f + extra, typo.footerSize - 1.5f)
+        }
+
+        val compactBottomMargin = (lastDescenderExtent + 8f).coerceAtLeast(10f)
+        return (lastDrawnBaseline + compactBottomMargin).toInt().coerceAtLeast(100)
+    }
+
+    /**
+     * Renders a bitmap of the receipt based on the Custom Receipt Template Builder parameters.
+     * Calculates exact physical paper height dynamically from line items and active sections before allocating.
+     */
+    fun renderReceiptBitmap(
+        template: ReceiptTemplateEntity,
+        receipt: ReceiptData,
+        storeProfile: StoreProfile,
+        targetWidthDots: Int = 576, // 576 dots for standard 80mm, 384 dots for 58mm
+    ): Bitmap {
+        val typo = resolveTypography(template, targetWidthDots)
+        val width = typo.width
+        val is58mm = typo.is58mm
+        val globalScale = typo.globalScale
+        val extraLineSpacing = typo.extraLineSpacing
+
+        val storeNameSize = typo.storeNameSize
+        val headerDetailsSize = typo.headerDetailsSize
+        val metaSize = typo.metaSize
+        val bodySize = typo.bodySize
+        val totalsSize = typo.totalsSize
+        val footerSize = typo.footerSize
+
+        val physicalHeightDots = calculatePhysicalHeightDots(
+            template = template,
+            receipt = receipt,
+            storeProfile = storeProfile,
+            targetWidthDots = targetWidthDots,
         )
-
-        val metaSize = getSectionFontSize(
-            template.metaFontSize,
-            small = if (is58mm) 13f else 16f,
-            medium = if (is58mm) 15f else 18.5f,
-            large = if (is58mm) 17.5f else 21.5f,
-            xlarge = if (is58mm) 20.5f else 25f,
-        )
-
-        val bodySize = getSectionFontSize(
-            template.bodyFontSize,
-            small = if (is58mm) 13.5f else 16.5f,
-            medium = if (is58mm) 16f else 20f,
-            large = if (is58mm) 19f else 24f,
-            xlarge = if (is58mm) 22.5f else 28.5f,
-        )
-
-        val totalsSize = getSectionFontSize(
-            template.totalsFontSize,
-            small = if (is58mm) 14f else 17.5f,
-            medium = if (is58mm) 16.5f else 21f,
-            large = if (is58mm) 19.5f else 25f,
-            xlarge = if (is58mm) 23f else 29.5f,
-        )
-
-        val footerSize = getSectionFontSize(
-            template.footerFontSize,
-            small = if (is58mm) 13f else 16f,
-            medium = if (is58mm) 15f else 18.5f,
-            large = if (is58mm) 17.5f else 22f,
-            xlarge = if (is58mm) 20.5f else 26f,
-        )
-
-        // Pre-measure height to avoid bitmap overflow
-        val estimatedLines = 45 + (receipt.items.size * 3)
-        val estimatedHeight = ((estimatedLines * ((if (is58mm) 24 else 32) + extraLineSpacing.toInt())) * globalScale).toInt() + 600
-        val tempBitmap = Bitmap.createBitmap(width, estimatedHeight.coerceAtLeast(350), Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(tempBitmap)
+        val bitmap = Bitmap.createBitmap(width, physicalHeightDots, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
         canvas.drawColor(Color.WHITE)
 
         val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -178,7 +360,8 @@ object CustomReceiptEscPosGenerator {
             strokeWidth = 1.5f
         }
 
-        var currentY = if (is58mm) 22f else 28f
+        val topMargin = if (is58mm) 14f else 18f
+        var currentY = topMargin + storeNameSize
 
         fun drawDivider(style: String = template.gridLineStyle) {
             when (style.uppercase()) {
@@ -190,22 +373,16 @@ object CustomReceiptEscPosGenerator {
                         canvas.drawLine(x, currentY, minOf(x + dashLen, width - 12f), currentY, linePaint)
                         x += (dashLen + spaceLen)
                     }
-                    currentY += (if (is58mm) 12f else 15f) + (extraLineSpacing * 0.5f)
                 }
                 "SOLID" -> {
                     canvas.drawLine(12f, currentY, width - 12f, currentY, linePaint)
-                    currentY += (if (is58mm) 10f else 13f) + (extraLineSpacing * 0.5f)
                 }
                 "DOUBLE" -> {
                     canvas.drawLine(12f, currentY, width - 12f, currentY, linePaint)
                     canvas.drawLine(12f, currentY + 3.5f, width - 12f, currentY + 3.5f, linePaint)
-                    currentY += (if (is58mm) 14f else 17f) + (extraLineSpacing * 0.5f)
-                }
-                else -> {
-                    // NONE: No row/column lines drawn at all
-                    currentY += (if (is58mm) 4f else 6f) + (extraLineSpacing * 0.3f)
                 }
             }
+            currentY += dividerAdvance(style, is58mm, extraLineSpacing)
         }
 
         // ==========================================
@@ -384,9 +561,7 @@ object CustomReceiptEscPosGenerator {
             }
         } else {
             // STANDARD_2LINE Layout (Template 1 - Uploaded Sample Style)
-            // No column header table! Each item has Line 1 (Name & Amount) + Line 2 (Qty x Price)
             receipt.items.forEach { line ->
-                // Line 1: Product Name on left, Line Total on right
                 boldPaint.textSize = bodySize
                 boldPaint.textAlign = Paint.Align.LEFT
                 val maxNameChars = if (is58mm) (20 / globalScale).toInt().coerceAtLeast(10) else (32 / globalScale).toInt().coerceAtLeast(16)
@@ -401,7 +576,6 @@ object CustomReceiptEscPosGenerator {
                 canvas.drawText("%,d Ks".format(line.lineTotalMinor), width - 14f, currentY, boldPaint)
                 currentY += bodySize + 3f + extraLineSpacing
 
-                // Line 2: e.g. "1 အိတ် x 31,000 Ks"
                 val subDetailSize = bodySize * 0.88f
                 textPaint.textSize = subDetailSize
                 textPaint.textAlign = Paint.Align.LEFT
@@ -410,7 +584,6 @@ object CustomReceiptEscPosGenerator {
                 canvas.drawText(subDetail, 14f, currentY, textPaint)
                 currentY += subDetailSize + 4f + extraLineSpacing
 
-                // Spacing between items
                 currentY += 4f + (extraLineSpacing * 0.5f)
             }
         }
@@ -424,14 +597,12 @@ object CustomReceiptEscPosGenerator {
         textPaint.textSize = totalsSize
         boldPaint.textSize = totalsSize + 2f
 
-        // Subtotal (ကျသင့်ငွေ)
         textPaint.textAlign = Paint.Align.LEFT
         canvas.drawText("ကျသင့်ငွေ", 14f, currentY, textPaint)
         textPaint.textAlign = Paint.Align.RIGHT
         canvas.drawText("%,d Ks".format(receipt.subtotalMinor), width - 14f, currentY, textPaint)
         currentY += totalsSize + 6f + extraLineSpacing
 
-        // Discount if any
         if (receipt.discountMinor > 0) {
             textPaint.textAlign = Paint.Align.LEFT
             canvas.drawText("လျှော့ငွေ (Discount)", 14f, currentY, textPaint)
@@ -440,7 +611,6 @@ object CustomReceiptEscPosGenerator {
             currentY += totalsSize + 6f + extraLineSpacing
         }
 
-        // Delivery fee if any
         if (receipt.deliveryFeeMinor > 0) {
             textPaint.textAlign = Paint.Align.LEFT
             canvas.drawText("ပို့ဆောင်ခ (Delivery)", 14f, currentY, textPaint)
@@ -449,14 +619,12 @@ object CustomReceiptEscPosGenerator {
             currentY += totalsSize + 6f + extraLineSpacing
         }
 
-        // Grand Total (စုစုပေါင်း)
         boldPaint.textAlign = Paint.Align.LEFT
         canvas.drawText("စုစုပေါင်း", 14f, currentY, boldPaint)
         boldPaint.textAlign = Paint.Align.RIGHT
         canvas.drawText("%,d Ks".format(receipt.totalMinor), width - 14f, currentY, boldPaint)
         currentY += totalsSize + 8f + extraLineSpacing
 
-        // Payment Details (Optional)
         if (template.showPaymentMethod) {
             textPaint.textSize = totalsSize - 1.5f
             textPaint.textAlign = Paint.Align.LEFT
@@ -474,10 +642,8 @@ object CustomReceiptEscPosGenerator {
             }
         }
 
-        // Divider after Totals
         drawDivider(template.gridLineStyle)
 
-        // Voucher Number (ပြေစာအမှတ်: A261107-37416692)
         if (template.showVoucherNumber) {
             textPaint.textSize = metaSize
             textPaint.textAlign = Paint.Align.LEFT
@@ -491,7 +657,6 @@ object CustomReceiptEscPosGenerator {
         textPaint.textSize = footerSize
         textPaint.textAlign = Paint.Align.CENTER
 
-        // Return Policy Text (e.g. "ဝယ်ယူပြီး ပစ္စည်း များကို ပြန်လဲမပေးပါ")
         if (template.returnPolicyText.isNotBlank()) {
             template.returnPolicyText.split("\n").forEach { line ->
                 if (line.isNotBlank()) {
@@ -501,7 +666,6 @@ object CustomReceiptEscPosGenerator {
             }
         }
 
-        // Footer Message (e.g. "ဝယ်ယူအားပေးမှုကိုကျေးဇူးအထူးတင်ရှိပါသည်")
         val footerMsg = template.footerMessage.ifBlank { storeProfile.footerMessage }
         if (footerMsg.isNotBlank()) {
             footerMsg.split("\n").forEach { line ->
@@ -512,7 +676,6 @@ object CustomReceiptEscPosGenerator {
             }
         }
 
-        // Extra Notices (e.g. "သုံးမူး၊ ငါးမူး၊ ခြောက်မူး သံပင် များ ၊\nသွပ် အစားထိုး polystar များ ရပါသည် ။")
         if (template.extraNoticeText.isNotBlank()) {
             boldPaint.textSize = footerSize + 1f
             boldPaint.textAlign = Paint.Align.CENTER
@@ -524,22 +687,14 @@ object CustomReceiptEscPosGenerator {
             }
         }
 
-        // Print Time (e.g. "Print Time: 07/11/2026 10:24AM")
         if (template.showPrintTime) {
             val printTimeStr = "Print Time: ${SimpleDateFormat("dd/MM/yyyy hh:mma", Locale.ENGLISH).format(Date(receipt.timestampEpochMs))}"
             textPaint.textSize = footerSize - 1.5f
             textPaint.textAlign = Paint.Align.CENTER
             canvas.drawText(printTimeStr, width / 2f, currentY, textPaint)
-            currentY += footerSize + 4f + extraLineSpacing
         }
 
-        currentY += 18f + extraLineSpacing
-
-        // Crop bitmap to exact content height
-        val finalHeight = currentY.toInt().coerceIn(100, tempBitmap.height)
-        val cropped = Bitmap.createBitmap(tempBitmap, 0, 0, width, finalHeight)
-        if (cropped !== tempBitmap) tempBitmap.recycle()
-        return cropped
+        return bitmap
     }
 
     /**
@@ -558,7 +713,6 @@ object CustomReceiptEscPosGenerator {
             bitmapWidthBytes = widthBytes,
             bitmapHeightDots = height,
             data = rawBits,
-            feedLines = 5,
             cutMode = cutMode,
             kickDrawer = kickDrawer,
         )

@@ -28,6 +28,25 @@ object EscPos {
         }
     }
 
+    fun recommendedFeedLinesForCutMode(cutMode: PrinterCutMode): Int = when (cutMode) {
+        PrinterCutMode.FEED_AND_CUT -> 1 // GS V 66 (B) already advances to cutter blade; 1 line protects sub-baseline glyphs cleanly
+        PrinterCutMode.PARTIAL_CUT -> 4  // GS V 1 cuts immediately at printhead; feed 4 lines to clear cutter blade
+        PrinterCutMode.FULL_CUT -> 4     // GS V 0 cuts immediately at printhead; feed 4 lines to clear cutter blade
+        PrinterCutMode.NONE -> 3
+    }
+
+    fun startsWithResetPrefix(bytes: ByteArray): Boolean {
+        val prefixLen = INIT.size + CANCEL_CHINESE_MODE.size
+        if (bytes.size < prefixLen) return false
+        for (i in INIT.indices) {
+            if (bytes[i] != INIT[i]) return false
+        }
+        for (i in CANCEL_CHINESE_MODE.indices) {
+            if (bytes[INIT.size + i] != CANCEL_CHINESE_MODE[i]) return false
+        }
+        return true
+    }
+
     fun feedLines(lines: Int): ByteArray =
         byteArrayOf(0x1B.toByte(), 0x64.toByte(), lines.coerceIn(0, 255).toByte())
 
@@ -98,8 +117,8 @@ object EscPos {
         bitmapWidthBytes: Int,
         bitmapHeightDots: Int,
         data: ByteArray,
-        feedLines: Int = 5,
         cutMode: PrinterCutMode = PrinterCutMode.FEED_AND_CUT,
+        feedLines: Int = recommendedFeedLinesForCutMode(cutMode),
         kickDrawer: Boolean = false,
         maxBandHeightDots: Int = DEFAULT_MAX_BAND_HEIGHT_DOTS,
     ): ByteArray {

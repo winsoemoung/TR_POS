@@ -301,7 +301,6 @@ object ThermalPrinterManager {
                         bitmapWidthBytes = widthBytes,
                         bitmapHeightDots = height,
                         data = rawBits,
-                        feedLines = 5,
                         cutMode = cutMode,
                         kickDrawer = false,
                     )

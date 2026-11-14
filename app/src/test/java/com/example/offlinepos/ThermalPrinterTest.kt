@@ -241,5 +241,195 @@ class ThermalPrinterTest {
         assertEquals(EscPos.PrinterCutMode.NONE, EscPos.PrinterCutMode.fromString("NONE"))
         assertTrue(EscPos.PrinterCutMode.NONE.commandBytes.isEmpty())
     }
+
+    @Test
+    fun escPosRecommendedFeedAndCut_avoidsExcessiveBlankPaper() {
+        assertEquals(1, EscPos.recommendedFeedLinesForCutMode(EscPos.PrinterCutMode.FEED_AND_CUT))
+        assertEquals(4, EscPos.recommendedFeedLinesForCutMode(EscPos.PrinterCutMode.PARTIAL_CUT))
+        assertEquals(4, EscPos.recommendedFeedLinesForCutMode(EscPos.PrinterCutMode.FULL_CUT))
+        assertEquals(3, EscPos.recommendedFeedLinesForCutMode(EscPos.PrinterCutMode.NONE))
+
+        val widthBytes = 72
+        val heightDots = 64
+        val rawData = ByteArray(widthBytes * heightDots)
+
+        // Default FEED_AND_CUT: ESC 2 + ESC d 1 + GS V B 0 (1D 56 42 00)
+        val feedCutPayload = EscPos.buildRasterReceiptPayload(
+            bitmapWidthBytes = widthBytes,
+            bitmapHeightDots = heightDots,
+            data = rawData,
+            cutMode = EscPos.PrinterCutMode.FEED_AND_CUT,
+            kickDrawer = false,
+        )
+        val n1 = feedCutPayload.size
+        assertEquals(0x1B.toByte(), feedCutPayload[n1 - 7])
+        assertEquals(0x64.toByte(), feedCutPayload[n1 - 6])
+        assertEquals(0x01.toByte(), feedCutPayload[n1 - 5])
+        assertEquals(0x1D.toByte(), feedCutPayload[n1 - 4])
+        assertEquals(0x56.toByte(), feedCutPayload[n1 - 3])
+        assertEquals(0x42.toByte(), feedCutPayload[n1 - 2])
+        assertEquals(0x00.toByte(), feedCutPayload[n1 - 1])
+
+        // Default PARTIAL_CUT: ESC d 4 + GS V 1 (1D 56 01)
+        val partialCutPayload = EscPos.buildRasterReceiptPayload(
+            bitmapWidthBytes = widthBytes,
+            bitmapHeightDots = heightDots,
+            data = rawData,
+            cutMode = EscPos.PrinterCutMode.PARTIAL_CUT,
+            kickDrawer = false,
+        )
+        val n2 = partialCutPayload.size
+        assertEquals(0x1B.toByte(), partialCutPayload[n2 - 6])
+        assertEquals(0x64.toByte(), partialCutPayload[n2 - 5])
+        assertEquals(0x04.toByte(), partialCutPayload[n2 - 4])
+        assertEquals(0x1D.toByte(), partialCutPayload[n2 - 3])
+        assertEquals(0x56.toByte(), partialCutPayload[n2 - 2])
+        assertEquals(0x01.toByte(), partialCutPayload[n2 - 1])
+
+        // startsWithResetPrefix detects ESC @ + FS . cleanly
+        assertTrue(EscPos.startsWithResetPrefix(feedCutPayload))
+        assertTrue(!EscPos.startsWithResetPrefix(byteArrayOf(0x1B, 0x40, 0x00)))
+        assertTrue(!EscPos.startsWithResetPrefix(byteArrayOf(0x1D, 0x76, 0x30, 0x00)))
+    }
+
+    private fun sampleReceipt(
+        itemCount: Int,
+        discountMinor: Long = 0L,
+        deliveryFeeMinor: Long = 0L,
+        customerName: String? = null,
+    ): com.example.offlinepos.ui.ReceiptData {
+        val items = (1..itemCount).map { idx ->
+            com.example.offlinepos.data.local.SaleItemEntity(
+                lineId = idx.toLong(),
+                saleId = "sale-001",
+                productId = idx.toLong(),
+                productNameSnapshot = "ပစ္စည်း $idx",
+                unitPriceMinor = 1500L,
+                quantity = 2L,
+                lineDiscountMinor = 0L,
+                lineTaxMinor = 0L,
+                lineTotalMinor = 3000L,
+                unitName = "ခု",
+            )
+        }
+        val subtotal = itemCount * 3000L
+        return com.example.offlinepos.ui.ReceiptData(
+            saleId = "sale-001",
+            businessDate = "2026-11-14",
+            items = items,
+            totals = com.example.offlinepos.domain.CartTotals(
+                subtotalMinor = subtotal,
+                discountMinor = discountMinor,
+                taxMinor = 0L,
+                totalMinor = subtotal - discountMinor + deliveryFeeMinor,
+                deliveryFeeMinor = deliveryFeeMinor,
+            ),
+            paymentMethod = "CASH",
+            tenderedMinor = subtotal - discountMinor + deliveryFeeMinor,
+            changeMinor = 0L,
+            timestampEpochMs = 1794650000000L,
+            cashierId = "Admin",
+            deviceId = "POS-1",
+            customerName = customerName,
+        )
+    }
+
+    private fun sampleProfile(): com.example.offlinepos.ui.StoreProfile =
+        com.example.offlinepos.ui.StoreProfile(
+            storeName = "Test Store",
+            address = "Yangon",
+            phone = "09123456789",
+            headerNote = "Hardware",
+            footerMessage = "ကျေးဇူးတင်ပါသည်",
+            autoBackupSchedule = "DAILY",
+        )
+
+    @Test
+    fun customReceiptPhysicalHeight_scalesDynamicallyWithLineItemsAndSections() {
+        val profile = sampleProfile()
+        val tmpl2Line = com.example.offlinepos.data.local.ReceiptTemplateEntity(
+            templateId = 1,
+            name = "Template 1",
+            itemLayoutStyle = "STANDARD_2LINE",
+            paperWidthDots = 576,
+            showPhone = true,
+            showAddress = true,
+            showCustomerInfo = false,
+            showPrintTime = false,
+        )
+        val h1 = com.example.offlinepos.hardware.CustomReceiptEscPosGenerator.calculatePhysicalHeightDots(
+            template = tmpl2Line,
+            receipt = sampleReceipt(1),
+            storeProfile = profile,
+        )
+        val h5 = com.example.offlinepos.hardware.CustomReceiptEscPosGenerator.calculatePhysicalHeightDots(
+            template = tmpl2Line,
+            receipt = sampleReceipt(5),
+            storeProfile = profile,
+        )
+        val h25 = com.example.offlinepos.hardware.CustomReceiptEscPosGenerator.calculatePhysicalHeightDots(
+            template = tmpl2Line,
+            receipt = sampleReceipt(25),
+            storeProfile = profile,
+        )
+
+        // Compact 1-item receipt without excessive max-length/endless paper bloat
+        assertTrue("1-item receipt height ($h1) should be compact (< 750 dots)", h1 in 300..750)
+        val step4 = h5 - h1
+        val step20 = h25 - h5
+        // Linear scaling with float-to-int dot rounding (subDetailSize = bodySize * 0.88f)
+        assertTrue("Expected linear scaling (step4=$step4, step20=$step20)", step4 > 150 && kotlin.math.abs(step20 - (step4 * 5)) <= 5)
+
+        // 4-column table also scales linearly and reflects optional sections
+        val tmplCols = tmpl2Line.copy(templateId = 2, itemLayoutStyle = "COLUMNS_4", gridLineStyle = "NONE")
+        val col1 = com.example.offlinepos.hardware.CustomReceiptEscPosGenerator.calculatePhysicalHeightDots(
+            template = tmplCols,
+            receipt = sampleReceipt(1),
+            storeProfile = profile,
+        )
+        val col10 = com.example.offlinepos.hardware.CustomReceiptEscPosGenerator.calculatePhysicalHeightDots(
+            template = tmplCols,
+            receipt = sampleReceipt(10),
+            storeProfile = profile,
+        )
+        assertTrue(col10 > col1)
+
+        val withExtras = com.example.offlinepos.hardware.CustomReceiptEscPosGenerator.calculatePhysicalHeightDots(
+            template = tmplCols.copy(showCustomerInfo = true, showPrintTime = true),
+            receipt = sampleReceipt(1, discountMinor = 500L, deliveryFeeMinor = 1000L, customerName = "U Ba"),
+            storeProfile = profile,
+        )
+        assertTrue(withExtras > col1)
+    }
+
+    @Test
+    fun legacyAndPdfPhysicalHeight_scaleDynamicallyWithLineItems() {
+        val profile = sampleProfile()
+        val legacy1 = com.example.offlinepos.hardware.BluetoothPrinterHelper.calculateLegacyPhysicalHeightDots(
+            receipt = sampleReceipt(1),
+            profile = profile,
+            paperWidthDots = 576,
+            logoHeightDots = 0,
+        )
+        val legacy10 = com.example.offlinepos.hardware.BluetoothPrinterHelper.calculateLegacyPhysicalHeightDots(
+            receipt = sampleReceipt(10, discountMinor = 500L),
+            profile = profile,
+            paperWidthDots = 576,
+            logoHeightDots = 120,
+        )
+        assertTrue(legacy1 in 400..850)
+        assertTrue(legacy10 > legacy1 + 450)
+
+        val pdf1 = com.example.offlinepos.hardware.PdfReceiptHelper.calculateDynamicPdfHeight(
+            receipt = sampleReceipt(1),
+            storeProfile = profile,
+        )
+        val pdf15 = com.example.offlinepos.hardware.PdfReceiptHelper.calculateDynamicPdfHeight(
+            receipt = sampleReceipt(15, discountMinor = 200L),
+            storeProfile = profile,
+        )
+        assertTrue(pdf1 in 300..550)
+        assertTrue(pdf15 > pdf1 + 280)
+    }
 }
 

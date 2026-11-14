@@ -224,7 +224,6 @@ object UsbPrinterHelper {
                     bitmapWidthBytes = widthBytes,
                     bitmapHeightDots = height,
                     data = rawBits,
-                    feedLines = 5,
                     cutMode = cutMode,
                     kickDrawer = kickDrawer,
                 )

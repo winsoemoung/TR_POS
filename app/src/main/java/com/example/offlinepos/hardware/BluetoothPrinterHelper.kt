@@ -145,35 +145,44 @@ object BluetoothPrinterHelper {
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
         }
 
-        // Estimate height
-        val baseHeaderHeight = if (profile.customLogoPath != null) 340 else 240
-        val itemsHeight = (receipt.items.size * (if (is58mm) 48 else 55)) + 60
-        val summaryHeight = 280
-        val footerLines = profile.footerMessage.split("\n").count { it.isNotBlank() }.coerceAtLeast(1)
-        val footerHeight = (footerLines * 30) + 120
-        val totalHeight = baseHeaderHeight + itemsHeight + summaryHeight + footerHeight
-
-        val bitmap = Bitmap.createBitmap(width, totalHeight, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(bitmap)
-        canvas.drawColor(Color.WHITE)
-
-        var y = 30f
-
-        // 0. Optional Logo
-        if (!profile.customLogoPath.isNullOrBlank()) {
+        val scaledLogo = if (!profile.customLogoPath.isNullOrBlank()) {
             val logoFile = File(profile.customLogoPath)
             if (logoFile.exists()) {
                 val logoBmp = BitmapFactory.decodeFile(logoFile.absolutePath)
                 if (logoBmp != null) {
                     val targetLogoWidth = if (is58mm) 100 else 140
                     val scale = targetLogoWidth.toFloat() / logoBmp.width.toFloat()
-                    val targetLogoHeight = (logoBmp.height * scale).toInt()
-                    val scaledLogo = Bitmap.createScaledBitmap(logoBmp, targetLogoWidth, targetLogoHeight, true)
-                    canvas.drawBitmap(scaledLogo, (width - targetLogoWidth) / 2f, y, null)
-                    y += targetLogoHeight + 12f
-                }
-            }
+                    val targetLogoHeight = (logoBmp.height * scale).toInt().coerceAtLeast(1)
+                    val scaled = Bitmap.createScaledBitmap(logoBmp, targetLogoWidth, targetLogoHeight, true)
+                    if (scaled !== logoBmp) logoBmp.recycle()
+                    scaled
+                } else null
+            } else null
+        } else null
+
+        val logoHeightDots = scaledLogo?.height ?: 0
+        val totalHeight = calculateLegacyPhysicalHeightDots(
+            receipt = receipt,
+            profile = profile,
+            paperWidthDots = width,
+            logoHeightDots = logoHeightDots,
+        )
+
+        val bitmap = Bitmap.createBitmap(width, totalHeight, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        canvas.drawColor(Color.WHITE)
+
+        var y = 16f
+
+        // 0. Optional Logo
+        if (scaledLogo != null) {
+            canvas.drawBitmap(scaledLogo, (width - scaledLogo.width) / 2f, y, null)
+            y += scaledLogo.height + 12f
+            scaledLogo.recycle()
         }
+        // Clear store name ascenders cleanly below top/logo
+        ReceiptStyle.apply(paintTitle, profile.receiptHeaderStyle, profile.receiptHeaderSize, profile.receiptHeaderAlign, titleSize)
+        y += paintTitle.textSize
 
         // 1. Store header (style and alignment are user-configurable)
         ReceiptStyle.apply(paintTitle, profile.receiptHeaderStyle, profile.receiptHeaderSize, profile.receiptHeaderAlign, titleSize)
@@ -324,13 +333,79 @@ object BluetoothPrinterHelper {
         }
         y += 8f
         canvas.drawText("*** ကျေးဇူးတင်ပါသည် ***", width / 2f, y, paintHeader)
-        y += 36f
+        val finalHeight = (y + (paintHeader.textSize * 0.35f) + 10f).toInt().coerceIn(1, totalHeight)
+        if (finalHeight < totalHeight) {
+            val cropped = Bitmap.createBitmap(bitmap, 0, 0, width, finalHeight)
+            if (cropped !== bitmap) bitmap.recycle()
+            return cropped
+        }
+        return bitmap
+    }
 
-        // Trim bitmap to actual rendered height
-        val finalHeight = y.toInt().coerceIn(1, totalHeight)
-        val cropped = Bitmap.createBitmap(bitmap, 0, 0, width, finalHeight)
-        if (cropped !== bitmap) bitmap.recycle()
-        return cropped
+    /**
+     * Dynamically calculates exact physical receipt height in dots for the legacy receipt layout
+     * based on active header fields, logo, line item count, totals breakdown, payment lines, and footer.
+     */
+    fun calculateLegacyPhysicalHeightDots(
+        receipt: ReceiptData,
+        profile: StoreProfile,
+        paperWidthDots: Int = PRINTER_WIDTH_80MM,
+        logoHeightDots: Int = 0,
+    ): Int {
+        val is58mm = paperWidthDots <= 400
+        val titleSize = if (is58mm) 24f else 32f
+        val headerSize = if (is58mm) 17f else 21f
+        val resolvedTitleSize = ReceiptStyle.size(titleSize, profile.receiptHeaderSize)
+        val resolvedHeaderSize = ReceiptStyle.size(headerSize, profile.receiptHeaderSize)
+        val resolvedFooterSize = ReceiptStyle.size(headerSize, profile.receiptFooterSize)
+
+        var y = 16f
+        if (logoHeightDots > 0) {
+            y += logoHeightDots + 12f
+        }
+        y += resolvedTitleSize // store name baseline
+        y += resolvedTitleSize + 6f
+        if (profile.headerNote.isNotBlank()) y += resolvedHeaderSize + 6f
+        if (profile.address.isNotBlank()) y += resolvedHeaderSize + 6f
+        if (profile.phone.isNotBlank()) y += resolvedHeaderSize + 8f
+
+        // Divider + Bill Info
+        y += 24f + 24f + 22f
+        if (is58mm) y += 22f
+        if (!receipt.customerName.isNullOrBlank()) y += 22f
+        y += 26f
+
+        // Table Header
+        y += 24f + 24f + 28f
+
+        // Line items (exact per-item advance)
+        val perItemAdvance = (if (is58mm) 20f else 24f) + (if (is58mm) 24f else 30f)
+        y += receipt.items.size * perItemAdvance
+
+        // Divider + Summary Rows
+        y += 26f + 26f
+        if (receipt.totals.discountMinor > 0) y += 26f
+        if (receipt.deliveryFeeMinor > 0) y += 26f
+        y += 32f + 36f + 26f
+
+        // Payment rows
+        y += 26f
+        when (receipt.paymentMethod) {
+            "CASH" -> y += 26f + 30f
+            "SPLIT" -> y += 24f + 30f
+            "CREDIT" -> y += 30f
+        }
+
+        // Divider + Footer
+        y += 26f
+        profile.footerMessage.split("\n").forEach { line ->
+            if (line.isNotBlank()) {
+                y += resolvedFooterSize + 6f
+            }
+        }
+        y += 8f
+        // Final baseline is "*** ကျေးဇူးတင်ပါသည် ***"
+        return (y + (resolvedFooterSize * 0.35f) + 10f).toInt().coerceAtLeast(100)
     }
 
     /**
@@ -338,7 +413,7 @@ object BluetoothPrinterHelper {
      */
     fun renderTestReceiptBitmap(profile: StoreProfile, paperWidthDots: Int = PRINTER_WIDTH_80MM): Bitmap {
         val width = paperWidthDots
-        val height = 450
+        val height = 340
         val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
         canvas.drawColor(Color.WHITE)
@@ -356,7 +431,7 @@ object BluetoothPrinterHelper {
             textAlign = Paint.Align.CENTER
         }
 
-        var y = 40f
+        var y = 16f + paintTitle.textSize
         canvas.drawText(profile.storeName, width / 2f, y, paintTitle)
         y += 32f
         canvas.drawText("=== THERMAL PRINTER TEST ===", width / 2f, y, paintBody)
@@ -375,9 +450,8 @@ object BluetoothPrinterHelper {
         drawDashedLine(canvas, y, width)
         y += 34f
         canvas.drawText("OFFLINE POS - READY TO PRINT", width / 2f, y, paintBody)
-        y += 40f
 
-        val finalHeight = y.toInt().coerceIn(1, height)
+        val finalHeight = (y + (paintBody.textSize * 0.35f) + 10f).toInt().coerceIn(1, height)
         val cropped = Bitmap.createBitmap(bitmap, 0, 0, width, finalHeight)
         if (cropped !== bitmap) bitmap.recycle()
         return cropped
@@ -466,13 +540,17 @@ object BluetoothPrinterHelper {
     private suspend fun writeChunkedAndDrain(outputStream: OutputStream, bytes: ByteArray) {
         delay(BT_CONNECT_SETTLE_MS)
 
-        // Send an initial ESC @ + FS . reset with a brief settle pause before raster data starts
+        // Send ESC @ + FS . reset with a brief settle pause before raster data starts (avoid duplicate reset)
         outputStream.write(EscPos.INIT)
         outputStream.write(EscPos.CANCEL_CHINESE_MODE)
         outputStream.flush()
         delay(BT_POST_INIT_PAUSE_MS)
 
-        var offset = 0
+        var offset = if (EscPos.startsWithResetPrefix(bytes)) {
+            EscPos.INIT.size + EscPos.CANCEL_CHINESE_MODE.size
+        } else {
+            0
+        }
         while (offset < bytes.size) {
             val len = minOf(BT_CHUNK_SIZE_BYTES, bytes.size - offset)
             outputStream.write(bytes, offset, len)
@@ -509,7 +587,6 @@ object BluetoothPrinterHelper {
                     bitmapWidthBytes = widthBytes,
                     bitmapHeightDots = height,
                     data = rawBits,
-                    feedLines = 5,
                     cutMode = cutMode,
                     kickDrawer = kickDrawer,
                 )
@@ -550,7 +627,6 @@ object BluetoothPrinterHelper {
                     bitmapWidthBytes = widthBytes,
                     bitmapHeightDots = height,
                     data = rawBits,
-                    feedLines = 5,
                     cutMode = cutMode,
                     kickDrawer = false,
                 )
