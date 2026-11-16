@@ -247,16 +247,25 @@ object CustomReceiptEscPosGenerator {
             if (template.gridLineStyle != "NONE") {
                 y += dividerAdvance(template.gridLineStyle, is58mm, extra)
             }
-            repeat(receipt.items.size) {
+            if (receipt.items.isEmpty()) {
                 y += pad
                 advanceLine(typo.bodySize + pad + 3f + extra, typo.bodySize)
+            } else {
+                repeat(receipt.items.size) {
+                    y += pad
+                    advanceLine(typo.bodySize + pad + 3f + extra, typo.bodySize)
+                }
             }
         } else {
             val subDetailSize = typo.bodySize * 0.88f
-            repeat(receipt.items.size) {
+            if (receipt.items.isEmpty()) {
                 advanceLine(typo.bodySize + 3f + extra, typo.bodySize)
-                advanceLine(subDetailSize + 4f + extra, subDetailSize)
-                y += 4f + (extra * 0.5f)
+            } else {
+                repeat(receipt.items.size) {
+                    advanceLine(typo.bodySize + 3f + extra, typo.bodySize)
+                    advanceLine(subDetailSize + 4f + extra, subDetailSize)
+                    y += 4f + (extra * 0.5f)
+                }
             }
         }
         y += dividerAdvance(template.gridLineStyle, is58mm, extra)
@@ -532,59 +541,73 @@ object CustomReceiptEscPosGenerator {
                 drawDivider(template.gridLineStyle)
             }
 
-            receipt.items.forEach { line ->
+            if (receipt.items.isEmpty()) {
                 currentY += pad
-
-                // Name
                 textPaint.textAlign = Paint.Align.LEFT
-                val maxChars = (colNameW / (bodySize * 0.62f)).toInt().coerceAtLeast(8)
-                val displayName = if (line.productNameSnapshot.length > maxChars) {
-                    line.productNameSnapshot.take(maxChars - 1) + "…"
-                } else {
-                    line.productNameSnapshot
-                }
-                canvas.drawText(displayName, x0, currentY, textPaint)
-
-                // Qty
-                textPaint.textAlign = Paint.Align.CENTER
-                canvas.drawText(com.example.offlinepos.domain.Money.formatQty(line.effectiveQuantity()), x1 + (colQtyW / 2f), currentY, textPaint)
-
-                // Unit Price
-                textPaint.textAlign = Paint.Align.RIGHT
-                canvas.drawText("%,d".format(line.unitPriceMinor), x2 + colPriceW, currentY, textPaint)
-
-                // Total
-                boldPaint.textAlign = Paint.Align.RIGHT
-                canvas.drawText("%,d".format(line.lineTotalMinor), xEnd, currentY, boldPaint)
-
+                canvas.drawText("ပစ္စည်းစာရင်း မပါရှိပါ", x0, currentY, textPaint)
                 currentY += bodySize + pad + 3f + extraLineSpacing
+            } else {
+                receipt.items.forEach { line ->
+                    currentY += pad
+
+                    // Name
+                    textPaint.textAlign = Paint.Align.LEFT
+                    val maxChars = (colNameW / (bodySize * 0.62f)).toInt().coerceAtLeast(8)
+                    val displayName = if (line.productNameSnapshot.length > maxChars) {
+                        line.productNameSnapshot.take(maxChars - 1) + "…"
+                    } else {
+                        line.productNameSnapshot
+                    }
+                    canvas.drawText(displayName, x0, currentY, textPaint)
+
+                    // Qty
+                    textPaint.textAlign = Paint.Align.CENTER
+                    canvas.drawText(com.example.offlinepos.domain.Money.formatQty(line.effectiveQuantity()), x1 + (colQtyW / 2f), currentY, textPaint)
+
+                    // Unit Price
+                    textPaint.textAlign = Paint.Align.RIGHT
+                    canvas.drawText("%,d".format(line.unitPriceMinor), x2 + colPriceW, currentY, textPaint)
+
+                    // Total
+                    boldPaint.textAlign = Paint.Align.RIGHT
+                    canvas.drawText("%,d".format(line.lineTotalMinor), xEnd, currentY, boldPaint)
+
+                    currentY += bodySize + pad + 3f + extraLineSpacing
+                }
             }
         } else {
             // STANDARD_2LINE Layout (Template 1 - Uploaded Sample Style)
-            receipt.items.forEach { line ->
-                boldPaint.textSize = bodySize
-                boldPaint.textAlign = Paint.Align.LEFT
-                val maxNameChars = if (is58mm) (20 / globalScale).toInt().coerceAtLeast(10) else (32 / globalScale).toInt().coerceAtLeast(16)
-                val displayName = if (line.productNameSnapshot.length > maxNameChars) {
-                    line.productNameSnapshot.take(maxNameChars - 1) + "…"
-                } else {
-                    line.productNameSnapshot
-                }
-                canvas.drawText(displayName, 14f, currentY, boldPaint)
-
-                boldPaint.textAlign = Paint.Align.RIGHT
-                canvas.drawText("%,d Ks".format(line.lineTotalMinor), width - 14f, currentY, boldPaint)
-                currentY += bodySize + 3f + extraLineSpacing
-
-                val subDetailSize = bodySize * 0.88f
-                textPaint.textSize = subDetailSize
+            if (receipt.items.isEmpty()) {
+                textPaint.textSize = bodySize
                 textPaint.textAlign = Paint.Align.LEFT
-                val unitStr = line.unitName.ifBlank { "ခု" }
-                val subDetail = "${com.example.offlinepos.domain.Money.formatQty(line.effectiveQuantity())} $unitStr x %,d Ks".format(line.unitPriceMinor)
-                canvas.drawText(subDetail, 14f, currentY, textPaint)
-                currentY += subDetailSize + 4f + extraLineSpacing
+                canvas.drawText("ပစ္စည်းစာရင်း မပါရှိပါ", 14f, currentY, textPaint)
+                currentY += bodySize + 3f + extraLineSpacing
+            } else {
+                receipt.items.forEach { line ->
+                    boldPaint.textSize = bodySize
+                    boldPaint.textAlign = Paint.Align.LEFT
+                    val maxNameChars = if (is58mm) (20 / globalScale).toInt().coerceAtLeast(10) else (32 / globalScale).toInt().coerceAtLeast(16)
+                    val displayName = if (line.productNameSnapshot.length > maxNameChars) {
+                        line.productNameSnapshot.take(maxNameChars - 1) + "…"
+                    } else {
+                        line.productNameSnapshot
+                    }
+                    canvas.drawText(displayName, 14f, currentY, boldPaint)
 
-                currentY += 4f + (extraLineSpacing * 0.5f)
+                    boldPaint.textAlign = Paint.Align.RIGHT
+                    canvas.drawText("%,d Ks".format(line.lineTotalMinor), width - 14f, currentY, boldPaint)
+                    currentY += bodySize + 3f + extraLineSpacing
+
+                    val subDetailSize = bodySize * 0.88f
+                    textPaint.textSize = subDetailSize
+                    textPaint.textAlign = Paint.Align.LEFT
+                    val unitStr = line.unitName.ifBlank { "ခု" }
+                    val subDetail = "${com.example.offlinepos.domain.Money.formatQty(line.effectiveQuantity())} $unitStr x %,d Ks".format(line.unitPriceMinor)
+                    canvas.drawText(subDetail, 14f, currentY, textPaint)
+                    currentY += subDetailSize + 4f + extraLineSpacing
+
+                    currentY += 4f + (extraLineSpacing * 0.5f)
+                }
             }
         }
 
@@ -627,18 +650,29 @@ object CustomReceiptEscPosGenerator {
 
         if (template.showPaymentMethod) {
             textPaint.textSize = totalsSize - 1.5f
-            textPaint.textAlign = Paint.Align.LEFT
-            canvas.drawText("ပေးချေမှု (${receipt.paymentMethod}):", 14f, currentY, textPaint)
-            textPaint.textAlign = Paint.Align.RIGHT
-            canvas.drawText("%,d Ks".format(receipt.tenderedMinor), width - 14f, currentY, textPaint)
-            currentY += totalsSize + 4f + extraLineSpacing
-
-            if (receipt.changeMinor > 0) {
-                textPaint.textAlign = Paint.Align.LEFT
-                canvas.drawText("ပြန်အမ်းငွေ:", 14f, currentY, textPaint)
-                textPaint.textAlign = Paint.Align.RIGHT
-                canvas.drawText("%,d Ks".format(receipt.changeMinor), width - 14f, currentY, textPaint)
+            if (receipt.paymentMethod == "CREDIT") {
+                val creditBalance = (receipt.totalMinor - receipt.tenderedMinor).coerceAtLeast(0L)
+                boldPaint.textSize = totalsSize - 1.5f
+                boldPaint.textAlign = Paint.Align.LEFT
+                canvas.drawText("ပေးချေမှု: အကြွေး (Credit)", 14f, currentY, boldPaint)
+                boldPaint.textAlign = Paint.Align.RIGHT
+                canvas.drawText("%,d Ks".format(creditBalance), width - 14f, currentY, boldPaint)
+                boldPaint.textSize = totalsSize + 2f
                 currentY += totalsSize + 4f + extraLineSpacing
+            } else {
+                textPaint.textAlign = Paint.Align.LEFT
+                canvas.drawText("ပေးချေမှု (${receipt.paymentMethod}):", 14f, currentY, textPaint)
+                textPaint.textAlign = Paint.Align.RIGHT
+                canvas.drawText("%,d Ks".format(receipt.tenderedMinor), width - 14f, currentY, textPaint)
+                currentY += totalsSize + 4f + extraLineSpacing
+
+                if (receipt.changeMinor > 0) {
+                    textPaint.textAlign = Paint.Align.LEFT
+                    canvas.drawText("ပြန်အမ်းငွေ:", 14f, currentY, textPaint)
+                    textPaint.textAlign = Paint.Align.RIGHT
+                    canvas.drawText("%,d Ks".format(receipt.changeMinor), width - 14f, currentY, textPaint)
+                    currentY += totalsSize + 4f + extraLineSpacing
+                }
             }
         }
 

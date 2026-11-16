@@ -2354,38 +2354,46 @@ class PosViewModel(private val context: Context) : ViewModel() {
         _receipt.value = null
     }
 
+    suspend fun buildReceiptData(sale: SaleEntity): ReceiptData {
+        val dbItems = db.checkoutDao().getItemsForSale(sale.saleId)
+        val items = if (dbItems.isNotEmpty()) {
+            dbItems
+        } else {
+            allSaleItems.value.filter { it.saleId == sale.saleId }
+        }
+        val payment = db.checkoutDao().getPaymentForSale(sale.saleId)
+        val autoVoucherNo = com.example.offlinepos.domain.VoucherHelper.getVoucherNumber(sale, salesHistory.value)
+        return ReceiptData(
+            saleId = sale.saleId,
+            businessDate = sale.businessDate,
+            items = items,
+            totals = CartTotals(
+                subtotalMinor = sale.subtotalMinor,
+                discountMinor = sale.discountMinor,
+                taxMinor = sale.taxMinor,
+                totalMinor = sale.totalMinor,
+                deliveryFeeMinor = sale.deliveryFeeMinor,
+            ),
+            paymentMethod = payment?.method ?: sale.paymentMethod,
+            tenderedMinor = payment?.tenderedMinor ?: if (sale.paymentMethod == "CREDIT") 0L else sale.totalMinor,
+            changeMinor = payment?.changeMinor ?: 0,
+            timestampEpochMs = sale.createdAtEpochMs,
+            cashierId = sale.cashierId,
+            deviceId = sale.deviceId,
+            customerName = sale.customerName,
+            splitCashMinor = sale.splitCashMinor,
+            splitDigitalMinor = sale.splitDigitalMinor,
+            saleStatus = sale.status,
+            voucherNo = autoVoucherNo,
+            pickupStatus = sale.pickupStatus,
+            expectedPickupDate = sale.expectedPickupDate,
+            pickupNote = sale.pickupNote,
+        )
+    }
+
     fun viewPastReceipt(sale: SaleEntity) {
         viewModelScope.launch {
-            val items = db.checkoutDao().getItemsForSale(sale.saleId)
-            val payment = db.checkoutDao().getPaymentForSale(sale.saleId)
-            val autoVoucherNo = com.example.offlinepos.domain.VoucherHelper.getVoucherNumber(sale, salesHistory.value)
-            val receiptData = ReceiptData(
-                saleId = sale.saleId,
-                businessDate = sale.businessDate,
-                items = items,
-                totals = CartTotals(
-                    subtotalMinor = sale.subtotalMinor,
-                    discountMinor = sale.discountMinor,
-                    taxMinor = sale.taxMinor,
-                    totalMinor = sale.totalMinor,
-                    deliveryFeeMinor = sale.deliveryFeeMinor,
-                ),
-                paymentMethod = payment?.method ?: sale.paymentMethod,
-                tenderedMinor = payment?.tenderedMinor ?: sale.totalMinor,
-                changeMinor = payment?.changeMinor ?: 0,
-                timestampEpochMs = sale.createdAtEpochMs,
-                cashierId = sale.cashierId,
-                deviceId = sale.deviceId,
-                customerName = sale.customerName,
-                splitCashMinor = sale.splitCashMinor,
-                splitDigitalMinor = sale.splitDigitalMinor,
-                saleStatus = sale.status,
-                voucherNo = autoVoucherNo,
-                pickupStatus = sale.pickupStatus,
-                expectedPickupDate = sale.expectedPickupDate,
-                pickupNote = sale.pickupNote,
-            )
-            _receipt.value = receiptData
+            _receipt.value = buildReceiptData(sale)
         }
     }
 

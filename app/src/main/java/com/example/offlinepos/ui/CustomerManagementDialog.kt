@@ -61,6 +61,11 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.offlinepos.data.local.CustomerEntity
 import com.example.offlinepos.data.local.DebtTransactionEntity
+import com.example.offlinepos.data.local.effectiveQuantity
+import com.example.offlinepos.domain.CartTotals
+import com.example.offlinepos.domain.Money
+import com.example.offlinepos.domain.VoucherHelper
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -578,8 +583,14 @@ private fun CustomerLedgerDetailsDialog(
     onRepayClick: () -> Unit,
 ) {
     val context = LocalContext.current
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
     val transactions by viewModel.getCustomerTransactions(customer.customerId).collectAsState(initial = emptyList())
+    val allSaleItems by viewModel.allSaleItems.collectAsState()
+    val salesHistory by viewModel.salesHistory.collectAsState()
+    val itemsBySaleId = remember(allSaleItems) { allSaleItems.groupBy { it.saleId } }
+    val salesById = remember(salesHistory) { salesHistory.associateBy { it.saleId } }
     var showDeleteCustomerConfirm by remember { mutableStateOf(false) }
+    var activeCreditReceipt by remember { mutableStateOf<ReceiptData?>(null) }
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -711,50 +722,168 @@ private fun CustomerLedgerDetailsDialog(
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         items(transactions, key = { it.txId }) { tx ->
+                            val isCreditSale = tx.type == "CREDIT_SALE"
+                            val matchedSale = if (isCreditSale) {
+                                tx.saleId?.let { salesById[it] } ?: salesHistory.firstOrNull { sale ->
+                                    sale.customerId == customer.customerId &&
+                                        sale.paymentMethod.equals("CREDIT", ignoreCase = true) &&
+                                        sale.totalMinor == tx.amountMinor &&
+                                        kotlin.math.abs(sale.createdAtEpochMs - tx.createdAtEpochMs) < 120_000L
+                                }
+                            } else {
+                                null
+                            }
+                            val resolvedSaleId = matchedSale?.saleId ?: tx.saleId
+                            val txItems = if (isCreditSale && resolvedSaleId != null) {
+                                itemsBySaleId[resolvedSaleId].orEmpty()
+                            } else {
+                                emptyList()
+                            }
+                            val openCreditReceipt: () -> Unit = {
+                                if (matchedSale != null) {
+                                    scope.launch {
+                                        activeCreditReceipt = viewModel.buildReceiptData(matchedSale)
+                                    }
+                                } else if (isCreditSale) {
+                                    val fallbackSaleId = resolvedSaleId ?: "CREDIT-${tx.txId}"
+                                    val totalFromItems = txItems.sumOf { it.lineTotalMinor }.takeIf { it > 0L } ?: tx.amountMinor
+                                    activeCreditReceipt = ReceiptData(
+                                        saleId = fallbackSaleId,
+                                        businessDate = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date(tx.createdAtEpochMs)),
+                                        items = txItems,
+                                        totals = CartTotals(
+                                            subtotalMinor = totalFromItems,
+                                            discountMinor = 0L,
+                                            taxMinor = 0L,
+                                            totalMinor = tx.amountMinor,
+                                            deliveryFeeMinor = 0L,
+                                        ),
+                                        paymentMethod = "CREDIT",
+                                        tenderedMinor = 0L,
+                                        changeMinor = 0L,
+                                        timestampEpochMs = tx.createdAtEpochMs,
+                                        cashierId = tx.cashierId.ifBlank { "Admin" },
+                                        deviceId = "POS",
+                                        customerName = customer.name,
+                                        voucherNo = VoucherHelper.formatVoucherNumberFallback(fallbackSaleId, tx.createdAtEpochMs),
+                                    )
+                                }
+                            }
+
                             Card(
-                                modifier = Modifier.fillMaxWidth(),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .then(if (isCreditSale) Modifier.clickable(onClick = openCreditReceipt) else Modifier),
                                 colors = CardDefaults.cardColors(
-                                    containerColor = if (tx.type == "CREDIT_SALE") Color(0xFFFFFBEB) else Color(0xFFF0FDF4)
+                                    containerColor = if (isCreditSale) Color(0xFFFFFBEB) else Color(0xFFF0FDF4)
                                 ),
                                 shape = RoundedCornerShape(10.dp)
                             ) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth().padding(12.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Column {
-                                        Text(
-                                            text = if (tx.type == "CREDIT_SALE") "အကြွေးဝယ်ယူမှု (-)" else "ငွေဆပ်လက်ခံမှု (+)",
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 13.sp,
-                                            color = if (tx.type == "CREDIT_SALE") Color(0xFFB45309) else Color(0xFF15803D)
-                                        )
-                                        Text(
-                                            text = SimpleDateFormat("yyyy-MM-dd hh:mm a", Locale.getDefault()).format(Date(tx.createdAtEpochMs)),
-                                            fontSize = 11.sp,
-                                            color = Color.Gray
-                                        )
-                                        if (tx.note.isNotBlank()) {
+                                Column(modifier = Modifier.fillMaxWidth().padding(12.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
                                             Text(
-                                                text = "မှတ်ချက်: ${tx.note}",
+                                                text = if (isCreditSale) "အကြွေးဝယ်ယူမှု (-)" else "ငွေဆပ်လက်ခံမှု (+)",
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 13.sp,
+                                                color = if (isCreditSale) Color(0xFFB45309) else Color(0xFF15803D)
+                                            )
+                                            if (matchedSale != null) {
+                                                Text(
+                                                    text = "ပြေစာ: ${VoucherHelper.getVoucherNumber(matchedSale, salesHistory)}",
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    color = Color(0xFF1E3A8A),
+                                                )
+                                            }
+                                            Text(
+                                                text = SimpleDateFormat("yyyy-MM-dd hh:mm a", Locale.getDefault()).format(Date(tx.createdAtEpochMs)),
                                                 fontSize = 11.sp,
-                                                color = Color.DarkGray
+                                                color = Color(0xFF475569)
+                                            )
+                                            if (tx.note.isNotBlank()) {
+                                                Text(
+                                                    text = "မှတ်ချက်: ${tx.note}",
+                                                    fontSize = 11.sp,
+                                                    color = Color(0xFF334155)
+                                                )
+                                            }
+                                        }
+                                        Column(horizontalAlignment = Alignment.End) {
+                                            Text(
+                                                text = "%,d Ks".format(tx.amountMinor),
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 15.sp,
+                                                color = if (isCreditSale) Color(0xFFDC2626) else Color(0xFF16A34A)
+                                            )
+                                            Text(
+                                                text = "လက်ကျန်: %,d Ks".format(tx.remainingBalanceMinor),
+                                                fontSize = 11.sp,
+                                                color = Color(0xFF475569)
                                             )
                                         }
                                     }
-                                    Column(horizontalAlignment = Alignment.End) {
-                                        Text(
-                                            text = "%,d Ks".format(tx.amountMinor),
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 15.sp,
-                                            color = if (tx.type == "CREDIT_SALE") Color(0xFFDC2626) else Color(0xFF16A34A)
-                                        )
-                                        Text(
-                                            text = "လက်ကျန်: %,d Ks".format(tx.remainingBalanceMinor),
-                                            fontSize = 11.sp,
-                                            color = Color.Gray
-                                        )
+
+                                    if (isCreditSale) {
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                        HorizontalDivider(color = Color(0xFFFDE68A))
+                                        Spacer(modifier = Modifier.height(6.dp))
+                                        if (txItems.isEmpty()) {
+                                            Text(
+                                                text = "⚠️ ဝယ်ယူသည့် ပစ္စည်းစာရင်း မတွေ့ပါ",
+                                                fontSize = 11.sp,
+                                                color = Color(0xFF92400E),
+                                            )
+                                        } else {
+                                            Text(
+                                                text = "🛒 ဝယ်ယူထားသော ပစ္စည်းစာရင်း (${txItems.size} မျိုး)",
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color(0xFF78350F),
+                                            )
+                                            Spacer(modifier = Modifier.height(4.dp))
+                                            txItems.forEach { item ->
+                                                Row(
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .padding(vertical = 1.5.dp),
+                                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                                ) {
+                                                    Text(
+                                                        text = "• ${item.productNameSnapshot} (${Money.formatQty(item.effectiveQuantity())} ${item.unitName.ifBlank { "ခု" }} × %,d)".format(item.unitPriceMinor),
+                                                        fontSize = 11.5.sp,
+                                                        color = Color(0xFF0F172A),
+                                                        modifier = Modifier.weight(1f),
+                                                    )
+                                                    Spacer(modifier = Modifier.width(6.dp))
+                                                    Text(
+                                                        text = "%,d Ks".format(item.lineTotalMinor),
+                                                        fontSize = 11.5.sp,
+                                                        fontWeight = FontWeight.SemiBold,
+                                                        color = Color(0xFF0F172A),
+                                                    )
+                                                }
+                                            }
+                                        }
+                                        Spacer(modifier = Modifier.height(6.dp))
+                                        OutlinedButton(
+                                            onClick = openCreditReceipt,
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .testTag("credit_receipt_button_${tx.txId}"),
+                                            shape = RoundedCornerShape(8.dp),
+                                        ) {
+                                            Text(
+                                                text = "🧾 အကြွေးပြေစာ ကြည့်မည် / Print",
+                                                fontSize = 11.5.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color(0xFFB45309),
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -763,6 +892,14 @@ private fun CustomerLedgerDetailsDialog(
                 }
             }
         }
+    }
+
+    activeCreditReceipt?.let { receiptData ->
+        ReceiptDialog(
+            receipt = receiptData,
+            viewModel = viewModel,
+            onDismiss = { activeCreditReceipt = null },
+        )
     }
 
     if (showDeleteCustomerConfirm) {

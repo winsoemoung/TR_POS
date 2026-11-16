@@ -59,13 +59,17 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.example.offlinepos.data.local.CustomerEntity
+import com.example.offlinepos.domain.CartItem
 import com.example.offlinepos.domain.CartTotals
+import com.example.offlinepos.domain.Money
 import com.example.offlinepos.hardware.QrCodeHelper
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun CheckoutDialog(
     totals: CartTotals,
+    items: List<CartItem> = emptyList(),
+    storeName: String = "ဆန်းသစ်",
     customLogoPath: String? = null,
     customers: List<CustomerEntity> = emptyList(),
     onDismiss: () -> Unit,
@@ -207,6 +211,111 @@ fun CheckoutDialog(
                                 style = MaterialTheme.typography.bodySmall,
                                 color = Color(0xFF047857),
                             )
+                        }
+                    }
+                }
+
+                // Pre-Print Purchased Items & Receipt Preview Section
+                if (items.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    var showPrePrintPreview by remember { mutableStateOf(false) }
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("checkout_items_summary_card"),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFFFFFBEB)),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFDE68A)),
+                        shape = RoundedCornerShape(12.dp),
+                    ) {
+                        Column(modifier = Modifier.fillMaxWidth().padding(12.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(
+                                    text = "🧾 ဝယ်ယူသည့် ပစ္စည်းစာရင်း (${items.size} မျိုး)",
+                                    fontSize = 12.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF0F172A),
+                                )
+                                Text(
+                                    text = if (showPrePrintPreview) "ပြေစာနမူနာ ပိတ်ရန် ▲" else "Print မထုတ်ခင် ဘေလ်ကြည့်ရန် ▼",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFFB45309),
+                                    modifier = Modifier
+                                        .clickable { showPrePrintPreview = !showPrePrintPreview }
+                                        .testTag("toggle_preprint_preview_button"),
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(6.dp))
+                            HorizontalDivider(color = Color(0xFFFDE68A))
+                            Spacer(modifier = Modifier.height(6.dp))
+
+                            if (showPrePrintPreview) {
+                                Text(
+                                    text = storeName.ifBlank { "ဆန်းသစ်" },
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = Color(0xFF0F172A),
+                                )
+                                Text(
+                                    text = "ဈေးဝယ်သူ: ${selectedCustomer?.name ?: "Walking Customer"} • $selectedMethod",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = Color(0xFF334155),
+                                )
+                                Spacer(modifier = Modifier.height(6.dp))
+                                HorizontalDivider(color = Color(0xFFCBD5E1))
+                                Spacer(modifier = Modifier.height(4.dp))
+                            }
+
+                            items.forEach { item ->
+                                val lineTotal = item.grossAmountMinor - item.lineDiscountMinor + item.lineTaxMinor
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 2.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.Top,
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = item.name,
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = Color(0xFF0F172A),
+                                        )
+                                        Text(
+                                            text = "${Money.formatQty(item.effectiveQuantity)} ${item.unitName} × %,d Ks".format(item.unitPriceMinor),
+                                            fontSize = 10.5.sp,
+                                            color = Color(0xFF475569),
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "%,d Ks".format(lineTotal),
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF0F172A),
+                                    )
+                                }
+                            }
+
+                            if (showPrePrintPreview) {
+                                Spacer(modifier = Modifier.height(6.dp))
+                                HorizontalDivider(color = Color(0xFFCBD5E1))
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                ) {
+                                    Text("စုစုပေါင်း ကျသင့်ငွေ:", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF0F172A))
+                                    Text("%,d Ks".format(payableTotals.totalMinor), fontSize = 12.5.sp, fontWeight = FontWeight.ExtraBold, color = Color(0xFF0F172A))
+                                }
+                            }
                         }
                     }
                 }

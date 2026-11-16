@@ -329,6 +329,8 @@ fun MainApp(viewModel: PosViewModel) {
     if (showCheckoutDialog) {
         CheckoutDialog(
             totals = totals,
+            items = cart,
+            storeName = storeProfile.storeName,
             customLogoPath = storeProfile.customLogoPath,
             customers = customers,
             onDismiss = { showCheckoutDialog = false },

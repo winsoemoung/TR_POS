@@ -140,7 +140,11 @@ fun ReceiptTemplateBuilderDialog(
     var showPrintTime by remember(selectedSlot, currentDbTemplate) { mutableStateOf(currentDbTemplate.showPrintTime) }
     var footerAlign by remember(selectedSlot, currentDbTemplate) { mutableStateOf(currentDbTemplate.footerAlign) }
 
-    // Sample receipt for live preview matching real data
+    val activeReceipt by viewModel.receipt.collectAsState()
+    val currentCart by viewModel.cart.collectAsState()
+    val currentTotals by viewModel.totals.collectAsState()
+
+    // Fallback sample receipt when no active order or open receipt exists
     val sampleReceipt = remember {
         ReceiptData(
             saleId = "TR-SAMPLE-37416692",
@@ -175,6 +179,41 @@ fun ReceiptTemplateBuilderDialog(
             customerName = "MK store",
             voucherNo = "A261107-37416692"
         )
+    }
+
+    val previewReceiptData = remember(activeReceipt, currentCart, currentTotals, sampleReceipt) {
+        when {
+            activeReceipt != null && activeReceipt!!.items.isNotEmpty() -> activeReceipt!!
+            currentCart.isNotEmpty() -> ReceiptData(
+                saleId = "TR-PREVIEW",
+                businessDate = java.text.SimpleDateFormat("dd/MM/yyyy HH:mm", java.util.Locale.getDefault()).format(java.util.Date()),
+                items = currentCart.map { item ->
+                    val effQty = item.effectiveQuantity
+                    SaleItemEntity(
+                        saleId = "TR-PREVIEW",
+                        productId = item.productId,
+                        productNameSnapshot = item.name,
+                        unitPriceMinor = item.unitPriceMinor,
+                        quantity = kotlin.math.ceil(effQty).toLong().coerceAtLeast(1L),
+                        lineDiscountMinor = item.lineDiscountMinor,
+                        lineTaxMinor = item.lineTaxMinor,
+                        lineTotalMinor = item.grossAmountMinor - item.lineDiscountMinor + item.lineTaxMinor,
+                        unitName = item.unitName,
+                        quantityDecimal = effQty,
+                    )
+                },
+                totals = currentTotals,
+                paymentMethod = "CASH",
+                tenderedMinor = currentTotals.totalMinor,
+                changeMinor = 0L,
+                timestampEpochMs = System.currentTimeMillis(),
+                cashierId = "Admin",
+                deviceId = "POS-01",
+                customerName = "Walking Customer",
+                voucherNo = "PREVIEW",
+            )
+            else -> sampleReceipt
+        }
     }
 
     // Dynamic Live Preview Template Entity
@@ -234,10 +273,10 @@ fun ReceiptTemplateBuilderDialog(
 
     var previewBitmap by remember { mutableStateOf<Bitmap?>(null) }
 
-    LaunchedEffect(previewTemplate, storeProfile) {
+    LaunchedEffect(previewTemplate, storeProfile, previewReceiptData) {
         previewBitmap = CustomReceiptEscPosGenerator.renderReceiptBitmap(
             template = previewTemplate,
-            receipt = sampleReceipt,
+            receipt = previewReceiptData,
             storeProfile = storeProfile,
             targetWidthDots = previewTemplate.paperWidthDots
         )
@@ -781,7 +820,7 @@ fun ReceiptTemplateBuilderDialog(
                         onClick = {
                             val bytes = CustomReceiptEscPosGenerator.generateEscPosForTemplate(
                                 template = previewTemplate,
-                                receipt = sampleReceipt,
+                                receipt = previewReceiptData,
                                 profile = storeProfile,
                                 paperWidthDots = previewTemplate.paperWidthDots,
                                 cutMode = ThermalPrinterManager.getCutMode(context),

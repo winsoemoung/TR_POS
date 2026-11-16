@@ -131,6 +131,7 @@ fun SalesHistoryScreen(
     var saleToRefund by remember { mutableStateOf<SaleEntity?>(null) }
     var voucherSearchQuery by remember { mutableStateOf("") }
     var showOnlyPendingPickup by remember { mutableStateOf(false) }
+    var showOnlyCreditSales by remember { mutableStateOf(false) }
 
     var customStartMs by remember { mutableStateOf(PosViewModel.getStartOfToday()) }
     var customEndMs by remember { mutableStateOf(PosViewModel.getEndOfToday()) }
@@ -139,6 +140,9 @@ fun SalesHistoryScreen(
         allSales.associate { sale ->
             sale.saleId to com.example.offlinepos.domain.VoucherHelper.getVoucherNumber(sale, allSales)
         }
+    }
+    val itemsBySaleId = remember(allSaleItems) {
+        allSaleItems.groupBy { it.saleId }
     }
 
     val (rangeStart, rangeEnd) = when (selectedFilterMode) {
@@ -175,6 +179,7 @@ fun SalesHistoryScreen(
     }
 
     val pendingPickupCount = allSales.count { it.pickupStatus == PickupStatus.PENDING_PICKUP }
+    val creditSalesCount = allSales.count { it.paymentMethod.equals("CREDIT", ignoreCase = true) }
 
     val filteredSales = if (voucherSearchQuery.isNotBlank()) {
         allSales.filter { sale ->
@@ -186,6 +191,12 @@ fun SalesHistoryScreen(
     }.let { list ->
         if (showOnlyPendingPickup) {
             list.filter { it.pickupStatus == PickupStatus.PENDING_PICKUP }
+        } else {
+            list
+        }
+    }.let { list ->
+        if (showOnlyCreditSales) {
+            list.filter { it.paymentMethod.equals("CREDIT", ignoreCase = true) }
         } else {
             list
         }
@@ -285,6 +296,20 @@ fun SalesHistoryScreen(
                                     )
                                 },
                                 modifier = Modifier.testTag("pending_pickup_filter_chip")
+                            )
+                        }
+                        item {
+                            FilterChip(
+                                selected = showOnlyCreditSales,
+                                onClick = { showOnlyCreditSales = !showOnlyCreditSales },
+                                label = {
+                                    Text(
+                                        text = if (creditSalesCount > 0) "📝 အကြွေး ($creditSalesCount)" else "📝 အကြွေး",
+                                        fontSize = 11.sp,
+                                        fontWeight = if (showOnlyCreditSales) FontWeight.Bold else FontWeight.Normal,
+                                    )
+                                },
+                                modifier = Modifier.testTag("credit_sales_filter_chip")
                             )
                         }
                     }
@@ -407,6 +432,7 @@ fun SalesHistoryScreen(
                             items(filteredSales, key = { it.saleId }) { sale ->
                                 SaleRecordCard(
                                     sale = sale,
+                                    saleItems = itemsBySaleId[sale.saleId].orEmpty(),
                                     voucherNumber = voucherNumberMap[sale.saleId],
                                     onClick = { viewModel.viewPastReceipt(sale) },
                                     onRefund = { saleToRefund = sale },
@@ -680,12 +706,14 @@ fun SalesHistoryScreen(
 @Composable
 private fun SaleRecordCard(
     sale: SaleEntity,
+    saleItems: List<SaleItemEntity> = emptyList(),
     voucherNumber: String? = null,
     onClick: () -> Unit,
     onRefund: () -> Unit,
     onMarkPickedUp: (() -> Unit)? = null,
 ) {
     val displayVoucher = voucherNumber ?: com.example.offlinepos.domain.VoucherHelper.formatVoucherNumberFallback(sale.saleId, sale.createdAtEpochMs)
+    var showAllItems by remember(sale.saleId) { mutableStateOf(false) }
 
     Card(
         modifier = Modifier
@@ -778,6 +806,77 @@ private fun SaleRecordCard(
                         }
                     } else {
                         Text(sale.status, fontSize = 10.sp, color = MaterialTheme.colorScheme.error)
+                    }
+                }
+            }
+
+            // Purchased Items List directly visible on every Receipt History card
+            Spacer(modifier = Modifier.height(8.dp))
+            Surface(
+                shape = RoundedCornerShape(8.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("sale_items_preview_${sale.saleId}"),
+            ) {
+                Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
+                    if (saleItems.isEmpty()) {
+                        Text(
+                            text = "⚠️ ဝယ်ယူထားသော ပစ္စည်းစာရင်း မှတ်တမ်းမရှိပါ",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    } else {
+                        Text(
+                            text = "🛒 ဝယ်ယူသည့် ပစ္စည်းများ (${saleItems.size} မျိုး)",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        val visibleItems = if (showAllItems) saleItems else saleItems.take(4)
+                        visibleItems.forEach { item ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 1.5.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(
+                                    text = "• ${item.productNameSnapshot} (${Money.formatQty(item.effectiveQuantity())} ${item.unitName.ifBlank { "ခု" }} × %,d)".format(item.unitPriceMinor),
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    modifier = Modifier.weight(1f),
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "%,d Ks".format(item.lineTotalMinor),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontFamily = FontFamily.Monospace,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                )
+                            }
+                            if (item.returnedQuantity > 0) {
+                                Text(
+                                    text = "  ↳ ပြန်အပ်ပြီး: ${item.returnedQuantity} ${item.unitName}",
+                                    fontSize = 10.sp,
+                                    color = MaterialTheme.colorScheme.error,
+                                )
+                            }
+                        }
+                        if (saleItems.size > 4) {
+                            Text(
+                                text = if (showAllItems) "လျှော့ပြမည် ▲" else "နောက်ထပ် ${saleItems.size - 4} မျိုး ကြည့်မည် ▼",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier
+                                    .padding(top = 4.dp)
+                                    .clickable { showAllItems = !showAllItems },
+                            )
+                        }
                     }
                 }
             }

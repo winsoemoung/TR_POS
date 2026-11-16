@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import com.example.offlinepos.data.local.effectiveQuantity
 import com.example.offlinepos.data.local.effectiveStock
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.foundation.layout.Arrangement
@@ -1762,7 +1763,9 @@ fun DynamicReportViewerDialog(
 ) {
     val products by viewModel.activeProducts.collectAsState()
     val sales by viewModel.salesHistory.collectAsState()
+    val allSaleItems by viewModel.allSaleItems.collectAsState()
     val customers by viewModel.customers.collectAsState()
+    val itemsBySaleId = remember(allSaleItems) { allSaleItems.groupBy { it.saleId } }
 
     val totalCostValue = products.fold(0L) { acc, p -> acc + kotlin.math.round(p.costPriceMinor.toDouble() * p.effectiveStock()).toLong() }
     val totalRetailValue = products.fold(0L) { acc, p -> acc + kotlin.math.round(p.sellPriceMinor.toDouble() * p.effectiveStock()).toLong() }
@@ -1854,16 +1857,34 @@ fun DynamicReportViewerDialog(
                             } else {
                                 items(todaySales) { s ->
                                     val vNo = com.example.offlinepos.domain.VoucherHelper.getVoucherNumber(s, sales)
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
+                                    val saleItems = itemsBySaleId[s.saleId].orEmpty()
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable { viewModel.viewPastReceipt(s) }
+                                            .padding(vertical = 6.dp)
                                     ) {
-                                        Column {
-                                            Text(vNo, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Color(0xFF1E3A8A))
-                                            Text("Ref: #${s.saleId.take(8).uppercase()}", fontSize = 11.sp, color = TextMuted)
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Column {
+                                                Text(vNo, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Color(0xFF1E3A8A))
+                                                Text("Ref: #${s.saleId.take(8).uppercase()} • ${s.paymentMethod}", fontSize = 11.sp, color = TextMuted)
+                                            }
+                                            Text("%,d Ks".format(s.totalMinor), fontWeight = FontWeight.Bold, fontSize = 13.sp, color = BrandRed)
                                         }
-                                        Text("%,d Ks".format(s.totalMinor), fontWeight = FontWeight.Bold, fontSize = 13.sp, color = BrandRed)
+                                        if (saleItems.isNotEmpty()) {
+                                            Spacer(modifier = Modifier.height(3.dp))
+                                            saleItems.forEach { item ->
+                                                Text(
+                                                    text = "• ${item.productNameSnapshot} (${com.example.offlinepos.domain.Money.formatQty(item.effectiveQuantity())} ${item.unitName.ifBlank { "ခု" }}) — %,d Ks".format(item.lineTotalMinor),
+                                                    fontSize = 11.sp,
+                                                    color = TextDark,
+                                                )
+                                            }
+                                        }
                                     }
                                     HorizontalDivider(color = BorderLight, thickness = 0.5.dp)
                                 }
