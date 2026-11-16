@@ -37,8 +37,20 @@ interface CustomerDao {
     @Query("UPDATE customers SET currentDebtMinor = MAX(0, currentDebtMinor - :amount) WHERE customerId = :customerId")
     suspend fun reduceDebt(customerId: Long, amount: Long): Int
 
-    @Insert
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertDebtTransaction(tx: DebtTransactionEntity): Long
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertDebtTransactions(txs: List<DebtTransactionEntity>)
+
+    @Query("SELECT * FROM debt_transactions")
+    suspend fun getAllDebtTransactions(): List<DebtTransactionEntity>
+
+    @Query("DELETE FROM debt_transactions")
+    suspend fun clearAllDebtTransactions()
+
+    @Query("DELETE FROM customers")
+    suspend fun clearAllCustomers()
 
     @Query("SELECT * FROM debt_transactions WHERE customerId = :customerId ORDER BY createdAtEpochMs DESC")
     fun observeTransactionsForCustomer(customerId: Long): Flow<List<DebtTransactionEntity>>

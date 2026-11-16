@@ -45,4 +45,10 @@ interface ReceiptTemplateDao {
 
     @Query("UPDATE receipt_templates SET isDefault = 1 WHERE templateId = :targetId")
     suspend fun setSingleDefault(targetId: Int)
+
+    @Query("SELECT * FROM receipt_templates ORDER BY templateId ASC")
+    suspend fun getAllTemplatesSync(): List<ReceiptTemplateEntity>
+
+    @Query("DELETE FROM receipt_templates")
+    suspend fun clearAllTemplates()
 }

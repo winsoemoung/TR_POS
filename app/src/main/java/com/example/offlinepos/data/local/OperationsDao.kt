@@ -20,12 +20,24 @@ interface OperationsDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertShift(shift: ShiftReportEntity): Long
 
+    @Query("SELECT * FROM shifts")
+    suspend fun getAllShifts(): List<ShiftReportEntity>
+
+    @Query("DELETE FROM shifts")
+    suspend fun clearAllShifts()
+
     @Update
     suspend fun updateShift(shift: ShiftReportEntity): Int
 
     // Purchases / Stock-In
     @Query("SELECT * FROM purchases ORDER BY createdAtEpochMs DESC")
     fun observeAllPurchases(): Flow<List<PurchaseEntity>>
+
+    @Query("SELECT * FROM purchases")
+    suspend fun getAllPurchases(): List<PurchaseEntity>
+
+    @Query("DELETE FROM purchases")
+    suspend fun clearAllPurchases()
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertPurchase(purchase: PurchaseEntity): Long

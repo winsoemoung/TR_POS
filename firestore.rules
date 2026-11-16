@@ -25,87 +25,231 @@ service cloud.firestore {
       return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
     }
 
+    function isValidOptionalString(data, field, maxLen) {
+      return !(field in data) || data[field] == null || (data[field] is string && data[field].size() <= maxLen);
+    }
+
+    function isValidTimestamp(data, field) {
+      return !(field in data) || (data[field] is timestamp && data[field] <= request.time);
+    }
+
     function isValidUserProfile(data) {
-      return data.userId is string && data.userId.size() <= 128 &&
+      return data.userId is string && data.userId.size() > 0 && data.userId.size() <= 128 &&
              data.email is string && data.email.size() <= 200 &&
-             (!('displayName' in data) || (data.displayName is string && data.displayName.size() <= 100)) &&
-             (!('storeName' in data) || (data.storeName is string && data.storeName.size() <= 100)) &&
-             (!('createdAt' in data) || (data.createdAt is timestamp && data.createdAt <= request.time)) &&
-             (!('updatedAt' in data) || (data.updatedAt is timestamp && data.updatedAt <= request.time));
+             isValidOptionalString(data, 'displayName', 100) &&
+             isValidOptionalString(data, 'storeName', 100) &&
+             isValidOptionalString(data, 'promoCodesJson', 16000) &&
+             isValidTimestamp(data, 'updatedAt');
     }
 
     function isValidProduct(data) {
-      return data.id is string && data.id.size() <= 128 &&
-             data.userId is string && data.userId.size() <= 128 &&
+      return data.id is string && data.id.size() > 0 && data.id.size() <= 128 &&
+             data.userId is string && data.userId.size() > 0 &&
              data.name is string && data.name.size() > 0 && data.name.size() <= 200 &&
              data.costPriceMinor is int && data.costPriceMinor >= 0 &&
              data.sellPriceMinor is int && data.sellPriceMinor >= 0 &&
-             (!('sku' in data) || (data.sku is string && data.sku.size() <= 100)) &&
-             (!('barcode' in data) || data.barcode == null || (data.barcode is string && data.barcode.size() <= 100)) &&
-             (!('category' in data) || (data.category is string && data.category.size() <= 100)) &&
-             (!('stockQuantity' in data) || data.stockQuantity is int) &&
-             (!('lowStockThreshold' in data) || data.lowStockThreshold is int) &&
-             (!('isActive' in data) || data.isActive is bool) &&
-             (!('createdAt' in data) || (data.createdAt is timestamp && data.createdAt <= request.time)) &&
-             (!('updatedAt' in data) || (data.updatedAt is timestamp && data.updatedAt <= request.time));
+             isValidOptionalString(data, 'barcode', 100) &&
+             isValidTimestamp(data, 'updatedAt');
     }
 
     function isValidSale(data) {
-      return data.id is string && data.id.size() <= 128 &&
-             data.userId is string && data.userId.size() <= 128 &&
+      return data.id is string && data.id.size() > 0 && data.id.size() <= 128 &&
+             data.userId is string && data.userId.size() > 0 &&
              data.totalMinor is int && data.totalMinor >= 0 &&
-             data.paymentMethod is string && data.paymentMethod.size() <= 50 &&
-             (!('businessDate' in data) || (data.businessDate is string && data.businessDate.size() <= 50)) &&
-             (!('subtotalMinor' in data) || data.subtotalMinor is int) &&
-             (!('discountMinor' in data) || data.discountMinor is int) &&
-             (!('taxMinor' in data) || data.taxMinor is int) &&
-             (!('status' in data) || (data.status is string && data.status.size() <= 50)) &&
-             (!('voucherNo' in data) || (data.voucherNo is string && data.voucherNo.size() <= 100)) &&
-             (!('customerName' in data) || data.customerName == null || (data.customerName is string && data.customerName.size() <= 100)) &&
-             (!('createdAt' in data) || (data.createdAt is timestamp && data.createdAt <= request.time)) &&
-             (!('updatedAt' in data) || (data.updatedAt is timestamp && data.updatedAt <= request.time));
+             data.paymentMethod is string && data.paymentMethod.size() > 0 && data.paymentMethod.size() <= 50 &&
+             isValidTimestamp(data, 'updatedAt');
+    }
+
+    function isValidSaleItem(data) {
+      return data.id is string && data.id.size() > 0 && data.id.size() <= 128 &&
+             data.userId is string && data.userId.size() > 0 &&
+             data.saleId is string && data.saleId.size() > 0 && data.saleId.size() <= 128 &&
+             data.productId is int &&
+             data.productNameSnapshot is string && data.productNameSnapshot.size() > 0 && data.productNameSnapshot.size() <= 200 &&
+             data.unitPriceMinor is int &&
+             data.quantity is int &&
+             data.lineTotalMinor is int &&
+             isValidTimestamp(data, 'updatedAt');
+    }
+
+    function isValidPayment(data) {
+      return data.id is string && data.id.size() > 0 && data.id.size() <= 128 &&
+             data.userId is string && data.userId.size() > 0 &&
+             data.saleId is string && data.saleId.size() > 0 && data.saleId.size() <= 128 &&
+             data.method is string && data.method.size() > 0 && data.method.size() <= 50 &&
+             data.tenderedMinor is int &&
+             isValidTimestamp(data, 'updatedAt');
     }
 
     function isValidCustomer(data) {
-      return data.id is string && data.id.size() <= 128 &&
-             data.userId is string && data.userId.size() <= 128 &&
+      return data.id is string && data.id.size() > 0 && data.id.size() <= 128 &&
+             data.userId is string && data.userId.size() > 0 &&
              data.name is string && data.name.size() > 0 && data.name.size() <= 200 &&
-             (!('phone' in data) || (data.phone is string && data.phone.size() <= 50)) &&
-             (!('address' in data) || (data.address is string && data.address.size() <= 300)) &&
              (!('currentDebtMinor' in data) || data.currentDebtMinor is int) &&
-             (!('createdAt' in data) || (data.createdAt is timestamp && data.createdAt <= request.time)) &&
-             (!('updatedAt' in data) || (data.updatedAt is timestamp && data.updatedAt <= request.time));
+             isValidTimestamp(data, 'updatedAt');
     }
 
-    // User Profile
+    function isValidDebtTransaction(data) {
+      return data.id is string && data.id.size() > 0 && data.id.size() <= 128 &&
+             data.userId is string && data.userId.size() > 0 &&
+             data.customerId is int &&
+             data.type is string && data.type.size() > 0 && data.type.size() <= 50 &&
+             data.amountMinor is int &&
+             isValidTimestamp(data, 'updatedAt');
+    }
+
+    function isValidSupplier(data) {
+      return data.id is string && data.id.size() > 0 && data.id.size() <= 128 &&
+             data.userId is string && data.userId.size() > 0 &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 200 &&
+             isValidTimestamp(data, 'updatedAt');
+    }
+
+    function isValidPurchase(data) {
+      return data.id is string && data.id.size() > 0 && data.id.size() <= 128 &&
+             data.userId is string && data.userId.size() > 0 &&
+             data.productId is int &&
+             data.productName is string && data.productName.size() > 0 && data.productName.size() <= 200 &&
+             data.quantity is int &&
+             data.totalCostMinor is int &&
+             isValidTimestamp(data, 'updatedAt');
+    }
+
+    function isValidReturnTransaction(data) {
+      return data.id is string && data.id.size() > 0 && data.id.size() <= 128 &&
+             data.userId is string && data.userId.size() > 0 &&
+             data.saleId is string && data.saleId.size() > 0 && data.saleId.size() <= 128 &&
+             data.returnedAmountMinor is int &&
+             isValidTimestamp(data, 'updatedAt');
+    }
+
+    function isValidShiftReport(data) {
+      return data.id is string && data.id.size() > 0 && data.id.size() <= 128 &&
+             data.userId is string && data.userId.size() > 0 &&
+             data.cashierName is string && data.cashierName.size() > 0 && data.cashierName.size() <= 100 &&
+             data.openTimeEpochMs is int &&
+             isValidTimestamp(data, 'updatedAt');
+    }
+
+    function isValidStockMovement(data) {
+      return data.id is string && data.id.size() > 0 && data.id.size() <= 128 &&
+             data.userId is string && data.userId.size() > 0 &&
+             data.productId is int &&
+             data.movementType is string && data.movementType.size() > 0 && data.movementType.size() <= 50 &&
+             data.quantityChange is int &&
+             isValidTimestamp(data, 'updatedAt');
+    }
+
+    function isValidReceiptTemplate(data) {
+      return data.id is string && data.id.size() > 0 && data.id.size() <= 128 &&
+             data.templateId is int &&
+             data.userId is string && data.userId.size() > 0 &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
+             (!('paperWidthDots' in data) || data.paperWidthDots is int) &&
+             isValidTimestamp(data, 'updatedAt');
+    }
+
+    // User Profile & Store Config
     match /users/{userId} {
       allow get, list: if isSignedIn() && request.auth.uid == userId;
       allow create: if isSignedIn() && request.auth.uid == userId && incoming().userId == request.auth.uid && isValidUserProfile(incoming());
-      allow update: if isSignedIn() && request.auth.uid == userId && incoming().userId == existing().userId && isValidUserProfile(incoming());
+      allow update: if isSignedIn() && request.auth.uid == userId && isValidUserProfile(incoming()) && incoming().userId == existing().userId;
       allow delete: if isSignedIn() && request.auth.uid == userId;
 
-      // Products subcollection
       match /products/{productId} {
-        allow get, list: if isSignedIn() && request.auth.uid == userId;
+        allow get: if isSignedIn() && request.auth.uid == userId && isValidId(productId);
+        allow list: if isSignedIn() && request.auth.uid == userId;
         allow create: if isSignedIn() && request.auth.uid == userId && isValidId(productId) && incoming().userId == request.auth.uid && isValidProduct(incoming());
-        allow update: if isSignedIn() && request.auth.uid == userId && isValidId(productId) && incoming().userId == existing().userId && isValidProduct(incoming());
+        allow update: if isSignedIn() && request.auth.uid == userId && isValidId(productId) && isValidProduct(incoming()) && incoming().userId == existing().userId;
         allow delete: if isSignedIn() && request.auth.uid == userId && isValidId(productId);
       }
 
-      // Sales subcollection
       match /sales/{saleId} {
-        allow get, list: if isSignedIn() && request.auth.uid == userId;
+        allow get: if isSignedIn() && request.auth.uid == userId && isValidId(saleId);
+        allow list: if isSignedIn() && request.auth.uid == userId;
         allow create: if isSignedIn() && request.auth.uid == userId && isValidId(saleId) && incoming().userId == request.auth.uid && isValidSale(incoming());
-        allow update: if isSignedIn() && request.auth.uid == userId && isValidId(saleId) && incoming().userId == existing().userId && isValidSale(incoming());
+        allow update: if isSignedIn() && request.auth.uid == userId && isValidId(saleId) && isValidSale(incoming()) && incoming().userId == existing().userId;
         allow delete: if isSignedIn() && request.auth.uid == userId && isValidId(saleId);
       }
 
-      // Customers subcollection
+      match /sale_items/{itemId} {
+        allow get: if isSignedIn() && request.auth.uid == userId && isValidId(itemId);
+        allow list: if isSignedIn() && request.auth.uid == userId;
+        allow create: if isSignedIn() && request.auth.uid == userId && isValidId(itemId) && incoming().userId == request.auth.uid && isValidSaleItem(incoming());
+        allow update: if isSignedIn() && request.auth.uid == userId && isValidId(itemId) && isValidSaleItem(incoming()) && incoming().userId == existing().userId;
+        allow delete: if isSignedIn() && request.auth.uid == userId && isValidId(itemId);
+      }
+
+      match /payments/{paymentId} {
+        allow get: if isSignedIn() && request.auth.uid == userId && isValidId(paymentId);
+        allow list: if isSignedIn() && request.auth.uid == userId;
+        allow create: if isSignedIn() && request.auth.uid == userId && isValidId(paymentId) && incoming().userId == request.auth.uid && isValidPayment(incoming());
+        allow update: if isSignedIn() && request.auth.uid == userId && isValidId(paymentId) && isValidPayment(incoming()) && incoming().userId == existing().userId;
+        allow delete: if isSignedIn() && request.auth.uid == userId && isValidId(paymentId);
+      }
+
       match /customers/{customerId} {
-        allow get, list: if isSignedIn() && request.auth.uid == userId;
+        allow get: if isSignedIn() && request.auth.uid == userId && isValidId(customerId);
+        allow list: if isSignedIn() && request.auth.uid == userId;
         allow create: if isSignedIn() && request.auth.uid == userId && isValidId(customerId) && incoming().userId == request.auth.uid && isValidCustomer(incoming());
-        allow update: if isSignedIn() && request.auth.uid == userId && isValidId(customerId) && incoming().userId == existing().userId && isValidCustomer(incoming());
+        allow update: if isSignedIn() && request.auth.uid == userId && isValidId(customerId) && isValidCustomer(incoming()) && incoming().userId == existing().userId;
         allow delete: if isSignedIn() && request.auth.uid == userId && isValidId(customerId);
+      }
+
+      match /debt_transactions/{txId} {
+        allow get: if isSignedIn() && request.auth.uid == userId && isValidId(txId);
+        allow list: if isSignedIn() && request.auth.uid == userId;
+        allow create: if isSignedIn() && request.auth.uid == userId && isValidId(txId) && incoming().userId == request.auth.uid && isValidDebtTransaction(incoming());
+        allow update: if isSignedIn() && request.auth.uid == userId && isValidId(txId) && isValidDebtTransaction(incoming()) && incoming().userId == existing().userId;
+        allow delete: if isSignedIn() && request.auth.uid == userId && isValidId(txId);
+      }
+
+      match /suppliers/{supplierId} {
+        allow get: if isSignedIn() && request.auth.uid == userId && isValidId(supplierId);
+        allow list: if isSignedIn() && request.auth.uid == userId;
+        allow create: if isSignedIn() && request.auth.uid == userId && isValidId(supplierId) && incoming().userId == request.auth.uid && isValidSupplier(incoming());
+        allow update: if isSignedIn() && request.auth.uid == userId && isValidId(supplierId) && isValidSupplier(incoming()) && incoming().userId == existing().userId;
+        allow delete: if isSignedIn() && request.auth.uid == userId && isValidId(supplierId);
+      }
+
+      match /purchases/{purchaseId} {
+        allow get: if isSignedIn() && request.auth.uid == userId && isValidId(purchaseId);
+        allow list: if isSignedIn() && request.auth.uid == userId;
+        allow create: if isSignedIn() && request.auth.uid == userId && isValidId(purchaseId) && incoming().userId == request.auth.uid && isValidPurchase(incoming());
+        allow update: if isSignedIn() && request.auth.uid == userId && isValidId(purchaseId) && isValidPurchase(incoming()) && incoming().userId == existing().userId;
+        allow delete: if isSignedIn() && request.auth.uid == userId && isValidId(purchaseId);
+      }
+
+      match /return_transactions/{returnId} {
+        allow get: if isSignedIn() && request.auth.uid == userId && isValidId(returnId);
+        allow list: if isSignedIn() && request.auth.uid == userId;
+        allow create: if isSignedIn() && request.auth.uid == userId && isValidId(returnId) && incoming().userId == request.auth.uid && isValidReturnTransaction(incoming());
+        allow update: if isSignedIn() && request.auth.uid == userId && isValidId(returnId) && isValidReturnTransaction(incoming()) && incoming().userId == existing().userId;
+        allow delete: if isSignedIn() && request.auth.uid == userId && isValidId(returnId);
+      }
+
+      match /shifts/{shiftId} {
+        allow get: if isSignedIn() && request.auth.uid == userId && isValidId(shiftId);
+        allow list: if isSignedIn() && request.auth.uid == userId;
+        allow create: if isSignedIn() && request.auth.uid == userId && isValidId(shiftId) && incoming().userId == request.auth.uid && isValidShiftReport(incoming());
+        allow update: if isSignedIn() && request.auth.uid == userId && isValidId(shiftId) && isValidShiftReport(incoming()) && incoming().userId == existing().userId;
+        allow delete: if isSignedIn() && request.auth.uid == userId && isValidId(shiftId);
+      }
+
+      match /stock_movements/{movementId} {
+        allow get: if isSignedIn() && request.auth.uid == userId && isValidId(movementId);
+        allow list: if isSignedIn() && request.auth.uid == userId;
+        allow create: if isSignedIn() && request.auth.uid == userId && isValidId(movementId) && incoming().userId == request.auth.uid && isValidStockMovement(incoming());
+        allow update: if isSignedIn() && request.auth.uid == userId && isValidId(movementId) && isValidStockMovement(incoming()) && incoming().userId == existing().userId;
+        allow delete: if isSignedIn() && request.auth.uid == userId && isValidId(movementId);
+      }
+
+      match /receipt_templates/{templateId} {
+        allow get: if isSignedIn() && request.auth.uid == userId && isValidId(templateId);
+        allow list: if isSignedIn() && request.auth.uid == userId;
+        allow create: if isSignedIn() && request.auth.uid == userId && isValidId(templateId) && incoming().userId == request.auth.uid && isValidReceiptTemplate(incoming());
+        allow update: if isSignedIn() && request.auth.uid == userId && isValidId(templateId) && isValidReceiptTemplate(incoming()) && incoming().userId == existing().userId;
+        allow delete: if isSignedIn() && request.auth.uid == userId && isValidId(templateId);
       }
     }
   }

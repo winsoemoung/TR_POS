@@ -2,13 +2,21 @@
   "entities": {
     "UserProfile": {
       "title": "UserProfile",
-      "description": "User account profile for authenticated store owner / cashier",
+      "description": "User account profile and store preferences for authenticated store owner",
       "type": "object",
       "properties": {
         "userId": { "type": "string", "description": "Firebase Auth UID" },
         "email": { "type": "string", "description": "Google account email" },
         "displayName": { "type": "string", "description": "User display name" },
         "storeName": { "type": "string", "description": "Store or shop name" },
+        "storeAddress": { "type": "string", "description": "Store address" },
+        "storePhone": { "type": "string", "description": "Store phone numbers" },
+        "headerNote": { "type": "string", "description": "Receipt header note" },
+        "footerMessage": { "type": "string", "description": "Receipt footer message" },
+        "taxRatePercent": { "type": "number", "description": "Tax rate percentage" },
+        "currencySymbol": { "type": "string", "description": "Currency symbol e.g. Ks" },
+        "promoCodesJson": { "type": "string", "description": "Serialized promo codes configuration" },
+        "lastBackupAtEpochMs": { "type": "integer", "description": "Epoch ms of latest full backup" },
         "createdAt": { "type": "string", "format": "date-time", "description": "Creation timestamp via serverTimestamp" },
         "updatedAt": { "type": "string", "format": "date-time", "description": "Last update timestamp via serverTimestamp" }
       },
@@ -16,10 +24,11 @@
     },
     "Product": {
       "title": "Product",
-      "description": "POS inventory item",
+      "description": "POS inventory item with decimal stock and wholesale support",
       "type": "object",
       "properties": {
-        "id": { "type": "string", "description": "Product UUID" },
+        "id": { "type": "string", "description": "Product ID string" },
+        "productId": { "type": "integer", "description": "Room productId" },
         "userId": { "type": "string", "description": "Store owner UID" },
         "name": { "type": "string", "description": "Product display name" },
         "barcode": { "type": "string", "description": "Barcode number" },
@@ -27,9 +36,18 @@
         "category": { "type": "string", "description": "Category name" },
         "costPriceMinor": { "type": "integer", "description": "Cost price in Ks" },
         "sellPriceMinor": { "type": "integer", "description": "Retail sell price in Ks" },
-        "stockQuantity": { "type": "integer", "description": "Available stock quantity" },
+        "stockQuantity": { "type": "integer", "description": "Available integer stock quantity" },
+        "stockQuantityDecimal": { "type": "number", "description": "Exact decimal stock quantity" },
         "lowStockThreshold": { "type": "integer", "description": "Warning threshold" },
         "isActive": { "type": "boolean", "description": "Active status" },
+        "isRoofingSheet": { "type": "boolean", "description": "Roofing sheet calculation flag" },
+        "wholesalePriceMinor": { "type": "integer", "description": "Wholesale unit price" },
+        "wholesaleMinQty": { "type": "integer", "description": "Minimum qty for wholesale" },
+        "unitName": { "type": "string", "description": "Retail unit name" },
+        "wholesaleUnitName": { "type": "string", "description": "Wholesale unit name" },
+        "wholesaleUnitMultiplier": { "type": "integer", "description": "Units per wholesale pack" },
+        "imageUri": { "type": "string", "description": "Optional image URI" },
+        "updatedAtEpochMs": { "type": "integer", "description": "Room updatedAt epoch ms" },
         "createdAt": { "type": "string", "format": "date-time", "description": "Creation timestamp" },
         "updatedAt": { "type": "string", "format": "date-time", "description": "Update timestamp" }
       },
@@ -43,40 +61,283 @@
         "id": { "type": "string", "description": "Sale UUID" },
         "userId": { "type": "string", "description": "Store owner UID" },
         "businessDate": { "type": "string", "description": "Date YYYY-MM-DD" },
-        "paymentMethod": { "type": "string", "description": "CASH, KPAY, WAVEPAY, CREDIT" },
+        "paymentMethod": { "type": "string", "description": "CASH, DIGITAL, SPLIT, CREDIT" },
         "totalMinor": { "type": "integer", "description": "Final total in Ks" },
         "subtotalMinor": { "type": "integer", "description": "Subtotal in Ks" },
         "discountMinor": { "type": "integer", "description": "Discount in Ks" },
         "taxMinor": { "type": "integer", "description": "Tax in Ks" },
-        "status": { "type": "string", "description": "COMPLETED, REFUNDED" },
-        "voucherNo": { "type": "string", "description": "Auto voucher number" },
+        "status": { "type": "string", "description": "COMPLETED, VOIDED, REFUNDED, PARTIALLY_REFUNDED" },
+        "cashierId": { "type": "string", "description": "Cashier identifier" },
+        "deviceId": { "type": "string", "description": "POS device identifier" },
+        "createdAtEpochMs": { "type": "integer", "description": "Room creation epoch ms" },
+        "customerId": { "type": "integer", "description": "Optional customerId" },
         "customerName": { "type": "string", "description": "Customer name" },
+        "splitCashMinor": { "type": "integer", "description": "Split cash portion" },
+        "splitDigitalMinor": { "type": "integer", "description": "Split digital portion" },
+        "deliveryFeeMinor": { "type": "integer", "description": "Delivery fee" },
+        "pickupStatus": { "type": "string", "description": "PICKED_UP or PENDING_PICKUP" },
+        "expectedPickupDate": { "type": "string", "description": "Expected pickup date" },
+        "pickupNote": { "type": "string", "description": "Pickup notes" },
+        "voucherNo": { "type": "string", "description": "Auto voucher number" },
         "createdAt": { "type": "string", "format": "date-time", "description": "Creation timestamp" },
         "updatedAt": { "type": "string", "format": "date-time", "description": "Update timestamp" }
       },
       "required": ["id", "userId", "totalMinor", "paymentMethod"]
+    },
+    "SaleItem": {
+      "title": "SaleItem",
+      "description": "Line item belonging to a POS sale transaction",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Composite doc ID saleId_lineId" },
+        "userId": { "type": "string", "description": "Store owner UID" },
+        "lineId": { "type": "integer", "description": "Room lineId" },
+        "saleId": { "type": "string", "description": "Parent saleId" },
+        "productId": { "type": "integer", "description": "Product ID" },
+        "productNameSnapshot": { "type": "string", "description": "Product name snapshot" },
+        "unitPriceMinor": { "type": "integer", "description": "Unit price" },
+        "quantity": { "type": "integer", "description": "Integer quantity" },
+        "lineDiscountMinor": { "type": "integer", "description": "Line discount" },
+        "lineTaxMinor": { "type": "integer", "description": "Line tax" },
+        "lineTotalMinor": { "type": "integer", "description": "Line total" },
+        "unitName": { "type": "string", "description": "Unit name" },
+        "returnedQuantity": { "type": "integer", "description": "Returned integer qty" },
+        "quantityDecimal": { "type": "number", "description": "Exact decimal quantity" },
+        "returnedQuantityDecimal": { "type": "number", "description": "Exact decimal returned qty" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Update timestamp" }
+      },
+      "required": ["id", "userId", "saleId", "productId", "productNameSnapshot", "unitPriceMinor", "quantity", "lineTotalMinor"]
+    },
+    "Payment": {
+      "title": "Payment",
+      "description": "Payment record for a sale",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Payment UUID" },
+        "userId": { "type": "string", "description": "Store owner UID" },
+        "saleId": { "type": "string", "description": "Parent saleId" },
+        "method": { "type": "string", "description": "Payment method" },
+        "tenderedMinor": { "type": "integer", "description": "Tendered amount" },
+        "changeMinor": { "type": "integer", "description": "Change given" },
+        "authorizedMinor": { "type": "integer", "description": "Authorized amount" },
+        "authorizationState": { "type": "string", "description": "Authorization state" },
+        "providerReference": { "type": "string", "description": "Provider txn reference" },
+        "settlementState": { "type": "string", "description": "Settlement state" },
+        "manualRecorded": { "type": "boolean", "description": "Manual recorded flag" },
+        "recordedByUserId": { "type": "string", "description": "Recorded by cashier" },
+        "createdAtEpochMs": { "type": "integer", "description": "Creation epoch ms" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Update timestamp" }
+      },
+      "required": ["id", "userId", "saleId", "method", "tenderedMinor"]
     },
     "Customer": {
       "title": "Customer",
       "description": "Store customer record for debt and purchase history",
       "type": "object",
       "properties": {
-        "id": { "type": "string", "description": "Customer UUID" },
+        "id": { "type": "string", "description": "Customer ID string" },
+        "customerId": { "type": "integer", "description": "Room customerId" },
         "userId": { "type": "string", "description": "Store owner UID" },
         "name": { "type": "string", "description": "Customer full name" },
         "phone": { "type": "string", "description": "Phone number" },
         "address": { "type": "string", "description": "Address or location" },
+        "creditLimitMinor": { "type": "integer", "description": "Credit limit" },
         "currentDebtMinor": { "type": "integer", "description": "Current unpaid credit debt in Ks" },
+        "creditDueDateEpochMs": { "type": "integer", "description": "Optional credit due date" },
+        "createdAtEpochMs": { "type": "integer", "description": "Creation epoch ms" },
+        "notes": { "type": "string", "description": "Customer notes" },
         "createdAt": { "type": "string", "format": "date-time", "description": "Creation timestamp" },
         "updatedAt": { "type": "string", "format": "date-time", "description": "Update timestamp" }
       },
       "required": ["id", "userId", "name"]
+    },
+    "DebtTransaction": {
+      "title": "DebtTransaction",
+      "description": "Customer credit sale or repayment ledger entry",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Transaction ID string" },
+        "txId": { "type": "integer", "description": "Room txId" },
+        "userId": { "type": "string", "description": "Store owner UID" },
+        "customerId": { "type": "integer", "description": "Customer ID" },
+        "saleId": { "type": "string", "description": "Optional linked saleId" },
+        "type": { "type": "string", "description": "CREDIT_SALE or REPAYMENT" },
+        "amountMinor": { "type": "integer", "description": "Transaction amount" },
+        "remainingBalanceMinor": { "type": "integer", "description": "Balance after tx" },
+        "note": { "type": "string", "description": "Transaction note" },
+        "cashierId": { "type": "string", "description": "Cashier identifier" },
+        "createdAtEpochMs": { "type": "integer", "description": "Creation epoch ms" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Update timestamp" }
+      },
+      "required": ["id", "userId", "customerId", "type", "amountMinor"]
+    },
+    "Supplier": {
+      "title": "Supplier",
+      "description": "Wholesale supplier record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Supplier ID string" },
+        "supplierId": { "type": "integer", "description": "Room supplierId" },
+        "userId": { "type": "string", "description": "Store owner UID" },
+        "name": { "type": "string", "description": "Contact name" },
+        "shopName": { "type": "string", "description": "Shop or company name" },
+        "phone": { "type": "string", "description": "Phone number" },
+        "email": { "type": "string", "description": "Email address" },
+        "address": { "type": "string", "description": "Physical address" },
+        "taxNumber": { "type": "string", "description": "Tax number" },
+        "note": { "type": "string", "description": "Notes" },
+        "createdAtEpochMs": { "type": "integer", "description": "Creation epoch ms" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Update timestamp" }
+      },
+      "required": ["id", "userId", "name"]
+    },
+    "Purchase": {
+      "title": "Purchase",
+      "description": "Stock-in purchase record from supplier",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Purchase ID string" },
+        "purchaseId": { "type": "integer", "description": "Room purchaseId" },
+        "userId": { "type": "string", "description": "Store owner UID" },
+        "productId": { "type": "integer", "description": "Product ID" },
+        "productName": { "type": "string", "description": "Product name" },
+        "supplierName": { "type": "string", "description": "Supplier name" },
+        "quantity": { "type": "integer", "description": "Purchased quantity" },
+        "unitCostMinor": { "type": "integer", "description": "Unit cost" },
+        "totalCostMinor": { "type": "integer", "description": "Total cost" },
+        "invoiceRef": { "type": "string", "description": "Invoice reference" },
+        "note": { "type": "string", "description": "Purchase note" },
+        "createdAtEpochMs": { "type": "integer", "description": "Creation epoch ms" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Update timestamp" }
+      },
+      "required": ["id", "userId", "productId", "productName", "quantity", "unitCostMinor", "totalCostMinor"]
+    },
+    "ReturnTransaction": {
+      "title": "ReturnTransaction",
+      "description": "Sale return / refund transaction",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Return UUID" },
+        "userId": { "type": "string", "description": "Store owner UID" },
+        "saleId": { "type": "string", "description": "Parent saleId" },
+        "returnedAmountMinor": { "type": "integer", "description": "Returned amount" },
+        "refundMethod": { "type": "string", "description": "Refund method" },
+        "refundReference": { "type": "string", "description": "Refund reference" },
+        "reason": { "type": "string", "description": "Return reason" },
+        "actorId": { "type": "string", "description": "Actor identifier" },
+        "createdAtEpochMs": { "type": "integer", "description": "Creation epoch ms" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Update timestamp" }
+      },
+      "required": ["id", "userId", "saleId", "returnedAmountMinor"]
+    },
+    "ShiftReport": {
+      "title": "ShiftReport",
+      "description": "Cashier shift / Z-report record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Shift ID string" },
+        "shiftId": { "type": "integer", "description": "Room shiftId" },
+        "userId": { "type": "string", "description": "Store owner UID" },
+        "cashierName": { "type": "string", "description": "Cashier name" },
+        "openTimeEpochMs": { "type": "integer", "description": "Shift open epoch ms" },
+        "closeTimeEpochMs": { "type": "integer", "description": "Shift close epoch ms" },
+        "openingCashMinor": { "type": "integer", "description": "Opening cash" },
+        "cashSalesMinor": { "type": "integer", "description": "Cash sales total" },
+        "digitalSalesMinor": { "type": "integer", "description": "Digital sales total" },
+        "creditSalesMinor": { "type": "integer", "description": "Credit sales total" },
+        "expenseMinor": { "type": "integer", "description": "Expense total" },
+        "expectedCashMinor": { "type": "integer", "description": "Expected cash" },
+        "actualCashCountedMinor": { "type": "integer", "description": "Actual counted cash" },
+        "differenceMinor": { "type": "integer", "description": "Cash difference" },
+        "status": { "type": "string", "description": "OPEN or CLOSED" },
+        "note": { "type": "string", "description": "Shift notes" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Update timestamp" }
+      },
+      "required": ["id", "userId", "cashierName", "openTimeEpochMs"]
+    },
+    "StockMovement": {
+      "title": "StockMovement",
+      "description": "Inventory stock adjustment or movement history",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Movement UUID" },
+        "userId": { "type": "string", "description": "Store owner UID" },
+        "productId": { "type": "integer", "description": "Product ID" },
+        "movementType": { "type": "string", "description": "Movement type" },
+        "quantityChange": { "type": "integer", "description": "Quantity delta" },
+        "quantityBefore": { "type": "integer", "description": "Stock before" },
+        "quantityAfter": { "type": "integer", "description": "Stock after" },
+        "referenceId": { "type": "string", "description": "Reference ID" },
+        "reason": { "type": "string", "description": "Reason" },
+        "actorId": { "type": "string", "description": "Actor ID" },
+        "createdAtEpochMs": { "type": "integer", "description": "Creation epoch ms" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Update timestamp" }
+      },
+      "required": ["id", "userId", "productId", "movementType", "quantityChange"]
+    },
+    "ReceiptTemplate": {
+      "title": "ReceiptTemplate",
+      "description": "Customizable thermal print receipt template (1 to 5)",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Template ID string" },
+        "templateId": { "type": "integer", "description": "Template number 1..5" },
+        "userId": { "type": "string", "description": "Store owner UID" },
+        "name": { "type": "string", "description": "Template name" },
+        "isDefault": { "type": "boolean", "description": "Default flag" },
+        "paperWidthDots": { "type": "integer", "description": "Paper width in dots" },
+        "itemLayoutStyle": { "type": "string", "description": "STANDARD_2LINE or COLUMNS_4" },
+        "fontScalePercent": { "type": "integer", "description": "Font scale percent" },
+        "lineSpacingDp": { "type": "integer", "description": "Line spacing in dp" },
+        "showLogo": { "type": "boolean" },
+        "customStoreName": { "type": "string" },
+        "customSubtitle": { "type": "string" },
+        "customOwnerOrContact": { "type": "string" },
+        "customPhone": { "type": "string" },
+        "customAddress": { "type": "string" },
+        "storeNameFontSize": { "type": "string" },
+        "storeNameAlign": { "type": "string" },
+        "headerDetailsFontSize": { "type": "string" },
+        "showAddress": { "type": "boolean" },
+        "showPhone": { "type": "boolean" },
+        "showHeaderNote": { "type": "boolean" },
+        "customHeaderNote": { "type": "string" },
+        "showCashierInfo": { "type": "boolean" },
+        "showVoucherNumber": { "type": "boolean" },
+        "showCustomerInfo": { "type": "boolean" },
+        "customerLabel": { "type": "string" },
+        "metaFontSize": { "type": "string" },
+        "itemNameWidthWeight": { "type": "number" },
+        "qtyWidthWeight": { "type": "number" },
+        "priceWidthWeight": { "type": "number" },
+        "amountWidthWeight": { "type": "number" },
+        "rowPaddingDp": { "type": "integer" },
+        "gridLineStyle": { "type": "string" },
+        "bodyFontSize": { "type": "string" },
+        "itemNameAlign": { "type": "string" },
+        "qtyAlign": { "type": "string" },
+        "priceAlign": { "type": "string" },
+        "amountAlign": { "type": "string" },
+        "totalsFontSize": { "type": "string" },
+        "showTotalsBreakdown": { "type": "boolean" },
+        "showPaymentMethod": { "type": "boolean" },
+        "showBarcodeOrQr": { "type": "boolean" },
+        "footerMessage": { "type": "string" },
+        "returnPolicyText": { "type": "string" },
+        "extraNoticeText": { "type": "string" },
+        "showPrintTime": { "type": "boolean" },
+        "footerAlign": { "type": "string" },
+        "footerFontSize": { "type": "string" },
+        "updatedAtEpochMs": { "type": "integer" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Update timestamp" }
+      },
+      "required": ["id", "templateId", "userId", "name"]
     }
   },
   "firestore": {
     "/users/{userId}": {
       "schema": "UserProfile",
-      "description": "Store user account and preferences"
+      "description": "Store user account and store configuration"
     },
     "/users/{userId}/products/{productId}": {
       "schema": "Product",
@@ -86,9 +347,45 @@
       "schema": "Sale",
       "description": "Sales history records for the user's store"
     },
+    "/users/{userId}/sale_items/{itemId}": {
+      "schema": "SaleItem",
+      "description": "Line items for each sale in the user's store"
+    },
+    "/users/{userId}/payments/{paymentId}": {
+      "schema": "Payment",
+      "description": "Payment records for sales"
+    },
     "/users/{userId}/customers/{customerId}": {
       "schema": "Customer",
       "description": "Customer and debt records for the user's store"
+    },
+    "/users/{userId}/debt_transactions/{txId}": {
+      "schema": "DebtTransaction",
+      "description": "Customer credit and repayment ledger entries"
+    },
+    "/users/{userId}/suppliers/{supplierId}": {
+      "schema": "Supplier",
+      "description": "Supplier records for the user's store"
+    },
+    "/users/{userId}/purchases/{purchaseId}": {
+      "schema": "Purchase",
+      "description": "Purchase / stock-in records"
+    },
+    "/users/{userId}/return_transactions/{returnId}": {
+      "schema": "ReturnTransaction",
+      "description": "Return and refund records"
+    },
+    "/users/{userId}/shifts/{shiftId}": {
+      "schema": "ShiftReport",
+      "description": "Cashier shift and Z-report records"
+    },
+    "/users/{userId}/stock_movements/{movementId}": {
+      "schema": "StockMovement",
+      "description": "Stock movement audit records"
+    },
+    "/users/{userId}/receipt_templates/{templateId}": {
+      "schema": "ReceiptTemplate",
+      "description": "Custom print templates 1 to 5"
     }
   }
 }

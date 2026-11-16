@@ -1,4 +1,5 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import java.time.Duration
 
 plugins {
     alias(libs.plugins.android.application)
@@ -131,6 +132,8 @@ dependencies {
 
     testImplementation(libs.junit)
     testImplementation(libs.coro.test)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.test.core)
 
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.androidx.test.core)
@@ -139,4 +142,12 @@ dependencies {
     androidTestImplementation(libs.kotlinx.serialization.json)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
+}
+
+tasks.withType<Test> {
+    failFast = true
+    timeout.set(Duration.ofMinutes(2))
+    testLogging {
+        events("passed", "failed", "skipped")
+    }
 }

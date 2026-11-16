@@ -98,6 +98,7 @@ fun SettingsBackupSubpage(
     var backupStatusMessage by remember { mutableStateOf<String?>(null) }
     var pendingRestoreUri by remember { mutableStateOf<Uri?>(null) }
     var showRestoreChoice by remember { mutableStateOf(false) }
+    var showFirebaseRestoreDialog by remember { mutableStateOf(false) }
 
     val storeProfile by viewModel.storeProfile.collectAsState()
     var backupSchedule by remember(storeProfile) { mutableStateOf(storeProfile.autoBackupSchedule) }
@@ -315,6 +316,14 @@ fun SettingsBackupSubpage(
                         }
                     }
 
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "ပါဝင်သည့် Cloud Backup/Restore စာရင်း: ကုန်ပစ္စည်း၊ အရောင်းဘောင်ချာနှင့် ပစ္စည်းစာရင်းများ၊ ငွေချေမှု၊ ဝယ်သူနှင့် အကြွေးစာရင်း၊ Supplier၊ အဝယ်၊ Return၊ Shift၊ Stock Movement၊ Receipt Template နှင့် ဆိုင်အချက်အလက်များ။",
+                        fontSize = 10.sp,
+                        color = Color(0xFF475569),
+                        lineHeight = 14.sp,
+                    )
+
                     Spacer(modifier = Modifier.height(12.dp))
 
                     Row(
@@ -334,16 +343,34 @@ fun SettingsBackupSubpage(
                             } else {
                                 Icon(Icons.Default.CloudSync, contentDescription = null, modifier = Modifier.size(18.dp))
                                 Spacer(modifier = Modifier.width(6.dp))
-                                Text("⚡ အခုပဲ Sync မည်", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                Text("⚡ Cloud Backup (Sync All)", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                             }
                         }
 
                         OutlinedButton(
                             onClick = { viewModel.signOutGoogle(context as? Activity) },
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFDC2626))
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFDC2626)),
+                            enabled = !isFirestoreSyncing
                         ) {
                             Text("အကောင့်ထွက်မည်", fontSize = 11.sp)
                         }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    OutlinedButton(
+                        onClick = { showFirebaseRestoreDialog = true },
+                        modifier = Modifier.fillMaxWidth().testTag("firebase_full_restore_button"),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF991B1B)),
+                        border = BorderStroke(1.dp, Color(0xFFDC2626)),
+                        enabled = !isFirestoreSyncing,
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Text(
+                            text = if (isFirestoreSyncing) "⏳ Firebase Sync/Restore လုပ်နေသည်..." else "📥 Firebase မှ Full Restore ပြန်ယူမည်",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                 } else {
                     // Not logged in: Show Google Sign-In prompt
@@ -1136,6 +1163,63 @@ fun SettingsBackupSubpage(
                         },
                         modifier = Modifier.fillMaxWidth(),
                     ) { Text("Cancel") }
+                }
+            }
+        }
+    }
+
+    if (showFirebaseRestoreDialog) {
+        Dialog(onDismissRequest = { showFirebaseRestoreDialog = false }) {
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surface,
+                modifier = Modifier.padding(16.dp),
+            ) {
+                Column(modifier = Modifier.padding(20.dp)) {
+                    Text(
+                        "Firebase Cloud Restore ရွေးချယ်မှု",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        "• 'Full Restore (အားလုံးအစားထိုးမည်)' သည် လက်ရှိစက်ထဲရှိ POS Data များကို Firebase Cloud Backup ဖြင့် အပြည့်အစုံ အစားထိုးပြန်တင်ပေးပါမည်။\n• 'Merge Restore (ပေါင်းစပ်မည်)' သည် လက်ရှိ Data မပျက်ဘဲ Cloud ထဲရှိ မရှိသေးသော ဘောင်ချာနှင့် စာရင်းများကို ပေါင်းစပ်ထည့်သွင်းပေးပါမည်။",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        lineHeight = 17.sp
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Button(
+                        onClick = {
+                            showFirebaseRestoreDialog = false
+                            viewModel.restoreFromFirebase(replaceLocal = true) { _, msg ->
+                                backupStatusMessage = msg
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth().testTag("firebase_restore_overwrite_button"),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFDC2626)),
+                    ) {
+                        Text("🔄 Full Restore (Cloud မှ အားလုံးအစားထိုးမည်)")
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedButton(
+                        onClick = {
+                            showFirebaseRestoreDialog = false
+                            viewModel.restoreFromFirebase(replaceLocal = false) { _, msg ->
+                                backupStatusMessage = msg
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth().testTag("firebase_restore_merge_button"),
+                    ) {
+                        Text("✨ Merge Restore (Data မပျက်ဘဲ ပေါင်းစပ်မည်)")
+                    }
+                    Spacer(modifier = Modifier.height(4.dp))
+                    TextButton(
+                        onClick = { showFirebaseRestoreDialog = false },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text("Cancel")
+                    }
                 }
             }
         }

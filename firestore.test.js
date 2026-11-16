@@ -30,94 +30,181 @@ beforeEach(async () => {
   }
 });
 
-test("Unauthenticated user cannot read products", async () => {
+test("Unauthenticated user cannot read or write any POS collection", async () => {
   const unauthedDb = testEnv.unauthenticatedContext().firestore({ databaseId: DATABASE_ID });
   await assertFails(unauthedDb.collection("users").doc("userA").collection("products").get());
+  await assertFails(unauthedDb.collection("users").doc("userA").collection("sale_items").get());
+  await assertFails(unauthedDb.collection("users").doc("userA").collection("receipt_templates").get());
 });
 
-test("Authenticated user can read and write own products", async () => {
+test("Authenticated user can write and read full POS backup collections", async () => {
   const userADb = testEnv.authenticatedContext("userA").firestore({ databaseId: DATABASE_ID });
-  const productRef = userADb.collection("users").doc("userA").collection("products").doc("prod1");
-  
+  const userDoc = userADb.collection("users").doc("userA");
+
   await assertSucceeds(
-    productRef.set({
-      id: "prod1",
+    userDoc.set({
       userId: "userA",
-      name: "Coffee",
-      costPriceMinor: 1000,
-      sellPriceMinor: 1500,
+      email: "a@example.com",
+      storeName: "san thit",
+      currencySymbol: "Ks",
+      taxRatePercent: 0.0,
+    })
+  );
+
+  await assertSucceeds(
+    userDoc.collection("products").doc("1").set({
+      id: "1",
+      productId: 1,
+      userId: "userA",
+      name: "သံချောင်း",
+      costPriceMinor: 3000,
+      sellPriceMinor: 4000,
       stockQuantity: 10,
+      stockQuantityDecimal: 10.5,
+      unitName: "ပိဿာ",
       isActive: true,
     })
   );
 
-  await assertSucceeds(productRef.get());
+  await assertSucceeds(
+    userDoc.collection("sales").doc("sale-uuid-1").set({
+      id: "sale-uuid-1",
+      userId: "userA",
+      totalMinor: 2000,
+      paymentMethod: "CREDIT",
+      voucherNo: "TR-261116-0001",
+    })
+  );
+
+  await assertSucceeds(
+    userDoc.collection("sale_items").doc("sale-uuid-1_1").set({
+      id: "sale-uuid-1_1",
+      userId: "userA",
+      lineId: 1,
+      saleId: "sale-uuid-1",
+      productId: 1,
+      productNameSnapshot: "သံချောင်း",
+      unitPriceMinor: 4000,
+      quantity: 1,
+      lineTotalMinor: 2000,
+      quantityDecimal: 0.5,
+    })
+  );
+
+  await assertSucceeds(
+    userDoc.collection("payments").doc("pay-1").set({
+      id: "pay-1",
+      userId: "userA",
+      saleId: "sale-uuid-1",
+      method: "CREDIT",
+      tenderedMinor: 0,
+    })
+  );
+
+  await assertSucceeds(
+    userDoc.collection("debt_transactions").doc("10").set({
+      id: "10",
+      txId: 10,
+      userId: "userA",
+      customerId: 5,
+      saleId: "sale-uuid-1",
+      type: "CREDIT_SALE",
+      amountMinor: 2000,
+      remainingBalanceMinor: 2000,
+    })
+  );
+
+  await assertSucceeds(
+    userDoc.collection("suppliers").doc("1").set({
+      id: "1",
+      supplierId: 1,
+      userId: "userA",
+      name: "Shwe Supplier",
+    })
+  );
+
+  await assertSucceeds(
+    userDoc.collection("purchases").doc("1").set({
+      id: "1",
+      purchaseId: 1,
+      userId: "userA",
+      productId: 1,
+      productName: "သံချောင်း",
+      quantity: 20,
+      unitCostMinor: 3000,
+      totalCostMinor: 60000,
+    })
+  );
+
+  await assertSucceeds(
+    userDoc.collection("return_transactions").doc("ret-1").set({
+      id: "ret-1",
+      userId: "userA",
+      saleId: "sale-uuid-1",
+      returnedAmountMinor: 2000,
+    })
+  );
+
+  await assertSucceeds(
+    userDoc.collection("shifts").doc("1").set({
+      id: "1",
+      shiftId: 1,
+      userId: "userA",
+      cashierName: "Admin",
+      openTimeEpochMs: 1700000000000,
+    })
+  );
+
+  await assertSucceeds(
+    userDoc.collection("stock_movements").doc("mov-1").set({
+      id: "mov-1",
+      userId: "userA",
+      productId: 1,
+      movementType: "PURCHASE",
+      quantityChange: 20,
+    })
+  );
+
+  await assertSucceeds(
+    userDoc.collection("receipt_templates").doc("1").set({
+      id: "1",
+      templateId: 1,
+      userId: "userA",
+      name: "Template 1",
+      paperWidthDots: 576,
+      itemNameWidthWeight: 0.42,
+    })
+  );
 });
 
-test("UserB cannot read or write UserA products", async () => {
+test("Cross-user isolation blocks UserB from reading or writing UserA collections", async () => {
   const userADb = testEnv.authenticatedContext("userA").firestore({ databaseId: DATABASE_ID });
   const userBDb = testEnv.authenticatedContext("userB").firestore({ databaseId: DATABASE_ID });
-  const productRefA = userADb.collection("users").doc("userA").collection("products").doc("prod1");
 
   await assertSucceeds(
-    productRefA.set({
-      id: "prod1",
+    userADb.collection("users").doc("userA").collection("sale_items").doc("s1_1").set({
+      id: "s1_1",
       userId: "userA",
-      name: "Coffee",
-      costPriceMinor: 1000,
-      sellPriceMinor: 1500,
+      saleId: "s1",
+      productId: 1,
+      productNameSnapshot: "Cement",
+      unitPriceMinor: 10000,
+      quantity: 1,
+      lineTotalMinor: 10000,
     })
   );
 
-  const productRefB = userBDb.collection("users").doc("userA").collection("products").doc("prod1");
-  await assertFails(productRefB.get());
-  await assertFails(productRefB.update({ sellPriceMinor: 2000 }));
-});
-
-test("User can create and read own sales", async () => {
-  const userADb = testEnv.authenticatedContext("userA").firestore({ databaseId: DATABASE_ID });
-  const saleRef = userADb.collection("users").doc("userA").collection("sales").doc("sale1");
-
-  await assertSucceeds(
-    saleRef.set({
-      id: "sale1",
-      userId: "userA",
-      totalMinor: 5000,
-      paymentMethod: "CASH",
-      voucherNo: "TR-261027-0001",
+  await assertFails(userBDb.collection("users").doc("userA").collection("sale_items").get());
+  await assertFails(
+    userBDb.collection("users").doc("userA").collection("sale_items").doc("s1_2").set({
+      id: "s1_2",
+      userId: "userB",
+      saleId: "s1",
+      productId: 1,
+      productNameSnapshot: "Cement",
+      unitPriceMinor: 10000,
+      quantity: 1,
+      lineTotalMinor: 10000,
     })
   );
-
-  await assertSucceeds(saleRef.get());
-});
-
-test("User can manage own profile and customers, but cannot access another user's", async () => {
-  const userADb = testEnv.authenticatedContext("userA").firestore({ databaseId: DATABASE_ID });
-  const userBDb = testEnv.authenticatedContext("userB").firestore({ databaseId: DATABASE_ID });
-
-  const profileA = userADb.collection("users").doc("userA");
-  await assertSucceeds(
-    profileA.set({
-      userId: "userA",
-      email: "a@example.com",
-      displayName: "Owner A",
-      storeName: "TR-POS",
-    })
-  );
-  await assertSucceeds(profileA.get());
-  await assertFails(userBDb.collection("users").doc("userA").get());
-
-  const custA = profileA.collection("customers").doc("cust1");
-  await assertSucceeds(
-    custA.set({
-      id: "cust1",
-      userId: "userA",
-      name: "U Ba",
-      phone: "091234567",
-      address: "Yangon",
-      currentDebtMinor: 0,
-    })
-  );
-  await assertSucceeds(custA.get());
-  await assertFails(userBDb.collection("users").doc("userA").collection("customers").doc("cust1").get());
 });

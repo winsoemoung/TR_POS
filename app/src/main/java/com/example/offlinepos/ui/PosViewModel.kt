@@ -68,6 +68,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import com.example.offlinepos.server.LocalPosServer
 import com.example.offlinepos.server.RemoteProductDto
+import com.google.firebase.Firebase
+import com.google.firebase.auth.auth
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -1425,7 +1427,29 @@ class PosViewModel(private val context: Context) : ViewModel() {
                             }
                         }
                     }
+                    val cartProductIds = cartItems.map { it.productId }.distinct()
+                    val selectedCustId = selectedCustomer?.customerId
                     clearCart()
+                    if (Firebase.auth.currentUser != null) {
+                        viewModelScope.launch(Dispatchers.IO) {
+                            val committedSale = db.checkoutDao().getAllSales().find { it.saleId == result.saleId }
+                            if (committedSale != null) {
+                                val committedItems = db.checkoutDao().getItemsForSale(result.saleId)
+                                val committedPayment = db.checkoutDao().getPaymentForSale(result.saleId)
+                                val updatedProds = cartProductIds.mapNotNull { db.productDao().findById(it) }
+                                val updatedCust = selectedCustId?.let { db.customerDao().getCustomerById(it) }
+                                com.example.offlinepos.firebase.FirebaseFirestoreSyncManager.syncSaleBundleAsync(
+                                    context = context,
+                                    sale = committedSale,
+                                    items = committedItems,
+                                    payment = committedPayment,
+                                    updatedProducts = updatedProds,
+                                    updatedCustomer = updatedCust,
+                                    scope = viewModelScope,
+                                )
+                            }
+                        }
+                    }
                     val successMsg = if (isCredit) {
                         "အကြွေးအရောင်း မှတ်တမ်းတင်ပြီးပါပြီ (ဝယ်သူ: ${selectedCustomer?.name})"
                     } else {
@@ -1751,8 +1775,34 @@ class PosViewModel(private val context: Context) : ViewModel() {
 
     fun triggerFirestoreSync(reason: String = "Manual Sync") {
         viewModelScope.launch {
-            val res = com.example.offlinepos.firebase.FirebaseFirestoreSyncManager.syncAll(context, db, _storeProfile.value.storeName)
+            val res = withContext(Dispatchers.IO) {
+                com.example.offlinepos.firebase.FirebaseFirestoreSyncManager.syncAll(
+                    context = context,
+                    db = db,
+                    storeName = _storeProfile.value.storeName,
+                    storeConfig = storeConfig,
+                )
+            }
             setBanner(res.message)
+        }
+    }
+
+    fun restoreFromFirebase(replaceLocal: Boolean = true, onComplete: (Boolean, String) -> Unit = { _, _ -> }) {
+        viewModelScope.launch {
+            val res = withContext(Dispatchers.IO) {
+                com.example.offlinepos.firebase.FirebaseFirestoreSyncManager.restoreAll(
+                    context = context,
+                    db = db,
+                    storeConfig = storeConfig,
+                    replaceLocal = replaceLocal,
+                )
+            }
+            if (res.success) {
+                _storeProfile.value = storeConfig.getProfile()
+                currencySymbol.value = storeConfig.getCurrencySymbol()
+            }
+            setBanner(res.message)
+            onComplete(res.success, res.message)
         }
     }
 
@@ -1851,9 +1901,14 @@ class PosViewModel(private val context: Context) : ViewModel() {
      */
     fun triggerAutoDriveSync(reason: String = "Data Change") {
         RealtimeDriveSyncCoordinator.triggerSync(context, reason)
-        if (com.google.firebase.auth.FirebaseAuth.getInstance().currentUser != null) {
-            viewModelScope.launch {
-                com.example.offlinepos.firebase.FirebaseFirestoreSyncManager.syncAll(context, db, _storeProfile.value.storeName)
+        if (Firebase.auth.currentUser != null) {
+            viewModelScope.launch(Dispatchers.IO) {
+                com.example.offlinepos.firebase.FirebaseFirestoreSyncManager.syncAll(
+                    context = context,
+                    db = db,
+                    storeName = _storeProfile.value.storeName,
+                    storeConfig = storeConfig,
+                )
             }
         }
     }

@@ -18,8 +18,53 @@ abstract class CheckoutDao {
     @Insert(onConflict = androidx.room.OnConflictStrategy.REPLACE)
     abstract suspend fun upsertSale(sale: SaleEntity)
 
+    @Insert(onConflict = androidx.room.OnConflictStrategy.REPLACE)
+    abstract suspend fun upsertSales(sales: List<SaleEntity>)
+
     @Query("SELECT * FROM sale_items WHERE saleId = :saleId")
     abstract suspend fun getItemsForSale(saleId: String): List<SaleItemEntity>
+
+    @Query("SELECT * FROM sale_items")
+    abstract suspend fun getAllSaleItems(): List<SaleItemEntity>
+
+    @Insert(onConflict = androidx.room.OnConflictStrategy.REPLACE)
+    abstract suspend fun upsertSaleItems(items: List<SaleItemEntity>)
+
+    @Query("DELETE FROM sale_items WHERE saleId = :saleId")
+    abstract suspend fun deleteItemsForSale(saleId: String)
+
+    @Query("SELECT * FROM payments")
+    abstract suspend fun getAllPayments(): List<PaymentEntity>
+
+    @Insert(onConflict = androidx.room.OnConflictStrategy.REPLACE)
+    abstract suspend fun upsertPayments(payments: List<PaymentEntity>)
+
+    @Query("SELECT * FROM return_transactions")
+    abstract suspend fun getAllReturnTransactions(): List<ReturnTransactionEntity>
+
+    @Insert(onConflict = androidx.room.OnConflictStrategy.REPLACE)
+    abstract suspend fun upsertReturnTransactions(transactions: List<ReturnTransactionEntity>)
+
+    @Query("SELECT * FROM stock_movements")
+    abstract suspend fun getAllStockMovements(): List<StockMovementEntity>
+
+    @Insert(onConflict = androidx.room.OnConflictStrategy.REPLACE)
+    abstract suspend fun upsertStockMovements(movements: List<StockMovementEntity>)
+
+    @Query("DELETE FROM sale_items")
+    abstract suspend fun clearAllSaleItems()
+
+    @Query("DELETE FROM payments")
+    abstract suspend fun clearAllPayments()
+
+    @Query("DELETE FROM return_transactions")
+    abstract suspend fun clearAllReturnTransactions()
+
+    @Query("DELETE FROM stock_movements")
+    abstract suspend fun clearAllStockMovements()
+
+    @Query("DELETE FROM sales")
+    abstract suspend fun clearAllSales()
 
     @Query("SELECT * FROM sale_items")
     abstract fun observeAllSaleItems(): Flow<List<SaleItemEntity>>

@@ -198,6 +198,16 @@ class StoreConfig(context: Context) {
         savePromoCodesList(current)
     }
 
+    fun getPromoCodesRawJson(): String? = prefs.getString("promo_codes_json", null)
+
+    fun setPromoCodesRawJson(json: String?) {
+        if (json.isNullOrBlank()) {
+            prefs.edit().remove("promo_codes_json").apply()
+        } else {
+            prefs.edit().putString("promo_codes_json", json).apply()
+        }
+    }
+
     private fun savePromoCodesList(list: List<PromoCode>) {
         val jsonArray = JSONArray()
         list.forEach { p ->

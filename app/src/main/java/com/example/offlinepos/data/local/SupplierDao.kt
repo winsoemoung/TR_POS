@@ -36,4 +36,10 @@ interface SupplierDao {
 
     @Query("SELECT COUNT(*) FROM suppliers")
     suspend fun getSupplierCount(): Int
+
+    @Query("SELECT * FROM suppliers")
+    suspend fun getAllSuppliersSync(): List<SupplierEntity>
+
+    @Query("DELETE FROM suppliers")
+    suspend fun clearAllSuppliers()
 }
