@@ -90,3 +90,34 @@ test("User can create and read own sales", async () => {
 
   await assertSucceeds(saleRef.get());
 });
+
+test("User can manage own profile and customers, but cannot access another user's", async () => {
+  const userADb = testEnv.authenticatedContext("userA").firestore({ databaseId: DATABASE_ID });
+  const userBDb = testEnv.authenticatedContext("userB").firestore({ databaseId: DATABASE_ID });
+
+  const profileA = userADb.collection("users").doc("userA");
+  await assertSucceeds(
+    profileA.set({
+      userId: "userA",
+      email: "a@example.com",
+      displayName: "Owner A",
+      storeName: "TR-POS",
+    })
+  );
+  await assertSucceeds(profileA.get());
+  await assertFails(userBDb.collection("users").doc("userA").get());
+
+  const custA = profileA.collection("customers").doc("cust1");
+  await assertSucceeds(
+    custA.set({
+      id: "cust1",
+      userId: "userA",
+      name: "U Ba",
+      phone: "091234567",
+      address: "Yangon",
+      currentDebtMinor: 0,
+    })
+  );
+  await assertSucceeds(custA.get());
+  await assertFails(userBDb.collection("users").doc("userA").collection("customers").doc("cust1").get());
+});

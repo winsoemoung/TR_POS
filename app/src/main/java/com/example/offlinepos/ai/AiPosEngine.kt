@@ -65,7 +65,7 @@ class AiPosEngine(private val context: Context) {
         // 1. Primary: Use Firebase AI Logic (gemini-3.8-flash) via App Check (Zero-key cloud AI)
         try {
             val model = Firebase.ai.generativeModel("gemini-3.8-flash")
-            val response = withTimeout(6_000L) {
+            val response = withTimeout(45_000L) {
                 model.generateContent(combinedPrompt)
             }
             val text = response.text
@@ -73,6 +73,9 @@ class AiPosEngine(private val context: Context) {
                 val parsed = parseAiResponse(text, dbContext.products)
                 return@withContext parsed
             }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            if (e !is kotlinx.coroutines.TimeoutCancellationException) throw e
+            Log.w("AiPosEngine", "Firebase AI Logic inference timed out after 45s")
         } catch (e: Exception) {
             Log.w("AiPosEngine", "Firebase AI Logic inference notice: ${e.message}")
         }

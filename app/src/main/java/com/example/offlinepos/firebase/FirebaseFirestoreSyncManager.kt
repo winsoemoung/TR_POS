@@ -8,10 +8,13 @@ import com.example.offlinepos.data.local.CustomerEntity
 import com.example.offlinepos.data.local.ProductEntity
 import com.example.offlinepos.data.local.SaleEntity
 import com.example.offlinepos.domain.VoucherHelper
-import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.Firebase
+import com.google.firebase.auth.auth
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.FirebaseFirestoreException
 import com.google.firebase.firestore.SetOptions
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -19,6 +22,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
+import org.json.JSONArray
+import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -43,18 +48,52 @@ object FirebaseFirestoreSyncManager {
     private val _syncStatus = MutableStateFlow<String?>("Cloud Sync အသင့်ရှိပါသည်")
     val syncStatus: StateFlow<String?> = _syncStatus.asStateFlow()
 
+    private enum class OperationType(val value: String) {
+        CREATE("create"),
+        UPDATE("update"),
+        DELETE("delete"),
+        LIST("list"),
+        GET("get"),
+        WRITE("write"),
+    }
+
+    private fun handleFirestoreError(exception: Throwable, operationType: OperationType, path: String?): String {
+        val causes = generateSequence(exception) { it.cause }
+        val rootError = causes.firstOrNull { it is FirebaseFirestoreException }
+            ?: causes.firstOrNull { it !is CancellationException }
+            ?: exception
+
+        val currentUser = Firebase.auth.currentUser
+        val providerInfoList = currentUser?.providerData?.map { provider ->
+            JSONObject().apply {
+                put("providerId", provider.providerId)
+                put("email", provider.email)
+            }
+        } ?: emptyList()
+
+        val authInfoJson = JSONObject().apply {
+            put("userId", currentUser?.uid)
+            put("email", currentUser?.email)
+            put("emailVerified", currentUser?.isEmailVerified)
+            put("tenantId", currentUser?.tenantId)
+            put("providerInfo", JSONArray(providerInfoList))
+        }
+
+        val errorInfoJson = JSONObject().apply {
+            put("error", rootError.message ?: rootError.toString())
+            put("operationType", operationType.value)
+            put("path", path)
+            put("authInfo", authInfoJson)
+        }
+
+        val jsonString = errorInfoJson.toString()
+        Log.e("FirestoreError", "Firestore Error: $jsonString")
+        return jsonString
+    }
+
     private fun getFirestore(context: Context): FirebaseFirestore {
-        val databaseId = try {
-            context.getString(R.string.firestore_database_id)
-        } catch (e: Exception) {
-            Log.e(TAG, "firestore_database_id resource missing", e)
-            ""
-        }
-        return if (databaseId.isNotBlank()) {
-            FirebaseFirestore.getInstance(databaseId)
-        } else {
-            FirebaseFirestore.getInstance()
-        }
+        val databaseId = context.applicationContext.getString(R.string.firestore_database_id)
+        return FirebaseFirestore.getInstance(databaseId)
     }
 
     suspend fun syncAll(
@@ -62,7 +101,7 @@ object FirebaseFirestoreSyncManager {
         db: AppDatabase,
         storeName: String = "TR-POS"
     ): FirebaseSyncResult {
-        val user = FirebaseAuth.getInstance().currentUser
+        val user = Firebase.auth.currentUser
         if (user == null) {
             val msg = "Google Account Login မဝင်ရသေးပါ (Please sign in with Google)"
             _syncStatus.value = msg
@@ -195,7 +234,11 @@ object FirebaseFirestoreSyncManager {
                 salesSynced = saleCount,
                 customersSynced = custCount
             )
+        } catch (e: CancellationException) {
+            _isSyncing.value = false
+            throw e
         } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.WRITE, "users/${user.uid}")
             Log.e(TAG, "Sync failed", e)
             _isSyncing.value = false
             val errorMsg = "Firestore Sync မအောင်မြင်ပါ: ${e.localizedMessage ?: e.message}"
@@ -205,7 +248,7 @@ object FirebaseFirestoreSyncManager {
     }
 
     fun syncProductAsync(context: Context, product: ProductEntity, scope: CoroutineScope) {
-        val user = FirebaseAuth.getInstance().currentUser ?: return
+        val user = Firebase.auth.currentUser ?: return
         scope.launch(Dispatchers.IO) {
             try {
                 val firestore = getFirestore(context)
@@ -230,14 +273,17 @@ object FirebaseFirestoreSyncManager {
                 }
                 prodRef.set(pData, SetOptions.merge()).await()
                 Log.d(TAG, "Auto-synced product ${product.name} to Firestore")
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
+                handleFirestoreError(e, OperationType.WRITE, "users/${user.uid}/products/${product.productId}")
                 Log.w(TAG, "Failed to auto-sync product ${product.name}", e)
             }
         }
     }
 
     fun syncSaleAsync(context: Context, sale: SaleEntity, scope: CoroutineScope) {
-        val user = FirebaseAuth.getInstance().currentUser ?: return
+        val user = Firebase.auth.currentUser ?: return
         scope.launch(Dispatchers.IO) {
             try {
                 val firestore = getFirestore(context)
@@ -261,14 +307,17 @@ object FirebaseFirestoreSyncManager {
                 }
                 sRef.set(sData, SetOptions.merge()).await()
                 Log.d(TAG, "Auto-synced sale ${sale.saleId} to Firestore")
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
+                handleFirestoreError(e, OperationType.WRITE, "users/${user.uid}/sales/${sale.saleId}")
                 Log.w(TAG, "Failed to auto-sync sale ${sale.saleId}", e)
             }
         }
     }
 
     fun syncCustomerAsync(context: Context, customer: CustomerEntity, scope: CoroutineScope) {
-        val user = FirebaseAuth.getInstance().currentUser ?: return
+        val user = Firebase.auth.currentUser ?: return
         scope.launch(Dispatchers.IO) {
             try {
                 val firestore = getFirestore(context)
@@ -286,7 +335,10 @@ object FirebaseFirestoreSyncManager {
                 )
                 cRef.set(cData, SetOptions.merge()).await()
                 Log.d(TAG, "Auto-synced customer ${customer.name} to Firestore")
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
+                handleFirestoreError(e, OperationType.WRITE, "users/${user.uid}/customers/${customer.customerId}")
                 Log.w(TAG, "Failed to auto-sync customer ${customer.name}", e)
             }
         }

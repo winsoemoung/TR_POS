@@ -13,9 +13,11 @@ import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential.Companion.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL
+import com.google.firebase.Firebase
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.GoogleAuthProvider
+import com.google.firebase.auth.auth
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -27,7 +29,7 @@ import kotlinx.coroutines.tasks.await
 object FirebaseAuthManager {
     private const val TAG = "FirebaseAuthManager"
 
-    private fun getAuth(): FirebaseAuth = FirebaseAuth.getInstance()
+    private fun getAuth(): FirebaseAuth = Firebase.auth
 
     private val _currentUser = MutableStateFlow<FirebaseUser?>(null)
     val currentUser: StateFlow<FirebaseUser?> = _currentUser.asStateFlow()
@@ -55,8 +57,7 @@ object FirebaseAuthManager {
 
     fun getWebClientId(context: Context): String {
         return try {
-            val resId = context.resources.getIdentifier("default_web_client_id", "string", context.packageName)
-            if (resId != 0) context.getString(resId) else ""
+            context.getString(R.string.default_web_client_id)
         } catch (e: Exception) {
             ""
         }
