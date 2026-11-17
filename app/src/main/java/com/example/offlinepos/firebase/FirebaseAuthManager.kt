@@ -2,7 +2,10 @@ package com.example.offlinepos.firebase
 
 import android.app.Activity
 import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
 import android.util.Log
+import java.security.MessageDigest
 import androidx.credentials.ClearCredentialStateRequest
 import androidx.credentials.CredentialManager
 import androidx.credentials.CustomCredential
@@ -133,7 +136,17 @@ object FirebaseAuthManager {
                 ).joinToString(": ")
                 Log.e(TAG, "Credential Manager error: $detail", e)
                 _isSigningIn.value = false
-                val msg = "Google Credential ရယူ၍ မရပါ ($detail)"
+                val isDevConsoleError = detail.contains("28444") ||
+                    detail.contains("developer console", ignoreCase = true) ||
+                    detail.contains("DEVELOPER_ERROR", ignoreCase = true)
+                val msg = if (isDevConsoleError) {
+                    val shaInfo = getAppSigningShaInfo(activity)
+                    "Google Credential ရယူ၍ မရပါ ($detail)\n\n" +
+                        "👉 အကြောင်းရင်း: ဖုန်းပေါ်ရှိ APK ကို Sign လုပ်ထားသော Keystore ၏ SHA-1 သည် Firebase Console (fir-winsoe) ထဲတွင် ထည့်သွင်းထားခြင်း မရှိသေးပါ (သို့) Google Auth / OAuth Consent Screen မပြည့်စုံသေးပါ။\n\n" +
+                        shaInfo
+                } else {
+                    "Google Credential ရယူ၍ မရပါ ($detail)"
+                }
                 _authError.value = msg
                 onComplete(false, msg)
             } catch (e: FirebaseAuthException) {
@@ -187,6 +200,37 @@ object FirebaseAuthManager {
             } catch (e: Exception) {
                 Log.d(TAG, "Silent auto-sign-in skipped: ${e.message}")
             }
+        }
+    }
+
+    private fun getAppSigningShaInfo(context: Context): String {
+        return try {
+            val pm = context.packageManager
+            val pkgName = context.packageName
+            val signatures = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                val info = pm.getPackageInfo(pkgName, PackageManager.GET_SIGNING_CERTIFICATES)
+                val signingInfo = info.signingInfo
+                if (signingInfo?.hasMultipleSigners() == true) {
+                    signingInfo.apkContentsSigners
+                } else {
+                    signingInfo?.signingCertificateHistory
+                }
+            } else {
+                @Suppress("DEPRECATION")
+                pm.getPackageInfo(pkgName, PackageManager.GET_SIGNATURES).signatures
+            }
+            val certBytes = signatures?.firstOrNull()?.toByteArray()
+            if (certBytes == null) {
+                "Package: $pkgName\nSHA-1: (Certificate unreadable)"
+            } else {
+                val sha1 = MessageDigest.getInstance("SHA-1").digest(certBytes)
+                    .joinToString(":") { "%02X".format(it) }
+                val sha256 = MessageDigest.getInstance("SHA-256").digest(certBytes)
+                    .joinToString(":") { "%02X".format(it) }
+                "Package: $pkgName\nAPK SHA-1: $sha1\nAPK SHA-256: $sha256"
+            }
+        } catch (e: Exception) {
+            "Package: ${context.packageName} (SHA lookup failed: ${e.message})"
         }
     }
 

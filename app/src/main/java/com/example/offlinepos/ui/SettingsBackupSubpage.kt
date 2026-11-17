@@ -480,12 +480,14 @@ fun SettingsBackupSubpage(
                                     }
                                 }
                                 Spacer(modifier = Modifier.height(4.dp))
-                                Text(
-                                    text = firebaseAuthError ?: "",
-                                    fontSize = 11.sp,
-                                    color = Color(0xFF7F1D1D),
-                                    lineHeight = 16.sp
-                                )
+                                androidx.compose.foundation.text.selection.SelectionContainer {
+                                    Text(
+                                        text = firebaseAuthError ?: "",
+                                        fontSize = 11.sp,
+                                        color = Color(0xFF7F1D1D),
+                                        lineHeight = 16.sp
+                                    )
+                                }
                             }
                         }
                     }
