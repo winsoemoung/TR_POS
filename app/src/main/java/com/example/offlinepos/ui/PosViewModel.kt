@@ -1754,6 +1754,8 @@ class PosViewModel(private val context: Context) : ViewModel() {
 
     // Firebase Auth & Cloud Firestore Sync
     val firebaseUser: StateFlow<com.google.firebase.auth.FirebaseUser?> = com.example.offlinepos.firebase.FirebaseAuthManager.currentUser
+    val isFirebaseSigningIn: StateFlow<Boolean> = com.example.offlinepos.firebase.FirebaseAuthManager.isSigningIn
+    val firebaseAuthError: StateFlow<String?> = com.example.offlinepos.firebase.FirebaseAuthManager.authError
     val isFirestoreSyncing: StateFlow<Boolean> = com.example.offlinepos.firebase.FirebaseFirestoreSyncManager.isSyncing
     val firestoreSyncStatus: StateFlow<String?> = com.example.offlinepos.firebase.FirebaseFirestoreSyncManager.syncStatus
     val lastFirestoreSyncTime: StateFlow<Long> = com.example.offlinepos.firebase.FirebaseFirestoreSyncManager.lastSyncTimeEpochMs
@@ -1761,10 +1763,18 @@ class PosViewModel(private val context: Context) : ViewModel() {
     fun signInWithGoogle(activity: android.app.Activity, onComplete: (Boolean, String?) -> Unit = { _, _ -> }) {
         com.example.offlinepos.firebase.FirebaseAuthManager.signInWithGoogle(activity, viewModelScope) { success, err ->
             if (success) {
+                val email = com.example.offlinepos.firebase.FirebaseAuthManager.currentUser.value?.email ?: ""
+                setBanner("✓ Google Account ($email) ဖြင့် Firebase Login အောင်မြင်ပါသည် — Cloud Sync စတင်နေပါသည်")
                 triggerFirestoreSync("Google Sign-In Success")
+            } else {
+                setBanner("⚠️ Firebase Login မအောင်မြင်ပါ: ${err ?: "ထပ်မံကြိုးစားပါ"}")
             }
             onComplete(success, err)
         }
+    }
+
+    fun clearFirebaseAuthError() {
+        com.example.offlinepos.firebase.FirebaseAuthManager.clearError()
     }
 
     fun signOutGoogle(activity: android.app.Activity? = null) {

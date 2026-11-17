@@ -2,6 +2,7 @@ package com.example.offlinepos.ui
 
 import android.app.Activity
 import android.content.Context
+import android.content.ContextWrapper
 import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -89,10 +90,19 @@ fun SettingsBackupSubpage(
     val isDriveSyncing by viewModel.isDriveSyncing.collectAsState()
     val driveSyncStatus by viewModel.driveSyncStatus.collectAsState()
     val firebaseUser by viewModel.firebaseUser.collectAsState()
+    val isFirebaseSigningIn by viewModel.isFirebaseSigningIn.collectAsState()
+    val firebaseAuthError by viewModel.firebaseAuthError.collectAsState()
     val isFirestoreSyncing by viewModel.isFirestoreSyncing.collectAsState()
     val firestoreSyncStatus by viewModel.firestoreSyncStatus.collectAsState()
     val lastFirestoreSyncTime by viewModel.lastFirestoreSyncTime.collectAsState()
     val outboxPendingCount by viewModel.outboxPendingCount.collectAsState()
+    val firebaseProjectId = remember(context) {
+        try {
+            com.google.firebase.FirebaseApp.getInstance().options.projectId ?: "fir-winsoe"
+        } catch (_: Exception) {
+            "fir-winsoe"
+        }
+    }
     var googleEmailInput by remember(googleAccount) { mutableStateOf(googleAccount ?: "WINSOEMOUNG@gmail.com") }
 
     var backupStatusMessage by remember { mutableStateOf<String?>(null) }
@@ -222,8 +232,13 @@ fun SettingsBackupSubpage(
         Card(
             modifier = Modifier.fillMaxWidth().testTag("firebase_firestore_sync_card"),
             shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFFFEF2F2)),
-            border = BorderStroke(1.5.dp, Color(0xFFFCA5A5))
+            colors = CardDefaults.cardColors(
+                containerColor = if (firebaseUser != null) Color(0xFFF0FDF4) else Color(0xFFFEF2F2)
+            ),
+            border = BorderStroke(
+                1.5.dp,
+                if (firebaseUser != null) Color(0xFF86EFAC) else Color(0xFFFCA5A5)
+            )
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Row(
@@ -231,10 +246,10 @@ fun SettingsBackupSubpage(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
                         Surface(
                             shape = CircleShape,
-                            color = Color(0xFFFEE2E2),
+                            color = if (firebaseUser != null) Color(0xFFDCFCE7) else Color(0xFFFEE2E2),
                             modifier = Modifier.size(38.dp)
                         ) {
                             Box(contentAlignment = Alignment.Center) {
@@ -243,21 +258,45 @@ fun SettingsBackupSubpage(
                         }
                         Spacer(modifier = Modifier.width(10.dp))
                         Column {
-                            Text("Firebase Firestore Cloud Sync", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Color(0xFF991B1B))
-                            Text("Google Account တိုက်ရိုက်ချိတ်ဆက်မှု", fontSize = 11.sp, color = Color(0xFF7F1D1D))
+                            Text(
+                                "Firebase Firestore Cloud Sync",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 15.sp,
+                                color = if (firebaseUser != null) Color(0xFF14532D) else Color(0xFF991B1B)
+                            )
+                            Text(
+                                "Project: $firebaseProjectId • Google Account ချိတ်ဆက်မှု",
+                                fontSize = 11.sp,
+                                color = if (firebaseUser != null) Color(0xFF166534) else Color(0xFF7F1D1D)
+                            )
                         }
                     }
 
+                    Spacer(modifier = Modifier.width(8.dp))
+
                     Surface(
+                        modifier = Modifier.testTag("firebase_auth_status_badge"),
                         shape = RoundedCornerShape(6.dp),
-                        color = if (firebaseUser != null) Color(0xFFDCFCE7) else Color(0xFFFEE2E2)
+                        color = when {
+                            isFirebaseSigningIn -> Color(0xFFFEF3C7)
+                            firebaseUser != null -> Color(0xFFDCFCE7)
+                            else -> Color(0xFFFEE2E2)
+                        }
                     ) {
                         Text(
-                            text = if (firebaseUser != null) "✓ Logged In" else "Sign In လိုအပ်",
+                            text = when {
+                                isFirebaseSigningIn -> "⏳ ချိတ်ဆက်နေသည်..."
+                                firebaseUser != null -> "✓ Logged In"
+                                else -> "✕ Not Logged In"
+                            },
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Bold,
-                            color = if (firebaseUser != null) Color(0xFF15803D) else Color(0xFFB91C1C),
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                            color = when {
+                                isFirebaseSigningIn -> Color(0xFFB45309)
+                                firebaseUser != null -> Color(0xFF15803D)
+                                else -> Color(0xFFB91C1C)
+                            },
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                         )
                     }
                 }
@@ -265,11 +304,29 @@ fun SettingsBackupSubpage(
                 Spacer(modifier = Modifier.height(12.dp))
 
                 if (firebaseUser != null) {
+                    // Explicit Logged In Confirmation Strip
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = Color(0xFFDCFCE7),
+                        border = BorderStroke(1.dp, Color(0xFF4ADE80)),
+                        modifier = Modifier.fillMaxWidth().testTag("firebase_logged_in_banner")
+                    ) {
+                        Text(
+                            text = "✓ Login ဝင်ပြီးပါပြီ (Firebase Cloud Active)",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF166534),
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
                     // Logged in user info
                     Surface(
                         shape = RoundedCornerShape(12.dp),
                         color = Color.White,
-                        border = BorderStroke(1.dp, Color(0xFFFECACA)),
+                        border = BorderStroke(1.dp, Color(0xFFBBF7D0)),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Column(modifier = Modifier.padding(12.dp)) {
@@ -292,8 +349,14 @@ fun SettingsBackupSubpage(
                                         color = Color(0xFF1E293B)
                                     )
                                     Text(
-                                        text = firebaseUser?.email ?: "",
+                                        text = firebaseUser?.email ?: "(Email မရှိပါ)",
                                         fontSize = 12.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = Color(0xFF15803D)
+                                    )
+                                    Text(
+                                        text = "UID: ${firebaseUser?.uid?.take(8) ?: ""}... • Project: $firebaseProjectId",
+                                        fontSize = 10.sp,
                                         color = Color(0xFF64748B)
                                     )
                                 }
@@ -333,7 +396,7 @@ fun SettingsBackupSubpage(
                         Button(
                             onClick = { viewModel.triggerFirestoreSync("Settings Sync Button") },
                             modifier = Modifier.weight(1f).testTag("firestore_sync_now_button"),
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFDC2626)),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF16A34A)),
                             enabled = !isFirestoreSyncing
                         ) {
                             if (isFirestoreSyncing) {
@@ -348,7 +411,7 @@ fun SettingsBackupSubpage(
                         }
 
                         OutlinedButton(
-                            onClick = { viewModel.signOutGoogle(context as? Activity) },
+                            onClick = { viewModel.signOutGoogle(context.findActivity()) },
                             colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFDC2626)),
                             enabled = !isFirestoreSyncing
                         ) {
@@ -361,8 +424,8 @@ fun SettingsBackupSubpage(
                     OutlinedButton(
                         onClick = { showFirebaseRestoreDialog = true },
                         modifier = Modifier.fillMaxWidth().testTag("firebase_full_restore_button"),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF991B1B)),
-                        border = BorderStroke(1.dp, Color(0xFFDC2626)),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF14532D)),
+                        border = BorderStroke(1.dp, Color(0xFF16A34A)),
                         enabled = !isFirestoreSyncing,
                         shape = RoundedCornerShape(10.dp)
                     ) {
@@ -373,36 +436,101 @@ fun SettingsBackupSubpage(
                         )
                     }
                 } else {
-                    // Not logged in: Show Google Sign-In prompt
+                    // Not logged in: Show Google Sign-In prompt & any inline Auth Error diagnostics
                     Text(
-                        text = "Google Account ဖြင့် ဝင်ရောက်ထားပါက ကုန်ပစ္စည်းများ၊ အရောင်းဘောင်ချာများနှင့် ဖောက်သည်အကြွေးစာရင်းများကို Cloud Firestore သို့ အချိန်နှင့်တပြေးညီ အလိုအလျောက် Sync သိမ်းဆည်းပေးမည်ဖြစ်ပါသည်။",
+                        text = "Google Account ဖြင့် ဝင်ရောက်ထားပါက ကုန်ပစ္စည်းများ၊ အရောင်းဘောင်ချာများနှင့် ဖောက်သည်အကြွေးစာရင်းများကို Cloud Firestore ($firebaseProjectId) သို့ အချိန်နှင့်တပြေးညီ အလိုအလျောက် Sync သိမ်းဆည်းပေးမည်ဖြစ်ပါသည်။",
                         fontSize = 12.sp,
                         color = Color(0xFF475569),
                         lineHeight = 18.sp
                     )
 
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "မှတ်ချက်: ဖုန်း Settings > Accounts ထဲတွင် Google Account (ဥပမာ winsoemoung@gmail.com) ဝင်ထားရန် လိုအပ်ပါသည်။",
+                        fontSize = 11.sp,
+                        color = Color(0xFF7F1D1D),
+                        lineHeight = 15.sp
+                    )
+
+                    if (!firebaseAuthError.isNullOrBlank()) {
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = Color(0xFFFEE2E2),
+                            border = BorderStroke(1.dp, Color(0xFFF87171)),
+                            modifier = Modifier.fillMaxWidth().testTag("firebase_auth_error_banner")
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "⚠️ Firebase Login မဝင်နိုင်ပါ",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 12.sp,
+                                        color = Color(0xFF991B1B)
+                                    )
+                                    TextButton(
+                                        onClick = { viewModel.clearFirebaseAuthError() },
+                                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)
+                                    ) {
+                                        Text("ပိတ်မည်", fontSize = 10.sp, color = Color(0xFF991B1B))
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = firebaseAuthError ?: "",
+                                    fontSize = 11.sp,
+                                    color = Color(0xFF7F1D1D),
+                                    lineHeight = 16.sp
+                                )
+                            }
+                        }
+                    }
+
                     Spacer(modifier = Modifier.height(12.dp))
 
                     Button(
                         onClick = {
-                            val activity = context as? Activity
+                            val activity = context.findActivity()
                             if (activity != null) {
                                 viewModel.signInWithGoogle(activity) { success, err ->
                                     if (success) {
-                                        backupStatusMessage = "Google Account ဖြင့် အောင်မြင်စွာ ချိတ်ဆက်ပြီးပါပြီ"
+                                        backupStatusMessage = "Google Account ဖြင့် Firebase Login အောင်မြင်စွာ ချိတ်ဆက်ပြီးပါပြီ"
                                     } else if (err != null) {
                                         backupStatusMessage = err
                                     }
                                 }
+                            } else {
+                                val msg = "Activity Context မတွေ့ပါ — App ကို ပြန်ဖွင့်ပြီး ထပ်မံစမ်းသပ်ပါ"
+                                backupStatusMessage = msg
+                                viewModel.setBanner("⚠️ $msg")
                             }
                         },
+                        enabled = !isFirebaseSigningIn,
                         modifier = Modifier.fillMaxWidth().testTag("google_signin_button"),
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E3A8A)),
                         shape = RoundedCornerShape(10.dp)
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("G ", fontWeight = FontWeight.ExtraBold, fontSize = 16.sp, color = Color(0xFFFBBF24))
-                            Text("Google Account ဖြင့် Sign In ဝင်မည်", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        if (isFirebaseSigningIn) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                color = Color.White,
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                "Google Account ချိတ်ဆက်နေပါသည်...",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp
+                            )
+                        } else {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("G ", fontWeight = FontWeight.ExtraBold, fontSize = 16.sp, color = Color(0xFFFBBF24))
+                                Text("Google Account ဖြင့် Sign In ဝင်မည်", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            }
                         }
                     }
                 }
@@ -1224,4 +1352,10 @@ fun SettingsBackupSubpage(
             }
         }
     }
+}
+
+private tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
 }

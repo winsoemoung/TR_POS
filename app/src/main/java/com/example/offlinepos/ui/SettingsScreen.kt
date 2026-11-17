@@ -205,6 +205,9 @@ private fun ModernSettingsDashboard(
     val isServerRunning by viewModel.isServerRunning.collectAsState()
     val googleAccount by viewModel.googleAccount.collectAsState()
     val isDriveSyncing by viewModel.isDriveSyncing.collectAsState()
+    val firebaseUser by viewModel.firebaseUser.collectAsState()
+    val isFirebaseSigningIn by viewModel.isFirebaseSigningIn.collectAsState()
+    val isFirestoreSyncing by viewModel.isFirestoreSyncing.collectAsState()
     val themeMode by viewModel.themeMode.collectAsState()
     val currencySymbol by viewModel.currencySymbol.collectAsState()
     val lowStockAlert by viewModel.isLowStockAlertEnabled.collectAsState()
@@ -483,6 +486,50 @@ private fun ModernSettingsDashboard(
                     icon = Icons.Default.CloudSync,
                     accentColor = Color(0xFF7C3AED)
                 )
+
+                // Firebase Cloud Sync Status Row
+                Box(modifier = Modifier.testTag("settings_hub_firebase_row")) {
+                    SettingRowItem(
+                        icon = Icons.Default.CloudSync,
+                        iconTint = Color(0xFFDC2626),
+                        iconBgColor = Color(0xFFFEE2E2),
+                        title = "Firebase Cloud Sync (fir-winsoe)",
+                        subtitle = when {
+                            isFirebaseSigningIn -> "Google Account ချိတ်ဆက်နေပါသည်..."
+                            firebaseUser != null -> "${firebaseUser?.email ?: "Logged In"} • Cloud Backup & Restore Active"
+                            else -> "Not Logged In — နှိပ်ပြီး Google Account ဖြင့် ဝင်ရောက်ပါ"
+                        },
+                        onClick = { onNavigate(SettingsSubpage.BACKUP) },
+                        actionWidget = {
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = when {
+                                    isFirebaseSigningIn || isFirestoreSyncing -> Color(0xFFDBEAFE)
+                                    firebaseUser != null -> Color(0xFFDCFCE7)
+                                    else -> Color(0xFFFEE2E2)
+                                }
+                            ) {
+                                Text(
+                                    text = when {
+                                        isFirebaseSigningIn || isFirestoreSyncing -> "⏳ Syncing"
+                                        firebaseUser != null -> "✓ Logged In"
+                                        else -> "Sign In လိုအပ်"
+                                    },
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = when {
+                                        isFirebaseSigningIn || isFirestoreSyncing -> Color(0xFF2563EB)
+                                        firebaseUser != null -> Color(0xFF15803D)
+                                        else -> Color(0xFFB91C1C)
+                                    },
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                )
+                            }
+                        }
+                    )
+                }
+
+                SettingDivider()
 
                 // Google Drive Sync with OAuth
                 SettingRowItem(
