@@ -1767,7 +1767,8 @@ class PosViewModel(private val context: Context) : ViewModel() {
                 setBanner("✓ Google Account ($email) ဖြင့် Firebase Login အောင်မြင်ပါသည် — Cloud Sync စတင်နေပါသည်")
                 triggerFirestoreSync("Google Sign-In Success")
             } else {
-                setBanner("⚠️ Firebase Login မအောင်မြင်ပါ: ${err ?: "ထပ်မံကြိုးစားပါ"}")
+                val shortSummary = err?.lineSequence()?.firstOrNull()?.take(110) ?: "ထပ်မံကြိုးစားပါ"
+                setBanner("⚠️ $shortSummary")
             }
             onComplete(success, err)
         }
@@ -1906,25 +1907,25 @@ class PosViewModel(private val context: Context) : ViewModel() {
     }
 
     /**
-     * Real-time Google Drive Auto-Sync trigger.
+     * Real-time Firebase Firestore Auto-Sync trigger.
      * Runs in a background coroutine if online, and queues with WorkManager for offline resilience.
      */
     fun triggerAutoDriveSync(reason: String = "Data Change") {
-        RealtimeDriveSyncCoordinator.triggerSync(context, reason)
-        if (Firebase.auth.currentUser != null) {
-            viewModelScope.launch(Dispatchers.IO) {
-                com.example.offlinepos.firebase.FirebaseFirestoreSyncManager.syncAll(
-                    context = context,
-                    db = db,
-                    storeName = _storeProfile.value.storeName,
-                    storeConfig = storeConfig,
-                )
-            }
-        }
+        triggerFirebaseRealtimeSync(reason)
+    }
+
+    fun triggerFirebaseRealtimeSync(reason: String = "Data Change") {
+        com.example.offlinepos.firebase.FirebaseFirestoreSyncManager.triggerRealtimeSync(
+            context = context,
+            db = db,
+            storeName = _storeProfile.value.storeName,
+            storeConfig = storeConfig,
+            reason = reason,
+        )
     }
 
     private fun enqueueGoogleDriveSync(reason: String = "Auto Sync") {
-        RealtimeDriveSyncCoordinator.triggerSync(context, reason)
+        triggerFirebaseRealtimeSync(reason)
     }
 
     fun connectGoogleAccount(email: String) {

@@ -1,8 +1,14 @@
 package com.example.offlinepos.firebase
 
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.util.Log
 import androidx.room.withTransaction
+import androidx.work.BackoffPolicy
+import androidx.work.ExistingWorkPolicy
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkManager
 import com.example.offlinepos.R
 import com.example.offlinepos.data.local.AppDatabase
 import com.example.offlinepos.data.local.CustomerEntity
@@ -32,16 +38,21 @@ import com.google.firebase.firestore.SetOptions
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.tasks.await
 import org.json.JSONArray
 import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 
 data class FirebaseSyncResult(
     val success: Boolean,
@@ -1050,14 +1061,79 @@ class FirebaseBackupRepository(
 object FirebaseFirestoreSyncManager {
     private const val TAG = "FirestoreSyncManager"
 
+    private val autoSyncScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val syncMutex = Mutex()
+    private val hasPendingAutoSync = AtomicBoolean(false)
+
     private val _isSyncing = MutableStateFlow(false)
     val isSyncing: StateFlow<Boolean> = _isSyncing.asStateFlow()
 
     private val _lastSyncTimeEpochMs = MutableStateFlow(0L)
     val lastSyncTimeEpochMs: StateFlow<Long> = _lastSyncTimeEpochMs.asStateFlow()
 
-    private val _syncStatus = MutableStateFlow<String?>("Cloud Sync အသင့်ရှိပါသည်")
+    private val _syncStatus = MutableStateFlow<String?>("Firebase Real-time Auto-Sync အသင့်ရှိပါသည်")
     val syncStatus: StateFlow<String?> = _syncStatus.asStateFlow()
+
+    fun isNetworkAvailable(context: Context): Boolean {
+        return try {
+            val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return true
+            val activeNetwork = cm.activeNetwork ?: return false
+            val capabilities = cm.getNetworkCapabilities(activeNetwork) ?: return false
+            capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+        } catch (_: Exception) {
+            true
+        }
+    }
+
+    fun triggerRealtimeSync(
+        context: Context,
+        db: AppDatabase,
+        storeName: String = "san thit",
+        storeConfig: StoreConfig? = null,
+        reason: String = "Data Change",
+    ) {
+        val appContext = context.applicationContext
+        if (Firebase.auth.currentUser == null) {
+            _syncStatus.value = "Firebase Sign In ဝင်ပြီးပါက Real-time Auto-Sync အလိုအလျောက် စတင်ပါမည်"
+            return
+        }
+
+        runCatching {
+            val workRequest = OneTimeWorkRequestBuilder<FirebaseRealtimeSyncWorker>()
+                .setConstraints(FirebaseRealtimeSyncWorker.constraints())
+                .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 15, TimeUnit.SECONDS)
+                .addTag("firebase-realtime-sync")
+                .build()
+            WorkManager.getInstance(appContext).enqueueUniqueWork(
+                "firebase-realtime-sync-queue",
+                ExistingWorkPolicy.REPLACE,
+                workRequest,
+            )
+        }
+
+        autoSyncScope.launch {
+            hasPendingAutoSync.set(true)
+            if (!isNetworkAvailable(appContext)) {
+                _syncStatus.value = "⏳ အော့ဖ်လိုင်းဖြစ်နေပါသည် (လိုင်းပြန်ရသည်နှင့် Firebase သို့ အလိုအလျောက် ပို့ပါမည်)"
+                return@launch
+            }
+            if (syncMutex.isLocked) {
+                return@launch
+            }
+            syncMutex.withLock {
+                while (hasPendingAutoSync.getAndSet(false)) {
+                    val cfg = storeConfig ?: StoreConfig(appContext)
+                    _syncStatus.value = "⚡ Firebase Real-time Auto-Sync လုပ်နေပါသည် ($reason)..."
+                    syncAll(
+                        context = appContext,
+                        db = db,
+                        storeName = storeName,
+                        storeConfig = cfg,
+                    )
+                }
+            }
+        }
+    }
 
     suspend fun syncAll(
         context: Context,
@@ -1071,11 +1147,13 @@ object FirebaseFirestoreSyncManager {
             return FirebaseSyncResult(false, msg)
         }
         _isSyncing.value = true
-        _syncStatus.value = "Firebase Cloud သို့ POS ဒေတာအားလုံး Backup တင်နေပါသည်..."
+        _syncStatus.value = "Firebase Cloud သို့ POS ဒေတာအားလုံး Sync တင်နေပါသည်..."
         val repo = FirebaseBackupRepository(context)
         val result = repo.backupAll(db, storeConfig ?: StoreConfig(context), storeName)
         if (result.success) {
-            _lastSyncTimeEpochMs.value = System.currentTimeMillis()
+            val now = System.currentTimeMillis()
+            _lastSyncTimeEpochMs.value = now
+            runCatching { db.outboxDao().markPendingAsSynced(now) }
         }
         _syncStatus.value = result.message
         _isSyncing.value = false

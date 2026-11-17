@@ -11,8 +11,8 @@ import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import com.example.offlinepos.Sync.WeeklyRecommendationWorker
-import com.example.offlinepos.Sync.GoogleDriveSyncWorker
 import com.example.offlinepos.Sync.BiMonthlyAiReportWorker
+import com.example.offlinepos.firebase.FirebaseRealtimeSyncWorker
 import java.util.concurrent.TimeUnit
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Box
@@ -100,10 +100,10 @@ class MainActivity : ComponentActivity() {
                 PeriodicWorkRequestBuilder<WeeklyRecommendationWorker>(7, TimeUnit.DAYS).build(),
             )
             WorkManager.getInstance(applicationContext).enqueueUniquePeriodicWork(
-                "google-drive-background-sync",
+                "firebase-realtime-background-sync",
                 ExistingPeriodicWorkPolicy.KEEP,
-                PeriodicWorkRequestBuilder<GoogleDriveSyncWorker>(15, TimeUnit.MINUTES)
-                    .setConstraints(GoogleDriveSyncWorker.constraints())
+                PeriodicWorkRequestBuilder<FirebaseRealtimeSyncWorker>(15, TimeUnit.MINUTES)
+                    .setConstraints(FirebaseRealtimeSyncWorker.constraints())
                     .build(),
             )
             BiMonthlyAiReportWorker.schedule(applicationContext)

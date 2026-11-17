@@ -203,8 +203,6 @@ private fun ModernSettingsDashboard(
     val context = LocalContext.current
     val storeProfile by viewModel.storeProfile.collectAsState()
     val isServerRunning by viewModel.isServerRunning.collectAsState()
-    val googleAccount by viewModel.googleAccount.collectAsState()
-    val isDriveSyncing by viewModel.isDriveSyncing.collectAsState()
     val firebaseUser by viewModel.firebaseUser.collectAsState()
     val isFirebaseSigningIn by viewModel.isFirebaseSigningIn.collectAsState()
     val isFirestoreSyncing by viewModel.isFirestoreSyncing.collectAsState()
@@ -531,34 +529,38 @@ private fun ModernSettingsDashboard(
 
                 SettingDivider()
 
-                // Google Drive Sync with OAuth
+                // Firebase Real-time Auto-Sync Status Row
                 SettingRowItem(
                     icon = Icons.Default.CloudDone,
-                    iconTint = Color(0xFF7C3AED),
-                    iconBgColor = Color(0xFFEDE9FE),
-                    title = "Google Drive Auto-Sync (pos-sync-4)",
-                    subtitle = if (!googleAccount.isNullOrBlank()) "$googleAccount • OAuth 2.0 Active" else "Google Account ချိတ်ဆက်ပြီး အလိုအလျောက် sync မည်",
+                    iconTint = Color(0xFF16A34A),
+                    iconBgColor = Color(0xFFDCFCE7),
+                    title = "Firebase Real-time Auto-Sync",
+                    subtitle = when {
+                        isFirestoreSyncing -> "Firebase Cloud သို့ Real-time Sync လုပ်နေပါသည်..."
+                        firebaseUser != null -> "${firebaseUser?.email ?: "Logged In"} • အရောင်း/စတော့ ပြင်တိုင်း Auto-Sync"
+                        else -> "Firebase Login ဝင်ပြီးပါက အလိုအလျောက် Real-time Sync မည်"
+                    },
                     onClick = { onNavigate(SettingsSubpage.BACKUP) },
                     actionWidget = {
                         Surface(
                             shape = RoundedCornerShape(6.dp),
                             color = when {
-                                isDriveSyncing -> Color(0xFFDBEAFE)
-                                !googleAccount.isNullOrBlank() -> Color(0xFFDCFCE7)
+                                isFirestoreSyncing -> Color(0xFFDBEAFE)
+                                firebaseUser != null -> Color(0xFFDCFCE7)
                                 else -> Color(0xFFFEF3C7)
                             }
                         ) {
                             Text(
                                 text = when {
-                                    isDriveSyncing -> "⚡ Syncing"
-                                    !googleAccount.isNullOrBlank() -> "✓ Connected"
+                                    isFirestoreSyncing -> "⚡ Syncing"
+                                    firebaseUser != null -> "✓ Auto-Sync"
                                     else -> "ချိတ်ရန်"
                                 },
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = when {
-                                    isDriveSyncing -> Color(0xFF2563EB)
-                                    !googleAccount.isNullOrBlank() -> Color(0xFF15803D)
+                                    isFirestoreSyncing -> Color(0xFF2563EB)
+                                    firebaseUser != null -> Color(0xFF15803D)
                                     else -> Color(0xFFD97706)
                                 },
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
@@ -569,13 +571,13 @@ private fun ModernSettingsDashboard(
 
                 SettingDivider()
 
-                // Local Database Backup & Restore (Full receipts history included)
+                // Local Database Sync & Firebase Backup
                 SettingRowItem(
                     icon = Icons.Default.Save,
                     iconTint = Color(0xFF7C3AED),
                     iconBgColor = Color(0xFFEDE9FE),
-                    title = "Local Database Backup & Restore",
-                    subtitle = "ဖွင့်ပြီးသမျှ ဘောင်ချာမှတ်တမ်း (Receipts) နှင့် ပစ္စည်းစာရင်းအားလုံး ပါဝင်ပါသည်",
+                    title = "Local Database & Firebase Backup",
+                    subtitle = "Firebase Cloud Backup/Restore နှင့် ဘောင်ချာ/ပစ္စည်းစာရင်း အားလုံး ပါဝင်ပါသည်",
                     onClick = { onNavigate(SettingsSubpage.BACKUP) },
                     actionWidget = {
                         Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = Color.Gray)

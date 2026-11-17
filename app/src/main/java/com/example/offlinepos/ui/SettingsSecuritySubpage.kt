@@ -164,7 +164,7 @@ fun SettingsSecuritySubpage(
                 Spacer(modifier = Modifier.height(8.dp))
                 Text("• ဆိုင်: ${storeProfile.storeName}", style = MaterialTheme.typography.bodySmall)
                 Text("• ဗားရှင်း: TR-POS.apk (Production Release)", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                Text("• Google Drive Sync: Two-way Conflict Resolution Auto-merge ပါဝင်ပြီး", style = MaterialTheme.typography.bodySmall)
+                Text("• Firebase Cloud Sync: Real-time Auto-sync နှင့် Two-way Conflict Resolution Auto-merge ပါဝင်ပြီး", style = MaterialTheme.typography.bodySmall)
                 Text("• ဆာဗာ အဆင့်: Local Embedded HTTP REST & WebSocket (Port 8787)", style = MaterialTheme.typography.bodySmall)
                 Text("• ဝန်ထမ်း Web App: Chrome/Browser Direct QR Web Portal", style = MaterialTheme.typography.bodySmall)
                 Text("• AI အဆင့်: Gemini 3.5 Flash Online + Superuser Local NLP", style = MaterialTheme.typography.bodySmall)
