@@ -13,12 +13,14 @@ import androidx.credentials.GetCredentialRequest
 import androidx.credentials.exceptions.GetCredentialCancellationException
 import androidx.credentials.exceptions.GetCredentialException
 import androidx.credentials.exceptions.NoCredentialException
+import com.example.offlinepos.BuildConfig
 import com.example.offlinepos.R
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential.Companion.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL
 import com.google.firebase.Firebase
+import com.google.firebase.FirebaseApp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseAuthException
 import com.google.firebase.auth.FirebaseUser
@@ -152,13 +154,29 @@ object FirebaseAuthManager {
             } catch (e: FirebaseAuthException) {
                 Log.e(TAG, "FirebaseAuth error [${e.errorCode}]: ${e.localizedMessage}", e)
                 _isSigningIn.value = false
-                val msg = "Firebase Login မအောင်မြင်ပါ [${e.errorCode}]: ${e.localizedMessage ?: "စစ်ဆေးပါ"}"
+                val errText = e.localizedMessage ?: e.message ?: "စစ်ဆေးပါ"
+                val isAppCheckError = errText.contains("app check", ignoreCase = true) ||
+                    errText.contains("appcheck", ignoreCase = true)
+                val msg = if (isAppCheckError) {
+                    "Firebase Login မအောင်မြင်ပါ [${e.errorCode}]: $errText\n\n" +
+                        getAppCheckDiagnosticInfo(activity)
+                } else {
+                    "Firebase Login မအောင်မြင်ပါ [${e.errorCode}]: $errText"
+                }
                 _authError.value = msg
                 onComplete(false, msg)
             } catch (e: Exception) {
                 Log.e(TAG, "Google Sign-In error", e)
                 _isSigningIn.value = false
-                val msg = "Google Sign-In မအောင်မြင်ပါ: ${e.localizedMessage ?: e.javaClass.simpleName}"
+                val errText = e.localizedMessage ?: e.message ?: e.javaClass.simpleName
+                val isAppCheckError = errText.contains("app check", ignoreCase = true) ||
+                    errText.contains("appcheck", ignoreCase = true)
+                val msg = if (isAppCheckError) {
+                    "Google Sign-In မအောင်မြင်ပါ: $errText\n\n" +
+                        getAppCheckDiagnosticInfo(activity)
+                } else {
+                    "Google Sign-In မအောင်မြင်ပါ: $errText"
+                }
                 _authError.value = msg
                 onComplete(false, msg)
             }
@@ -231,6 +249,39 @@ object FirebaseAuthManager {
             }
         } catch (e: Exception) {
             "Package: ${context.packageName} (SHA lookup failed: ${e.message})"
+        }
+    }
+
+    private fun getAppCheckDiagnosticInfo(context: Context): String {
+        return try {
+            if (BuildConfig.DEBUG) {
+                val persistenceKey = FirebaseApp.getInstance().persistenceKey
+                val prefs = context.getSharedPreferences(
+                    "com.google.firebase.appcheck.debug.store.$persistenceKey",
+                    Context.MODE_PRIVATE
+                )
+                val debugSecret = prefs.getString("com.google.firebase.appcheck.debug.DEBUG_SECRET", null)
+                val tokenLine = if (!debugSecret.isNullOrBlank()) {
+                    "App Check Debug Token:\n$debugSecret"
+                } else {
+                    "App Check Debug Token: (Logcat တွင် 'Enter this debug secret' ကို ကြည့်ပါ)"
+                }
+                "👉 Build Mode: DEBUG APK\n" +
+                    "$tokenLine\n\n" +
+                    "ဖြေရှင်းနည်း: Firebase Console (fir-winsoe) > App Check > Apps (${context.packageName}) > Manage debug tokens ထဲတွင် အထက်ပါ Debug Token ကို ထည့်သွင်းပါ (သို့) Firebase Console > App Check > APIs တွင် Firebase Authentication enforcement ကို စစ်ဆေးပါ။"
+            } else {
+                val resId = context.resources.getIdentifier("recaptcha_site_key", "string", context.packageName)
+                val keyStatus = if (resId != 0 && context.getString(resId).isNotBlank()) {
+                    "recaptcha_site_key ရှိပြီးသားဖြစ်သော်လည်း Firebase Console App Check တွင် ကိုက်ညီမှုမရှိပါ။"
+                } else {
+                    "strings.xml ထဲတွင် recaptcha_site_key မထည့်ရသေးပါ။"
+                }
+                "👉 Build Mode: RELEASE APK\n" +
+                    "$keyStatus\n\n" +
+                    "ဖြေရှင်းနည်း: Google Cloud Console > reCAPTCHA Enterprise မှ Android Key ယူ၍ strings.xml တွင် recaptcha_site_key ထည့်ပါ (သို့) Firebase Console > App Check > APIs တွင် Firebase Authentication enforcement ကို စစ်ဆေးပါ။"
+            }
+        } catch (e: Exception) {
+            "App Check Diagnostic error: ${e.message}"
         }
     }
 

@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">787-AI POS</string>
+    <string name="recaptcha_site_key">6Ld40CQuAAAAACwd1_it23Kg4ljI0aeS5yb6R9sz</string>
 </resources>
