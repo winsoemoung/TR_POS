@@ -39,6 +39,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -46,6 +47,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withTimeout
 import org.json.JSONArray
 import org.json.JSONObject
 import java.text.SimpleDateFormat
@@ -135,12 +137,14 @@ class FirebaseBackupRepository(
 
     private suspend fun commitBatched(writes: List<Pair<DocumentReference, Map<String, Any>>>) {
         if (writes.isEmpty()) return
-        for (chunk in writes.chunked(20)) {
+        for (chunk in writes.chunked(250)) {
             val batch = firestore.batch()
             for ((ref, data) in chunk) {
                 batch.set(ref, data, SetOptions.merge())
             }
-            batch.commit().await()
+            withTimeout(25_000L) {
+                batch.commit().await()
+            }
         }
     }
 
@@ -167,7 +171,9 @@ class FirebaseBackupRepository(
                 promoCodesJson = storeConfig?.getPromoCodesRawJson(),
                 lastBackupAtEpochMs = nowMs,
             )
-            root.set(userPayload, SetOptions.merge()).await()
+            withTimeout(25_000L) {
+                root.set(userPayload, SetOptions.merge()).await()
+            }
 
             val products = db.productDao().getAll()
             val sales = db.checkoutDao().getAllSales()
@@ -244,6 +250,11 @@ class FirebaseBackupRepository(
                 customersSynced = customers.size,
                 otherRecordsSynced = otherCount,
             )
+        } catch (e: TimeoutCancellationException) {
+            FirebaseSyncResult(
+                success = false,
+                message = "Firebase ချိတ်ဆက်မှု အချိန်ကျော်လွန်နေပါသည် (Timeout) — အင်တာနက်လိုင်း စစ်ဆေးပြီး ထပ်မံကြိုးစားပါ",
+            )
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -261,10 +272,10 @@ class FirebaseBackupRepository(
         payment: PaymentEntity?,
         updatedProducts: List<ProductEntity>,
         updatedCustomer: CustomerEntity? = null,
-    ) {
-        val uid = auth.currentUser?.uid ?: return
+    ): Boolean {
+        val uid = auth.currentUser?.uid ?: return false
         val root = userRoot(uid)
-        try {
+        return try {
             val writes = mutableListOf<Pair<DocumentReference, Map<String, Any>>>()
             writes += root.collection("sales").document(sanitizeId(sale.saleId)) to saleToMap(uid, sale)
             items.forEachIndexed { idx, item ->
@@ -283,10 +294,15 @@ class FirebaseBackupRepository(
                 writes += root.collection("customers").document(updatedCustomer.customerId.toString()) to customerToMap(uid, updatedCustomer)
             }
             commitBatched(writes)
+            true
+        } catch (e: TimeoutCancellationException) {
+            Log.w("FirebaseBackupRepo", "syncSaleBundle timed out for ${sale.saleId}")
+            false
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             handleFirestoreError(e, FirestoreOperationType.WRITE, "users/$uid/sales/${sale.saleId}")
+            false
         }
     }
 
@@ -303,19 +319,22 @@ class FirebaseBackupRepository(
 
         val root = userRoot(uid)
         return try {
-            val profileDoc = root.get().await()
-            val prodSnap = root.collection("products").get().await()
-            val salesSnap = root.collection("sales").get().await()
-            val itemsSnap = root.collection("sale_items").get().await()
-            val paySnap = root.collection("payments").get().await()
-            val custSnap = root.collection("customers").get().await()
-            val debtSnap = root.collection("debt_transactions").get().await()
-            val supSnap = root.collection("suppliers").get().await()
-            val purSnap = root.collection("purchases").get().await()
-            val retSnap = root.collection("return_transactions").get().await()
-            val shiftSnap = root.collection("shifts").get().await()
-            val movSnap = root.collection("stock_movements").get().await()
-            val tmplSnap = root.collection("receipt_templates").get().await()
+            val (profileDoc, prodSnap, salesSnap, itemsSnap, paySnap, custSnap, debtSnap, supSnap, purSnap, retSnap, shiftSnap, movSnap, tmplSnap) = withTimeout(45_000L) {
+                val p0 = root.get().await()
+                val p1 = root.collection("products").get().await()
+                val p2 = root.collection("sales").get().await()
+                val p3 = root.collection("sale_items").get().await()
+                val p4 = root.collection("payments").get().await()
+                val p5 = root.collection("customers").get().await()
+                val p6 = root.collection("debt_transactions").get().await()
+                val p7 = root.collection("suppliers").get().await()
+                val p8 = root.collection("purchases").get().await()
+                val p9 = root.collection("return_transactions").get().await()
+                val p10 = root.collection("shifts").get().await()
+                val p11 = root.collection("stock_movements").get().await()
+                val p12 = root.collection("receipt_templates").get().await()
+                RestoreSnapshots(p0, p1, p2, p3, p4, p5, p6, p7, p8, p9, p10, p11, p12)
+            }
 
             val products = prodSnap.documents.mapNotNull { docToProduct(it) }
             val sales = salesSnap.documents.mapNotNull { docToSale(it) }
@@ -501,6 +520,11 @@ class FirebaseBackupRepository(
                 customersSynced = customers.size,
                 otherRecordsSynced = otherCount,
             )
+        } catch (e: TimeoutCancellationException) {
+            FirebaseSyncResult(
+                success = false,
+                message = "Firebase Restore အချိန်ကျော်လွန်နေပါသည် (Timeout) — အင်တာနက်လိုင်း စစ်ဆေးပြီး ထပ်မံကြိုးစားပါ",
+            )
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -511,6 +535,22 @@ class FirebaseBackupRepository(
             )
         }
     }
+
+    private data class RestoreSnapshots(
+        val profileDoc: DocumentSnapshot,
+        val prodSnap: com.google.firebase.firestore.QuerySnapshot,
+        val salesSnap: com.google.firebase.firestore.QuerySnapshot,
+        val itemsSnap: com.google.firebase.firestore.QuerySnapshot,
+        val paySnap: com.google.firebase.firestore.QuerySnapshot,
+        val custSnap: com.google.firebase.firestore.QuerySnapshot,
+        val debtSnap: com.google.firebase.firestore.QuerySnapshot,
+        val supSnap: com.google.firebase.firestore.QuerySnapshot,
+        val purSnap: com.google.firebase.firestore.QuerySnapshot,
+        val retSnap: com.google.firebase.firestore.QuerySnapshot,
+        val shiftSnap: com.google.firebase.firestore.QuerySnapshot,
+        val movSnap: com.google.firebase.firestore.QuerySnapshot,
+        val tmplSnap: com.google.firebase.firestore.QuerySnapshot,
+    )
 
     private fun sanitizeId(raw: String): String {
         val cleaned = raw.replace(Regex("[^a-zA-Z0-9_\\-]"), "_").take(120)
@@ -1064,6 +1104,7 @@ object FirebaseFirestoreSyncManager {
     private val autoSyncScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val syncMutex = Mutex()
     private val hasPendingAutoSync = AtomicBoolean(false)
+    private val isDrainingAutoSync = AtomicBoolean(false)
 
     private val _isSyncing = MutableStateFlow(false)
     val isSyncing: StateFlow<Boolean> = _isSyncing.asStateFlow()
@@ -1079,9 +1120,25 @@ object FirebaseFirestoreSyncManager {
             val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return true
             val activeNetwork = cm.activeNetwork ?: return false
             val capabilities = cm.getNetworkCapabilities(activeNetwork) ?: return false
-            capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
         } catch (_: Exception) {
             true
+        }
+    }
+
+    private fun enqueueOfflineWorker(appContext: Context) {
+        runCatching {
+            val workRequest = OneTimeWorkRequestBuilder<FirebaseRealtimeSyncWorker>()
+                .setConstraints(FirebaseRealtimeSyncWorker.constraints())
+                .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
+                .addTag("firebase-realtime-sync")
+                .build()
+            WorkManager.getInstance(appContext).enqueueUniqueWork(
+                "firebase-realtime-sync-queue",
+                ExistingWorkPolicy.KEEP,
+                workRequest,
+            )
         }
     }
 
@@ -1098,38 +1155,41 @@ object FirebaseFirestoreSyncManager {
             return
         }
 
-        runCatching {
-            val workRequest = OneTimeWorkRequestBuilder<FirebaseRealtimeSyncWorker>()
-                .setConstraints(FirebaseRealtimeSyncWorker.constraints())
-                .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 15, TimeUnit.SECONDS)
-                .addTag("firebase-realtime-sync")
-                .build()
-            WorkManager.getInstance(appContext).enqueueUniqueWork(
-                "firebase-realtime-sync-queue",
-                ExistingWorkPolicy.REPLACE,
-                workRequest,
-            )
+        hasPendingAutoSync.set(true)
+        if (!isNetworkAvailable(appContext)) {
+            _syncStatus.value = "⏳ အော့ဖ်လိုင်းဖြစ်နေပါသည် (လိုင်းပြန်ရသည်နှင့် Firebase သို့ အလိုအလျောက် ပို့ပါမည်)"
+            enqueueOfflineWorker(appContext)
+            return
+        }
+
+        if (!isDrainingAutoSync.compareAndSet(false, true)) {
+            return
         }
 
         autoSyncScope.launch {
-            hasPendingAutoSync.set(true)
-            if (!isNetworkAvailable(appContext)) {
-                _syncStatus.value = "⏳ အော့ဖ်လိုင်းဖြစ်နေပါသည် (လိုင်းပြန်ရသည်နှင့် Firebase သို့ အလိုအလျောက် ပို့ပါမည်)"
-                return@launch
-            }
-            if (syncMutex.isLocked) {
-                return@launch
-            }
-            syncMutex.withLock {
+            try {
                 while (hasPendingAutoSync.getAndSet(false)) {
+                    if (!isNetworkAvailable(appContext)) {
+                        _syncStatus.value = "⏳ အော့ဖ်လိုင်းဖြစ်နေပါသည် (လိုင်းပြန်ရသည်နှင့် Firebase သို့ အလိုအလျောက် ပို့ပါမည်)"
+                        enqueueOfflineWorker(appContext)
+                        break
+                    }
                     val cfg = storeConfig ?: StoreConfig(appContext)
-                    _syncStatus.value = "⚡ Firebase Real-time Auto-Sync လုပ်နေပါသည် ($reason)..."
-                    syncAll(
+                    val res = syncAll(
                         context = appContext,
                         db = db,
                         storeName = storeName,
                         storeConfig = cfg,
+                        reason = reason,
                     )
+                    if (!res.success) {
+                        enqueueOfflineWorker(appContext)
+                    }
+                }
+            } finally {
+                isDrainingAutoSync.set(false)
+                if (hasPendingAutoSync.get() && isNetworkAvailable(appContext) && Firebase.auth.currentUser != null) {
+                    triggerRealtimeSync(appContext, db, storeName, storeConfig, reason)
                 }
             }
         }
@@ -1140,24 +1200,49 @@ object FirebaseFirestoreSyncManager {
         db: AppDatabase,
         storeName: String = "san thit",
         storeConfig: StoreConfig? = null,
+        reason: String? = null,
     ): FirebaseSyncResult {
+        val appContext = context.applicationContext
         if (Firebase.auth.currentUser == null) {
             val msg = "Google Account Login မဝင်ရသေးပါ (Please sign in with Google)"
             _syncStatus.value = msg
             return FirebaseSyncResult(false, msg)
         }
-        _isSyncing.value = true
-        _syncStatus.value = "Firebase Cloud သို့ POS ဒေတာအားလုံး Sync တင်နေပါသည်..."
-        val repo = FirebaseBackupRepository(context)
-        val result = repo.backupAll(db, storeConfig ?: StoreConfig(context), storeName)
-        if (result.success) {
-            val now = System.currentTimeMillis()
-            _lastSyncTimeEpochMs.value = now
-            runCatching { db.outboxDao().markPendingAsSynced(now) }
+        if (!isNetworkAvailable(appContext)) {
+            val msg = "⏳ အင်တာနက် မရှိသေးပါ — လိုင်းရရှိသည်နှင့် Firebase သို့ အလိုအလျောက် Sync တင်ပါမည်"
+            _syncStatus.value = msg
+            return FirebaseSyncResult(false, msg)
         }
-        _syncStatus.value = result.message
-        _isSyncing.value = false
-        return result
+
+        return syncMutex.withLock {
+            _isSyncing.value = true
+            _syncStatus.value = if (!reason.isNullOrBlank()) {
+                "Firebase Cloud သို့ POS ဒေတာအားလုံး Sync တင်နေပါသည် ($reason)..."
+            } else {
+                "Firebase Cloud သို့ POS ဒေတာအားလုံး Sync တင်နေပါသည်..."
+            }
+            try {
+                val repo = FirebaseBackupRepository(appContext)
+                val result = repo.backupAll(db, storeConfig ?: StoreConfig(appContext), storeName)
+                if (result.success) {
+                    val now = System.currentTimeMillis()
+                    _lastSyncTimeEpochMs.value = now
+                    runCatching { db.outboxDao().markPendingAsSynced(now) }
+                    runCatching { WorkManager.getInstance(appContext).cancelUniqueWork("firebase-realtime-sync-queue") }
+                }
+                _syncStatus.value = result.message
+                result
+            } catch (e: CancellationException) {
+                _syncStatus.value = "Firebase Sync ခေတ္တရပ်ဆိုင်းသွားပါသည်"
+                throw e
+            } catch (e: Exception) {
+                val msg = "Firebase Sync မအောင်မြင်ပါ: ${e.localizedMessage ?: e.message}"
+                _syncStatus.value = msg
+                FirebaseSyncResult(false, msg)
+            } finally {
+                _isSyncing.value = false
+            }
+        }
     }
 
     suspend fun restoreAll(
@@ -1166,25 +1251,47 @@ object FirebaseFirestoreSyncManager {
         storeConfig: StoreConfig? = null,
         replaceLocal: Boolean = true,
     ): FirebaseSyncResult {
+        val appContext = context.applicationContext
         if (Firebase.auth.currentUser == null) {
             val msg = "Google Account Login မဝင်ရသေးပါ (Please sign in with Google)"
             _syncStatus.value = msg
             return FirebaseSyncResult(false, msg)
         }
-        _isSyncing.value = true
-        _syncStatus.value = "Firebase Cloud မှ POS ဒေတာအားလုံး Restore ပြန်ယူနေပါသည်..."
-        val repo = FirebaseBackupRepository(context)
-        val result = repo.restoreAll(db, storeConfig ?: StoreConfig(context), replaceLocal)
-        if (result.success) {
-            _lastSyncTimeEpochMs.value = System.currentTimeMillis()
+        if (!isNetworkAvailable(appContext)) {
+            val msg = "အင်တာနက် ချိတ်ဆက်မှု မရှိပါ — လိုင်းဖွင့်ပြီး ထပ်မံကြိုးစားပါ"
+            _syncStatus.value = msg
+            return FirebaseSyncResult(false, msg)
         }
-        _syncStatus.value = result.message
-        _isSyncing.value = false
-        return result
+
+        return syncMutex.withLock {
+            _isSyncing.value = true
+            _syncStatus.value = "Firebase Cloud မှ POS ဒေတာအားလုံး Restore ပြန်ယူနေပါသည်..."
+            try {
+                val repo = FirebaseBackupRepository(appContext)
+                val result = repo.restoreAll(db, storeConfig ?: StoreConfig(appContext), replaceLocal)
+                if (result.success) {
+                    val now = System.currentTimeMillis()
+                    _lastSyncTimeEpochMs.value = now
+                    runCatching { db.outboxDao().markPendingAsSynced(now) }
+                }
+                _syncStatus.value = result.message
+                result
+            } catch (e: CancellationException) {
+                _syncStatus.value = "Firebase Restore ခေတ္တရပ်ဆိုင်းသွားပါသည်"
+                throw e
+            } catch (e: Exception) {
+                val msg = "Firebase Restore မအောင်မြင်ပါ: ${e.localizedMessage ?: e.message}"
+                _syncStatus.value = msg
+                FirebaseSyncResult(false, msg)
+            } finally {
+                _isSyncing.value = false
+            }
+        }
     }
 
     fun syncSaleBundleAsync(
         context: Context,
+        db: AppDatabase,
         sale: SaleEntity,
         items: List<SaleItemEntity>,
         payment: PaymentEntity?,
@@ -1192,15 +1299,27 @@ object FirebaseFirestoreSyncManager {
         updatedCustomer: CustomerEntity? = null,
         scope: CoroutineScope,
     ) {
+        val appContext = context.applicationContext
         if (Firebase.auth.currentUser == null) return
-        scope.launch(Dispatchers.IO) {
-            FirebaseBackupRepository(context).syncSaleBundle(
+        if (!isNetworkAvailable(appContext)) {
+            enqueueOfflineWorker(appContext)
+            return
+        }
+        autoSyncScope.launch {
+            val ok = FirebaseBackupRepository(appContext).syncSaleBundle(
                 sale = sale,
                 items = items,
                 payment = payment,
                 updatedProducts = updatedProducts,
                 updatedCustomer = updatedCustomer,
             )
+            if (ok) {
+                val now = System.currentTimeMillis()
+                runCatching { db.outboxDao().markAggregateAsSynced(sale.saleId, now) }
+                _lastSyncTimeEpochMs.value = now
+            } else {
+                triggerRealtimeSync(appContext, db, reason = "Sale ${sale.saleId}")
+            }
         }
     }
 }

@@ -1346,16 +1346,17 @@ class PosViewModel(private val context: Context) : ViewModel() {
 
             when (val result = checkoutRepo.checkout(cartItems, paymentRequest, _actor.value)) {
                 is CheckoutResult.Committed -> {
-                    WorkManager.getInstance(context).enqueueUniqueWork(
-                        "offlinepos-outbox-sync",
-                        ExistingWorkPolicy.KEEP,
-                        OneTimeWorkRequestBuilder<SyncWorker>()
-                            .setConstraints(SyncWorker.constraints())
-                            .setBackoffCriteria(SyncWorker.backoffPolicy, java.time.Duration.ofSeconds(30))
-                            .build(),
-                    )
-                    if (!_googleAccount.value.isNullOrBlank()) {
-                        enqueueGoogleDriveSync()
+                    if (storeConfig.isStaffClientMode() && storeConfig.getLastConnectedServerUrl().isNotBlank()) {
+                        WorkManager.getInstance(context).enqueueUniqueWork(
+                            "offlinepos-outbox-sync",
+                            ExistingWorkPolicy.KEEP,
+                            OneTimeWorkRequestBuilder<SyncWorker>()
+                                .setConstraints(SyncWorker.constraints())
+                                .setBackoffCriteria(SyncWorker.backoffPolicy, java.time.Duration.ofSeconds(30))
+                                .build(),
+                        )
+                    } else {
+                        WorkManager.getInstance(context).cancelUniqueWork("offlinepos-outbox-sync")
                     }
                     val items = cartItems.map { item ->
                         val effQty = item.effectiveQuantity
@@ -1440,6 +1441,7 @@ class PosViewModel(private val context: Context) : ViewModel() {
                                 val updatedCust = selectedCustId?.let { db.customerDao().getCustomerById(it) }
                                 com.example.offlinepos.firebase.FirebaseFirestoreSyncManager.syncSaleBundleAsync(
                                     context = context,
+                                    db = db,
                                     sale = committedSale,
                                     items = committedItems,
                                     payment = committedPayment,
@@ -1471,7 +1473,6 @@ class PosViewModel(private val context: Context) : ViewModel() {
                 setBanner("📦 ပစ္စည်း ထုတ်ပေးပြီးကြောင်း အောင်မြင်စွာ မှတ်တမ်းတင်ပြီးပါပြီ")
             }
             triggerAutoDriveSync("Mark Picked Up ($saleId)")
-            triggerFirestoreSync("Mark Picked Up ($saleId)")
         }
     }
 
@@ -1792,6 +1793,7 @@ class PosViewModel(private val context: Context) : ViewModel() {
                     db = db,
                     storeName = _storeProfile.value.storeName,
                     storeConfig = storeConfig,
+                    reason = reason,
                 )
             }
             setBanner(res.message)

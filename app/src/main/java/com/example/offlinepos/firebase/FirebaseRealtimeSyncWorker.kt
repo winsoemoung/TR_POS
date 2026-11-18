@@ -26,8 +26,13 @@ class FirebaseRealtimeSyncWorker(
             db = db,
             storeName = storeName,
             storeConfig = storeConfig,
+            reason = "Background Sync",
         )
-        return if (res.success) Result.success() else Result.retry()
+        return when {
+            res.success -> Result.success()
+            runAttemptCount >= 3 -> Result.failure()
+            else -> Result.retry()
+        }
     }
 
     companion object {

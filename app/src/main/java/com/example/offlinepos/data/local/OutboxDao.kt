@@ -21,6 +21,9 @@ interface OutboxDao {
     @Query("SELECT COUNT(*) FROM sync_outbox WHERE state IN ('PENDING','RETRYABLE_FAILURE','CONFLICT','QUARANTINED','PERMANENT_FAILURE')")
     fun observePendingCount(): Flow<Int>
 
-    @Query("UPDATE sync_outbox SET state = 'SUCCEEDED', errorClass = NULL, lastError = NULL, updatedAtEpochMs = :now WHERE state IN ('PENDING','RETRYABLE_FAILURE')")
+    @Query("UPDATE sync_outbox SET state = 'ACKED', errorClass = NULL, lastError = NULL, updatedAtEpochMs = :now WHERE state IN ('PENDING','IN_FLIGHT','RETRYABLE_FAILURE','CONFLICT','QUARANTINED','PERMANENT_FAILURE')")
     suspend fun markPendingAsSynced(now: Long): Int
+
+    @Query("UPDATE sync_outbox SET state = 'ACKED', errorClass = NULL, lastError = NULL, updatedAtEpochMs = :now WHERE aggregateId = :aggregateId AND state != 'ACKED'")
+    suspend fun markAggregateAsSynced(aggregateId: String, now: Long): Int
 }

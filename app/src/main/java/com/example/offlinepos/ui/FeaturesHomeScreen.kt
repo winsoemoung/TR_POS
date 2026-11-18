@@ -123,7 +123,7 @@ fun FeaturesHomeScreen(
     val customers by viewModel.customers.collectAsState()
     val suppliers by viewModel.suppliers.collectAsState()
     val isServerRunning by viewModel.isServerRunning.collectAsState()
-    val googleAccount by viewModel.googleAccount.collectAsState()
+    val isFirestoreSyncing by viewModel.isFirestoreSyncing.collectAsState()
     val outboxPendingCount by viewModel.outboxPendingCount.collectAsState()
 
     var showCustomerDialog by remember { mutableStateOf(false) }
@@ -141,7 +141,7 @@ fun FeaturesHomeScreen(
     val debtorsCount = customers.count { it.currentDebtMinor > 0 }
     val totalDebtAmount = customers.sumOf { it.currentDebtMinor }
 
-    val featureGroups = remember(urgentCount, debtorsCount, isServerRunning, googleAccount, allProducts.size, outboxPendingCount) {
+    val featureGroups = remember(urgentCount, debtorsCount, isServerRunning, isFirestoreSyncing, allProducts.size, outboxPendingCount) {
         listOf(
             AimFeatureGroup(
                 groupTitle = "📦 ကုန်ပစ္စည်းနှင့် စတော့ (Products & Inventory)",
@@ -251,13 +251,17 @@ fun FeaturesHomeScreen(
                 tiles = listOf(
                     AimFeatureTile(
                         id = "feat_local_db_sync",
-                        title = "Local Database Sync",
-                        subtitle = if (outboxPendingCount > 0) "Pending: $outboxPendingCount item${if (outboxPendingCount > 1) "s" else ""}" else "✓ Local DB Synced",
+                        title = "Firebase & DB Sync",
+                        subtitle = when {
+                            isFirestoreSyncing -> "⏳ Firebase Sync တင်နေသည်..."
+                            outboxPendingCount > 0 -> "Pending: $outboxPendingCount item${if (outboxPendingCount > 1) "s" else ""}"
+                            else -> "✓ Firebase Synced"
+                        },
                         icon = Icons.Default.CloudSync,
-                        iconBgColor = if (outboxPendingCount > 0) Color(0xFFD97706) else Color(0xFF15803D),
+                        iconBgColor = if (outboxPendingCount > 0 || isFirestoreSyncing) Color(0xFFD97706) else Color(0xFF15803D),
                         badgeText = if (outboxPendingCount > 0) "Pending: $outboxPendingCount item${if (outboxPendingCount > 1) "s" else ""}" else null,
                         badgeColor = if (outboxPendingCount > 0) Color(0xFFB45309) else Color(0xFF15803D),
-                        showProgressBar = outboxPendingCount > 0,
+                        showProgressBar = isFirestoreSyncing,
                         onClick = onNavigateToSettings,
                     ),
                     AimFeatureTile(

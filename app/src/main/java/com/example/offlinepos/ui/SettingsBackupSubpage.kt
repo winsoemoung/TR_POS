@@ -718,7 +718,7 @@ fun SettingsBackupSubpage(
                     }
                 }
 
-                // Small animated progress bar with item count details when Pending Queue > 0
+                // Outbox pending queue status banner (active progress only while actually syncing)
                 AnimatedVisibility(
                     visible = outboxPendingCount > 0,
                     enter = fadeIn() + expandVertically(),
@@ -739,15 +739,21 @@ fun SettingsBackupSubpage(
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    CircularProgressIndicator(
-                                        modifier = Modifier.size(12.dp),
-                                        strokeWidth = 2.dp,
-                                        color = Color(0xFFD97706)
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
+                                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                                    if (isFirestoreSyncing) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(12.dp),
+                                            strokeWidth = 2.dp,
+                                            color = Color(0xFFD97706)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                    }
                                     Text(
-                                        "⏳ Firebase Cloud သို့ $outboxPendingCount ခု Sync တင်နေပါသည်...",
+                                        text = when {
+                                            isFirestoreSyncing -> "⏳ Firebase Cloud သို့ $outboxPendingCount ခု Sync တင်နေပါသည်..."
+                                            firebaseUser == null -> "🔑 Firebase Sign In ဝင်ရန် စောင့်ဆိုင်းနေသည် ($outboxPendingCount ခု)"
+                                            else -> "⏳ Sync တင်ရန် ကျန်ရှိနေသေးသည် ($outboxPendingCount ခု)"
+                                        },
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.SemiBold,
                                         color = Color(0xFFB45309)
@@ -760,16 +766,22 @@ fun SettingsBackupSubpage(
                                     color = Color(0xFFB45309)
                                 )
                             }
-                            LinearProgressIndicator(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(5.dp)
-                                    .clip(RoundedCornerShape(2.5.dp)),
-                                color = Color(0xFFD97706),
-                                trackColor = Color(0xFFFDE68A)
-                            )
+                            if (isFirestoreSyncing) {
+                                LinearProgressIndicator(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(5.dp)
+                                        .clip(RoundedCornerShape(2.5.dp)),
+                                    color = Color(0xFFD97706),
+                                    trackColor = Color(0xFFFDE68A)
+                                )
+                            }
                             Text(
-                                "အော့ဖ်လိုင်း ပြုလုပ်ထားသော အရောင်း/ပစ္စည်း ပြင်ဆင်မှု $outboxPendingCount ခုကို အင်တာနက် ရရှိသည်နှင့် Firebase Cloud သို့ အလိုအလျောက် Sync ပြုလုပ်ပေးနေပါသည်။",
+                                text = when {
+                                    isFirestoreSyncing -> "အော့ဖ်လိုင်း ပြုလုပ်ထားသော အရောင်း/ပစ္စည်း ပြင်ဆင်မှု $outboxPendingCount ခုကို Firebase Cloud သို့ Sync တင်နေပါသည်။"
+                                    firebaseUser == null -> "အပေါ်ရှိ Google Account ဖြင့် Firebase Sign In ဝင်ရောက်ပြီးပါက Pending ဒေတာ $outboxPendingCount ခုကို အလိုအလျောက် Sync တင်ပေးပါမည်။"
+                                    else -> "အင်တာနက်လိုင်း ရရှိချိန်တွင် အလိုအလျောက် Sync တင်ပေးမည်ဖြစ်ပြီး အောက်ပါ '🔥 Firebase Sync & Backup' ခလုတ်ကို နှိပ်၍လည်း ချက်ချင်း တင်နိုင်ပါသည်။"
+                                },
                                 fontSize = 10.sp,
                                 color = Color(0xFF92400E),
                                 lineHeight = 14.sp
