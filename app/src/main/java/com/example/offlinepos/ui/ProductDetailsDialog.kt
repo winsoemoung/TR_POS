@@ -1,5 +1,6 @@
 package com.example.offlinepos.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -22,6 +23,7 @@ import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -38,6 +40,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
@@ -65,6 +68,7 @@ fun ProductDetailsDialog(
     var editSku by remember(product) { mutableStateOf(product.sku) }
     var editBarcode by remember(product) { mutableStateOf(product.barcode ?: "") }
     var editCategory by remember(product) { mutableStateOf(product.category) }
+    var editIsRoofingSheet by remember(product) { mutableStateOf(product.isRoofingSheet) }
     var editUnitName by remember(product) { mutableStateOf(product.unitName) }
     var editImageUri by remember(product) { mutableStateOf(product.imageUri) }
     var editSellPrice by remember(product) { mutableStateOf(product.sellPriceMinor.toString()) }
@@ -143,7 +147,7 @@ fun ProductDetailsDialog(
                     OutlinedTextField(
                         value = editName,
                         onValueChange = { editName = it },
-                        label = { Text("ပစ္စည်းအမည် (Product Name)") },
+                        label = { Text(if (editIsRoofingSheet) "သွပ်ပြား အမည် (ဥပမာ- သွပ် အနီရောင်) *" else "ပစ္စည်းအမည် (Product Name)") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth().testTag("edit_product_name_input"),
                     )
@@ -159,7 +163,10 @@ fun ProductDetailsDialog(
                             items(categories) { cat ->
                                 FilterChip(
                                     selected = editCategory.equals(cat, ignoreCase = true),
-                                    onClick = { editCategory = cat },
+                                    onClick = {
+                                        editCategory = cat
+                                        if (cat == "သွပ်ပြား") editIsRoofingSheet = true
+                                    },
                                     label = { Text(cat, fontSize = 11.sp) },
                                 )
                             }
@@ -173,6 +180,36 @@ fun ProductDetailsDialog(
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth().testTag("edit_product_category_input"),
                     )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Roofing Sheet Toggle
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable {
+                                val next = !editIsRoofingSheet
+                                editIsRoofingSheet = next
+                                if (next) editUnitName = "ချပ်"
+                            }
+                            .padding(vertical = 4.dp),
+                    ) {
+                        Checkbox(
+                            checked = editIsRoofingSheet,
+                            onCheckedChange = {
+                                editIsRoofingSheet = it
+                                if (it) editUnitName = "ချပ်"
+                            },
+                            modifier = Modifier.testTag("edit_roofing_checkbox"),
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Column {
+                            Text("သွပ်ပြား (Roofing Sheet)", fontWeight = FontWeight.Bold)
+                            Text("တစ်ပေ စျေးနှုန်းဖြင့် ပေအရှည် x ချပ်ရေ တွက်ချက်မည်", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                        }
+                    }
 
                     Spacer(modifier = Modifier.height(8.dp))
 
@@ -225,7 +262,7 @@ fun ProductDetailsDialog(
                         OutlinedTextField(
                             value = editSellPrice,
                             onValueChange = { editSellPrice = it },
-                            label = { Text("ရောင်းစျေး (Ks)") },
+                            label = { Text(if (editIsRoofingSheet) "ရောင်းစျေး (Ks / ပေ)" else "ရောင်းစျေး (Ks)") },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                             singleLine = true,
                             modifier = Modifier.weight(1f).testTag("edit_product_sell_price_input"),
@@ -233,7 +270,7 @@ fun ProductDetailsDialog(
                         OutlinedTextField(
                             value = editCostPrice,
                             onValueChange = { editCostPrice = it },
-                            label = { Text("ဝယ်ရင်းစျေး (Ks)") },
+                            label = { Text(if (editIsRoofingSheet) "ဝယ်ရင်းစျေး (Ks / ပေ)" else "ဝယ်ရင်းစျေး (Ks)") },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                             singleLine = true,
                             modifier = Modifier.weight(1f).testTag("edit_product_cost_price_input"),
@@ -246,7 +283,7 @@ fun ProductDetailsDialog(
                         OutlinedTextField(
                             value = editStock,
                             onValueChange = { editStock = it },
-                            label = { Text("လက်ကျန် အရေအတွက်") },
+                            label = { Text(if (editIsRoofingSheet) "လက်ကျန် (ချပ်ရေ)" else "လက်ကျန် (${editUnitName.ifBlank { "ခု" }})") },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                             singleLine = true,
                             modifier = Modifier.weight(1f).testTag("edit_product_stock_input"),
@@ -348,6 +385,7 @@ fun ProductDetailsDialog(
                                     sku = editSku.trim(),
                                     barcode = if (editBarcode.isNotBlank()) editBarcode.trim() else null,
                                     category = editCategory.trim(),
+                                    isRoofingSheet = editIsRoofingSheet,
                                     unitName = editUnitName.trim().ifBlank { "ခု" },
                                     imageUri = editImageUri,
                                     sellPriceMinor = sellP,
